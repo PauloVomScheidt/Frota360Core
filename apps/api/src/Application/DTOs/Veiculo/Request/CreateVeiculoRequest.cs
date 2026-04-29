@@ -1,14 +1,12 @@
-﻿namespace Frota360.Application.DTOs.Veiculo
+﻿namespace Frota360.Application.DTOs.Veiculo.Request
 {
-    public class VeiculoResponse
+    public class CreateVeiculoRequest
     {
-        public int Id { get; set; }
         public string NomeVeiculo { get; set; } = string.Empty;
         public string MarcaVeiculo { get; set; } = string.Empty;
         public string Placa { get; set; } = string.Empty;
         public int Quilometragem { get; set; }
         public string? UltimoMotorista { get; set; }
         public DateTime? DataUltimaViagem { get; set; }
-        public DateTime DataInclusao { get; set; }
     }
 }
