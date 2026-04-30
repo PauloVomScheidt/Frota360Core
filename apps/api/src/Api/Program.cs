@@ -18,10 +18,9 @@ var app = builder.Build();
 app.MapOpenApi();
 app.MapScalarApiReference(options =>
 {
-    options.Title = "Frota360 API";
     options.AddHttpAuthentication("Bearer", bearer =>
     {
-        bearer.Token = "";
+        bearer.Token = "SEU_TOKEN_AQUI";
     });
 });
 
