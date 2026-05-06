@@ -363,5 +363,6 @@ MigrationBackup/
 FodyWeavers.xsd
 
 # ASP.NET Core - appsettings com dados sensíveis
+appsettings.json
 appsettings.Development.json
 appsettings.Production.json

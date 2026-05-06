@@ -9,8 +9,10 @@ namespace Frota360.Application.DependencyInjection
     {
         public static IServiceCollection AddApplication(this IServiceCollection services)
         {
-            services.AddScoped<IVeiculoService, VeiculoService>();
             services.AddScoped<IAuthService, AuthService>();
+            services.AddScoped<IVeiculoService, VeiculoService>();
+            services.AddScoped<IRotaService, RotaService>();
+            services.AddScoped<IMotoristaService, MotoristaService>();
 
             services.AddValidatorsFromAssembly(typeof(ApplicationExtensions).Assembly);
 

@@ -1,6 +1,6 @@
 ﻿using Asp.Versioning;
 using FluentValidation;
-using Frota360.Application.DTOs.Veiculo.Request;
+using Frota360.Application.DTOs.Rota.Request;
 using Frota360.Application.Interfaces;
 using Frota360.Domain.Common;
 using Microsoft.AspNetCore.Authorization;
@@ -12,27 +12,27 @@ namespace Frota360.Api.Controllers
     [ApiController]
     [ApiVersion("1.0")]
     [Route("api/v{version:apiVersion}/[controller]")]
-    public class VeiculoController(IVeiculoService service,
-                                IValidator<CreateVeiculoRequest> createValidator,
-                                IValidator<UpdateVeiculoRequest> updateValidator) : ControllerBase
+    public class RotaController(IRotaService service,
+                                IValidator<CreateRotaRequest> createValidator,
+                                IValidator<UpdateRotaRequest> updateValidator) : ControllerBase
     {
-        /// <summary>Retorna todos os veículos da frota.</summary>
+        /// <summary>Retorna todas as rotas.</summary>
         /// <response code="200">Lista retornada com sucesso</response>
         [HttpGet]
         [ProducesResponseType(StatusCodes.Status200OK)]
         public async Task<IActionResult> GetAll()
         {
-            var veiculos = await service.GetAllAsync();
-            return Ok(ApiResponse<object>.Ok(veiculos));
+            var rotas = await service.GetAllAsync();
+            return Ok(ApiResponse<object>.Ok(rotas));
         }
 
-        /// <summary>Cadastra um novo veículo.</summary>
-        /// <response code="201">Veículo criado com sucesso</response>
+        /// <summary>Cadastra uma nova rota.</summary>
+        /// <response code="201">Rota criada com sucesso</response>
         /// <response code="400">Dados inválidos</response>
         [HttpPost]
         [ProducesResponseType(StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> Create([FromBody] CreateVeiculoRequest request)
+        public async Task<IActionResult> Create([FromBody] CreateRotaRequest request)
         {
             var validation = await createValidator.ValidateAsync(request);
 
@@ -44,16 +44,16 @@ namespace Frota360.Api.Controllers
 
             var criado = await service.AddAsync(request);
             return CreatedAtAction(nameof(GetAll), new { id = criado.Id },
-                ApiResponse<object>.Ok(criado, "Veículo cadastrado com sucesso."));
+                ApiResponse<object>.Ok(criado, "Rota cadastrada com sucesso."));
         }
 
-        /// <summary>Atualiza os dados de um veículo.</summary>
+        /// <summary>Atualiza os dados de uma rota.</summary>
         /// <response code="200">Atualizado com sucesso</response>
-        /// <response code="404">Veículo não encontrado</response>
+        /// <response code="404">Rota não encontrada</response>
         [HttpPut("{id:int}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> Update(int id, [FromBody] UpdateVeiculoRequest request)
+        public async Task<IActionResult> Update(int id, [FromBody] UpdateRotaRequest request)
         {
             var validation = await updateValidator.ValidateAsync(request);
 
@@ -66,14 +66,14 @@ namespace Frota360.Api.Controllers
             var atualizado = await service.UpdateAsync(id, request);
 
             if (atualizado is null)
-                return NotFound(ApiResponse<object>.Fail($"Veículo {id} não encontrado."));
+                return NotFound(ApiResponse<object>.Fail($"Rota {id} não encontrada."));
 
-            return Ok(ApiResponse<object>.Ok(atualizado, "Veículo atualizado com sucesso."));
+            return Ok(ApiResponse<object>.Ok(atualizado, "Rota atualizada com sucesso."));
         }
 
-        /// <summary>Remove um veículo da frota.</summary>
+        /// <summary>Remove uma rota.</summary>
         /// <response code="204">Removido com sucesso</response>
-        /// <response code="404">Veículo não encontrado</response>
+        /// <response code="404">Rota não encontrada</response>
         [HttpDelete("{id:int}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -82,9 +82,9 @@ namespace Frota360.Api.Controllers
             var deletado = await service.DeleteAsync(id);
 
             if (!deletado)
-                return NotFound(ApiResponse<object>.Fail($"Veículo {id} não encontrado."));
+                return NotFound(ApiResponse<object>.Fail($"Rota {id} não encontrada."));
 
-            return Ok(ApiResponse<object>.Ok(null!, "Veículo removido com sucesso."));
+            return Ok(ApiResponse<object>.Ok(null!, "Rota removida com sucesso."));
         }
     }
 }
