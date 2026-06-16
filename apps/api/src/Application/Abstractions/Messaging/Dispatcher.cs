@@ -1,5 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Frota360.Application.Abstractions.Messaging
 {
     /// <summary>
@@ -18,9 +16,11 @@ namespace Frota360.Application.Abstractions.Messaging
                 ?? throw new InvalidOperationException(
                     $"Nenhum handler registrado para '{request.GetType().Name}'.");
 
-            // O handler concreto expõe HandleAsync(TRequest, CancellationToken); usamos dynamic
-            // para deixar o runtime fazer o binding do tipo fechado correto.
-            return ((dynamic)handler).HandleAsync((dynamic)request, cancellationToken);
+            // Invocamos via MethodInfo da interface (e não do tipo concreto): o despacho de
+            // interface independe da visibilidade do handler e dispensa o uso de 'dynamic'.
+            var handleAsync = handlerType.GetMethod(nameof(IRequestHandler<IRequest<TResponse>, TResponse>.HandleAsync))!;
+
+            return (Task<TResponse>)handleAsync.Invoke(handler, [request, cancellationToken])!;
         }
     }
 }
