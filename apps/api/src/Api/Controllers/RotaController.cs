@@ -1,7 +1,11 @@
-﻿using Asp.Versioning;
+using Asp.Versioning;
 using FluentValidation;
+using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Rota.Request;
-using Frota360.Application.Interfaces;
+using Frota360.Application.UseCases.Rotas.Commands.CreateRota;
+using Frota360.Application.UseCases.Rotas.Commands.DeleteRota;
+using Frota360.Application.UseCases.Rotas.Commands.UpdateRota;
+using Frota360.Application.UseCases.Rotas.Queries.GetAllRotas;
 using Frota360.Domain.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,7 +16,7 @@ namespace Frota360.Api.Controllers
     [ApiController]
     [ApiVersion("1.0")]
     [Route("api/v{version:apiVersion}/[controller]")]
-    public class RotaController(IRotaService service,
+    public class RotaController(IDispatcher dispatcher,
                                 IValidator<CreateRotaRequest> createValidator,
                                 IValidator<UpdateRotaRequest> updateValidator) : ControllerBase
     {
@@ -22,7 +26,7 @@ namespace Frota360.Api.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         public async Task<IActionResult> GetAll()
         {
-            var rotas = await service.GetAllAsync();
+            var rotas = await dispatcher.SendAsync(new GetAllRotasQuery());
             return Ok(ApiResponse<object>.Ok(rotas));
         }
 
@@ -42,7 +46,7 @@ namespace Frota360.Api.Controllers
                 return BadRequest(ApiResponse<object>.Fail("Dados inválidos.", erros));
             }
 
-            var criado = await service.AddAsync(request);
+            var criado = await dispatcher.SendAsync(new CreateRotaCommand(request));
             return CreatedAtAction(nameof(GetAll), new { id = criado.Id },
                 ApiResponse<object>.Ok(criado, "Rota cadastrada com sucesso."));
         }
@@ -63,7 +67,7 @@ namespace Frota360.Api.Controllers
                 return BadRequest(ApiResponse<object>.Fail("Dados inválidos.", erros));
             }
 
-            var atualizado = await service.UpdateAsync(id, request);
+            var atualizado = await dispatcher.SendAsync(new UpdateRotaCommand(id, request));
 
             if (atualizado is null)
                 return NotFound(ApiResponse<object>.Fail($"Rota {id} não encontrada."));
@@ -79,7 +83,7 @@ namespace Frota360.Api.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Delete(int id)
         {
-            var deletado = await service.DeleteAsync(id);
+            var deletado = await dispatcher.SendAsync(new DeleteRotaCommand(id));
 
             if (!deletado)
                 return NotFound(ApiResponse<object>.Fail($"Rota {id} não encontrada."));

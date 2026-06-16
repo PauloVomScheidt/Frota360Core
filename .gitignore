@@ -366,3 +366,5 @@ FodyWeavers.xsd
 appsettings.json
 appsettings.Development.json
 appsettings.Production.json
+/Frota360/appsettings.json
+/Frota360/appsettings.Development.json

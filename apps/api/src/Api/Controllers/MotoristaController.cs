@@ -1,7 +1,11 @@
-﻿using Asp.Versioning;
+using Asp.Versioning;
 using FluentValidation;
+using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Motorista.Request;
-using Frota360.Application.Interfaces;
+using Frota360.Application.UseCases.Motoristas.Commands.CreateMotorista;
+using Frota360.Application.UseCases.Motoristas.Commands.DeleteMotorista;
+using Frota360.Application.UseCases.Motoristas.Commands.UpdateMotorista;
+using Frota360.Application.UseCases.Motoristas.Queries.GetAllMotoristas;
 using Frota360.Domain.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,7 +16,7 @@ namespace Frota360.Api.Controllers
     [ApiController]
     [ApiVersion("1.0")]
     [Route("api/v{version:apiVersion}/[controller]")]
-    public class MotoristaController(IMotoristaService service,
+    public class MotoristaController(IDispatcher dispatcher,
                                 IValidator<CreateMotoristaRequest> createValidator,
                                 IValidator<UpdateMotoristaRequest> updateValidator) : ControllerBase
     {
@@ -22,7 +26,7 @@ namespace Frota360.Api.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         public async Task<IActionResult> GetAll()
         {
-            var motoristas = await service.GetAllAsync();
+            var motoristas = await dispatcher.SendAsync(new GetAllMotoristasQuery());
             return Ok(ApiResponse<object>.Ok(motoristas));
         }
 
@@ -42,7 +46,7 @@ namespace Frota360.Api.Controllers
                 return BadRequest(ApiResponse<object>.Fail("Dados inválidos.", erros));
             }
 
-            var criado = await service.AddAsync(request);
+            var criado = await dispatcher.SendAsync(new CreateMotoristaCommand(request));
             return CreatedAtAction(nameof(GetAll), new { id = criado.Id },
                 ApiResponse<object>.Ok(criado, "Motorista cadastrado com sucesso."));
         }
@@ -63,7 +67,7 @@ namespace Frota360.Api.Controllers
                 return BadRequest(ApiResponse<object>.Fail("Dados inválidos.", erros));
             }
 
-            var atualizado = await service.UpdateAsync(id, request);
+            var atualizado = await dispatcher.SendAsync(new UpdateMotoristaCommand(id, request));
 
             if (atualizado is null)
                 return NotFound(ApiResponse<object>.Fail($"Motorista {id} não encontrado."));
@@ -79,7 +83,7 @@ namespace Frota360.Api.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Delete(int id)
         {
-            var deletado = await service.DeleteAsync(id);
+            var deletado = await dispatcher.SendAsync(new DeleteMotoristaCommand(id));
 
             if (!deletado)
                 return NotFound(ApiResponse<object>.Fail($"Motorista {id} não encontrado."));
