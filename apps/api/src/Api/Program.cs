@@ -36,6 +36,16 @@ builder.Services.AddOpenApi();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddApplication();
 
+// CORS — origens permitidas vêm de Cors:AllowedOrigins (appsettings por ambiente)
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy => policy
+        .WithOrigins(allowedOrigins)
+        .AllowAnyHeader()
+        .AllowAnyMethod());
+});
+
 //Rate Limiting
 builder.Services.AddRateLimiter(options =>
 {
@@ -45,7 +55,7 @@ builder.Services.AddRateLimiter(options =>
             partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 30,
+                PermitLimit = 200,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
             }));
@@ -107,6 +117,8 @@ app.UseSerilogRequestLogging(options =>
 {
     options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} respondeu {StatusCode} em {Elapsed:0.0000}ms";
 });
+// CORS precisa vir antes do rate limiter para que respostas 429 também levem os headers
+app.UseCors();
 app.UseRateLimiter();
 app.MapOpenApi();
 app.MapScalarApiReference(options =>
