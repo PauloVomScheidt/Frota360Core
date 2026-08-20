@@ -6,6 +6,7 @@ using Frota360.Application.UseCases.Veiculos.Commands.CreateVeiculo;
 using Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo;
 using Frota360.Application.UseCases.Veiculos.Commands.UpdateVeiculo;
 using Frota360.Application.UseCases.Veiculos.Queries.GetAllVeiculos;
+using Frota360.Application.UseCases.Veiculos.Queries.GetVeiculoById;
 using Frota360.Domain.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -30,6 +31,22 @@ namespace Frota360.Api.Controllers
             return Ok(ApiResponse<object>.Ok(veiculos));
         }
 
+        /// <summary>Retorna um veículo pelo id.</summary>
+        /// <response code="200">Veículo retornado com sucesso</response>
+        /// <response code="404">Veículo não encontrado</response>
+        [HttpGet("{id:int}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var veiculo = await dispatcher.SendAsync(new GetVeiculoByIdQuery(id));
+
+            if (veiculo is null)
+                return NotFound(ApiResponse<object>.Fail($"Veículo {id} não encontrado."));
+
+            return Ok(ApiResponse<object>.Ok(veiculo));
+        }
+
         /// <summary>Cadastra um novo veículo.</summary>
         /// <response code="201">Veículo criado com sucesso</response>
         /// <response code="400">Dados inválidos</response>
@@ -47,7 +64,7 @@ namespace Frota360.Api.Controllers
             }
 
             var criado = await dispatcher.SendAsync(new CreateVeiculoCommand(request));
-            return CreatedAtAction(nameof(GetAll), new { id = criado.Id },
+            return CreatedAtAction(nameof(GetById), new { id = criado.Id },
                 ApiResponse<object>.Ok(criado, "Veículo cadastrado com sucesso."));
         }
 

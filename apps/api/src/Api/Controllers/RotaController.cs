@@ -6,6 +6,7 @@ using Frota360.Application.UseCases.Rotas.Commands.CreateRota;
 using Frota360.Application.UseCases.Rotas.Commands.DeleteRota;
 using Frota360.Application.UseCases.Rotas.Commands.UpdateRota;
 using Frota360.Application.UseCases.Rotas.Queries.GetAllRotas;
+using Frota360.Application.UseCases.Rotas.Queries.GetRotaById;
 using Frota360.Domain.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -30,6 +31,22 @@ namespace Frota360.Api.Controllers
             return Ok(ApiResponse<object>.Ok(rotas));
         }
 
+        /// <summary>Retorna uma rota pelo id.</summary>
+        /// <response code="200">Rota retornada com sucesso</response>
+        /// <response code="404">Rota não encontrada</response>
+        [HttpGet("{id:int}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var rota = await dispatcher.SendAsync(new GetRotaByIdQuery(id));
+
+            if (rota is null)
+                return NotFound(ApiResponse<object>.Fail($"Rota {id} não encontrada."));
+
+            return Ok(ApiResponse<object>.Ok(rota));
+        }
+
         /// <summary>Cadastra uma nova rota.</summary>
         /// <response code="201">Rota criada com sucesso</response>
         /// <response code="400">Dados inválidos</response>
@@ -47,7 +64,7 @@ namespace Frota360.Api.Controllers
             }
 
             var criado = await dispatcher.SendAsync(new CreateRotaCommand(request));
-            return CreatedAtAction(nameof(GetAll), new { id = criado.Id },
+            return CreatedAtAction(nameof(GetById), new { id = criado.Id },
                 ApiResponse<object>.Ok(criado, "Rota cadastrada com sucesso."));
         }
 
