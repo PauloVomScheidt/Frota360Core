@@ -2,6 +2,7 @@ using Asp.Versioning;
 using FluentValidation;
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Veiculo.Request;
+using Frota360.Application.DTOs.Veiculo.Response;
 using Frota360.Application.UseCases.Veiculos.Commands.CreateVeiculo;
 using Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo;
 using Frota360.Application.UseCases.Veiculos.Commands.UpdateVeiculo;
@@ -24,19 +25,19 @@ namespace Frota360.Api.Controllers
         /// <summary>Retorna todos os veículos da frota.</summary>
         /// <response code="200">Lista retornada com sucesso</response>
         [HttpGet]
-        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<IEnumerable<VeiculoResponse>>>(StatusCodes.Status200OK)]
         public async Task<IActionResult> GetAll()
         {
             var veiculos = await dispatcher.SendAsync(new GetAllVeiculosQuery());
-            return Ok(ApiResponse<object>.Ok(veiculos));
+            return Ok(ApiResponse<IEnumerable<VeiculoResponse>>.Ok(veiculos));
         }
 
         /// <summary>Retorna um veículo pelo id.</summary>
         /// <response code="200">Veículo retornado com sucesso</response>
         /// <response code="404">Veículo não encontrado</response>
         [HttpGet("{id:int}")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType<ApiResponse<VeiculoResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetById(int id)
         {
             var veiculo = await dispatcher.SendAsync(new GetVeiculoByIdQuery(id));
@@ -44,15 +45,15 @@ namespace Frota360.Api.Controllers
             if (veiculo is null)
                 return NotFound(ApiResponse<object>.Fail($"Veículo {id} não encontrado."));
 
-            return Ok(ApiResponse<object>.Ok(veiculo));
+            return Ok(ApiResponse<VeiculoResponse>.Ok(veiculo));
         }
 
         /// <summary>Cadastra um novo veículo.</summary>
         /// <response code="201">Veículo criado com sucesso</response>
         /// <response code="400">Dados inválidos</response>
         [HttpPost]
-        [ProducesResponseType(StatusCodes.Status201Created)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType<ApiResponse<VeiculoResponse>>(StatusCodes.Status201Created)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Create([FromBody] CreateVeiculoRequest request)
         {
             var validation = await createValidator.ValidateAsync(request);
@@ -65,15 +66,16 @@ namespace Frota360.Api.Controllers
 
             var criado = await dispatcher.SendAsync(new CreateVeiculoCommand(request));
             return CreatedAtAction(nameof(GetById), new { id = criado.Id },
-                ApiResponse<object>.Ok(criado, "Veículo cadastrado com sucesso."));
+                ApiResponse<VeiculoResponse>.Ok(criado, "Veículo cadastrado com sucesso."));
         }
 
         /// <summary>Atualiza os dados de um veículo.</summary>
         /// <response code="200">Atualizado com sucesso</response>
         /// <response code="404">Veículo não encontrado</response>
         [HttpPut("{id:int}")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType<ApiResponse<VeiculoResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateVeiculoRequest request)
         {
             var validation = await updateValidator.ValidateAsync(request);
@@ -89,15 +91,15 @@ namespace Frota360.Api.Controllers
             if (atualizado is null)
                 return NotFound(ApiResponse<object>.Fail($"Veículo {id} não encontrado."));
 
-            return Ok(ApiResponse<object>.Ok(atualizado, "Veículo atualizado com sucesso."));
+            return Ok(ApiResponse<VeiculoResponse>.Ok(atualizado, "Veículo atualizado com sucesso."));
         }
 
         /// <summary>Remove um veículo da frota.</summary>
-        /// <response code="204">Removido com sucesso</response>
+        /// <response code="200">Removido com sucesso</response>
         /// <response code="404">Veículo não encontrado</response>
         [HttpDelete("{id:int}")]
-        [ProducesResponseType(StatusCodes.Status204NoContent)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Delete(int id)
         {
             var deletado = await dispatcher.SendAsync(new DeleteVeiculoCommand(id));

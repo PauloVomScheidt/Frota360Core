@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Frota360.Infrastructure.Services
@@ -29,10 +30,13 @@ namespace Frota360.Infrastructure.Services
                 issuer: configuration["Jwt:Issuer"],
                 audience: configuration["Jwt:Audience"],
                 claims: claims,
-                expires: DateTime.UtcNow.AddHours(8),
+                expires: DateTime.UtcNow.AddHours(1),
                 signingCredentials: credenciais);
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
+
+        public string GerarRefreshToken()
+            => Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
     }
 }

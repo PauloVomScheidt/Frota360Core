@@ -33,6 +33,8 @@ namespace Frota360.Infrastructure.Data
                 entity.Property(u => u.Email).HasMaxLength(150).IsRequired();
                 entity.HasIndex(u => u.Email).IsUnique(); 
                 entity.Property(u => u.SenhaHash).IsRequired();
+                entity.Property(u => u.RefreshTokenHash).HasMaxLength(100);
+                entity.HasIndex(u => u.RefreshTokenHash);
                 entity.Property(u => u.DataInclusao).HasDefaultValueSql("GETDATE()");
             });
 
