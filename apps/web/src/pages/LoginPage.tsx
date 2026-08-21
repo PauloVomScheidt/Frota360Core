@@ -1,32 +1,33 @@
-import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, type CSSProperties, type FormEvent } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { login } from '../api/auth'
-import { ApiError } from '../api/http'
+import { mensagensDeErro } from '../api/errors'
+import { notificarMudancaDeSessao } from '../auth/useSession'
+import { ErrorList } from '../components/AppLayout'
 import { EyeIcon, EyeOffIcon } from '../components/icons'
 
-const brandPanelStyle: React.CSSProperties = {
+const brandPanelStyle: CSSProperties = {
   backgroundColor: 'var(--color-accent-800)',
   backgroundImage:
     'repeating-linear-gradient(0deg, color-mix(in srgb, #fdfaf6 6%, transparent) 0px, transparent 1px, transparent 64px, color-mix(in srgb, #fdfaf6 6%, transparent) 65px)',
 }
 
-function errorMessages(error: unknown): string[] {
-  if (error instanceof ApiError) {
-    return error.erros.length > 0 ? error.erros : [error.message]
-  }
-  return ['Não foi possível entrar. Verifique suas credenciais e tente novamente.']
-}
-
 export function LoginPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const destino = (location.state as { from?: string } | null)?.from ?? '/'
+
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [showPassword, setShowPassword] = useState(false)
 
   const loginMutation = useMutation({
     mutationFn: login,
-    onSuccess: () => navigate('/', { replace: true }),
+    onSuccess: () => {
+      notificarMudancaDeSessao()
+      navigate(destino, { replace: true })
+    },
   })
 
   function handleSubmit(e: FormEvent) {
@@ -122,11 +123,7 @@ export function LoginPage() {
           </div>
 
           {loginMutation.isError && (
-            <ul className="m-0 list-none p-0 text-[13px]" style={{ color: '#a03123' }}>
-              {errorMessages(loginMutation.error).map((msg) => (
-                <li key={msg}>{msg}</li>
-              ))}
-            </ul>
+            <ErrorList mensagens={mensagensDeErro(loginMutation.error, 'Não foi possível entrar.')} />
           )}
 
           <button
@@ -139,14 +136,8 @@ export function LoginPage() {
           </button>
 
           <p className="m-0 text-[13px]" style={{ color: 'color-mix(in srgb, var(--color-text) 55%, transparent)' }}>
-            Ainda não tem conta?{' '}
-            <Link
-              to="/criar-conta"
-              className="font-semibold no-underline hover:underline"
-              style={{ color: 'var(--color-accent-700)' }}
-            >
-              Criar conta
-            </Link>
+            O acesso ao Frota 360 é criado por convite. Fale com o administrador da sua empresa para
+            receber o seu.
           </p>
         </form>
       </div>

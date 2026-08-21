@@ -1,13 +1,13 @@
 # Frota360 Web
 
-Front-end React da API [Frota360](http://localhost:5062/scalar/v1) — gestão de motoristas, veículos e rotas.
+Front-end React da API [Frota360](http://localhost:5062/scalar/v1) — gestão multi-empresa de motoristas, veículos e rotas.
 
 ## Stack
 
 - React 19 + TypeScript + Vite
-- Tailwind CSS 4
+- Tailwind CSS 4 + design system "Modernist" (`src/styles/design-system.css`)
 - React Router 7
-- TanStack Query 5 + Axios (com refresh automático de token)
+- TanStack Query 5 + Axios (Bearer + refresh automático com lock)
 
 ## Como rodar
 
@@ -21,6 +21,9 @@ npm run dev
 
 A URL da API vem de `VITE_API_URL` (`.env.development` / `.env.production`).
 
+> Num banco zerado não há usuários: provisione uma empresa pelo backoffice da API
+> (`POST /backoffice/empresa`) e abra o `linkConvite` retornado — ele cai em `/convite?token=...`.
+
 ## Scripts
 
 | Script | O que faz |
@@ -30,23 +33,45 @@ A URL da API vem de `VITE_API_URL` (`.env.development` / `.env.production`).
 | `npm run lint` | Lint (oxlint) |
 | `npm run gen:api` | Gera `src/api/schema.d.ts` a partir do OpenAPI da API (precisa da API rodando) |
 
+## Rotas
+
+| Rota | Acesso | Descrição |
+|---|---|---|
+| `/login` | anônimo | Entrar (não há cadastro público) |
+| `/esqueci-senha` | anônimo | Dispara `POST /auth/esqueci-senha` (resposta neutra) |
+| `/redefinir-senha?token=` | anônimo | Destino do e-mail de reset |
+| `/convite?token=` | anônimo | Destino do convite: cria a conta e já autentica |
+| `/` | autenticado | Visão geral da frota |
+| `/usuarios` | Admin | Alterar permissão, ativar/desativar |
+| `/convites` | Admin | Criar, listar e cancelar convites |
+
 ## Estrutura
 
 ```
 src/
 ├── api/            # camada de acesso à API
 │   ├── http.ts         # axios + Bearer + refresh automático em 401 (single-flight)
-│   ├── types.ts        # envelope ApiResponse e DTOs dos recursos
-│   ├── tokenStorage.ts # tokens no localStorage
-│   ├── auth.ts         # login / register / logout
-│   └── motoristas.ts, veiculos.ts, rotas.ts  # CRUD por recurso
-├── components/     # componentes compartilhados (RequireAuth, ...)
+│   ├── errors.ts       # mensagensDeErro(): extrai texto do envelope em qualquer status
+│   ├── types.ts        # envelope, Role e DTOs
+│   ├── tokenStorage.ts # tokens + identidade (nome/email/role) no localStorage
+│   ├── auth.ts, convites.ts, usuarios.ts
+│   └── motoristas.ts, veiculos.ts, rotas.ts
+├── auth/           # sessão e permissões
+│   ├── useSession.ts   # usuário logado, reativo a login/logout
+│   ├── permissions.ts  # matriz de roles (espelho da API — o servidor é a autoridade)
+│   └── senha.ts        # regras de senha compartilhadas
+├── components/     # AppLayout (nav), AuthScreen, RequireAuth/RequireAdmin, icons
 ├── lib/            # queryClient do TanStack Query
-└── pages/          # páginas (placeholders — designs virão do Claude Design)
+└── pages/          # telas
 ```
 
 ## Convenções da API
 
-- Toda resposta vem no envelope `{ sucesso, mensagem, dados, erros }`; a camada `src/api` já desembrulha `dados` e converte falhas em `ApiError` (com a lista `erros` para formulários).
-- Em 401, o interceptor tenta `/auth/refresh` uma única vez (lock contra refreshes paralelos, pois a rotação invalida o token anterior) e repete a requisição; se falhar, limpa a sessão e redireciona para `/login`.
-- Erros 429 (rate limit) chegam no mesmo envelope — tratar com mensagem amigável.
+- Toda resposta vem no envelope `{ sucesso, mensagem, dados, erros }` — inclusive 401/403/422/429.
+  `src/api` desembrulha `dados` e converte falhas em `ApiError`; use `mensagensDeErro()` na UI.
+- Em 401, o interceptor tenta `/auth/refresh` uma única vez (lock contra refreshes paralelos, pois a
+  rotação invalida o token anterior) e repete a requisição; se falhar, limpa a sessão e vai para `/login`.
+  O refresh também renova as claims — é quando uma mudança de role passa a valer.
+- Em 403, a API recusa por permissão. A matriz em `auth/permissions.ts` evita oferecer a ação,
+  mas quem decide é o servidor.
+- Multi-tenant é transparente: o `empresaId` vem do token, o front nunca envia id de empresa.

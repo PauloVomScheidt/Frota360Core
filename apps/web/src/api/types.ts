@@ -1,8 +1,8 @@
 // Tipos espelhando os contratos da API Frota360.
-// Quando a API estiver rodando, é possível gerar tipos direto do OpenAPI:
+// Quando a API estiver rodando, é possível conferir/gerar tipos direto do OpenAPI:
 //   npm run gen:api  →  src/api/schema.d.ts
 
-/** Envelope padrão de TODA resposta da API (camelCase). */
+/** Envelope padrão de TODA resposta da API (camelCase), inclusive 401/403/422/429. */
 export interface ApiResponse<T> {
   sucesso: boolean
   mensagem: string
@@ -12,11 +12,7 @@ export interface ApiResponse<T> {
 
 // ---------- Auth ----------
 
-export interface RegisterRequest {
-  nome: string
-  email: string
-  senha: string
-}
+export type Role = 'Admin' | 'Supervisor' | 'Operador'
 
 export interface LoginRequest {
   email: string
@@ -28,6 +24,59 @@ export interface AuthResponse {
   refreshToken: string
   nome: string
   email: string
+  role: Role
+}
+
+export interface EsqueciSenhaRequest {
+  email: string
+}
+
+export interface RedefinirSenhaRequest {
+  token: string
+  novaSenha: string
+}
+
+// ---------- Convites ----------
+
+export interface CriarConviteRequest {
+  email: string
+  role: Role
+}
+
+export interface AceitarConviteRequest {
+  token: string
+  nome: string
+  senha: string
+}
+
+export interface ConviteResponse {
+  id: number
+  email: string
+  role: Role
+  expiraEm: string
+  utilizadoEm?: string | null
+  dataInclusao: string
+  /** Vem em claro apenas na resposta de criação, para encaminhamento manual. */
+  linkConvite?: string | null
+}
+
+// ---------- Usuários ----------
+
+export interface UsuarioResponse {
+  id: number
+  nome: string
+  email: string
+  role: Role
+  ativo: boolean
+  dataInclusao: string
+}
+
+export interface AlterarRoleRequest {
+  role: Role
+}
+
+export interface AlterarAtivoRequest {
+  ativo: boolean
 }
 
 // ---------- Motorista ----------

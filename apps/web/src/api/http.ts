@@ -12,6 +12,13 @@ http.interceptors.request.use((config) => {
   return config
 })
 
+// Rotas anônimas: um 401 aqui é credencial/token inválido, não sessão expirada,
+// então não faz sentido tentar refresh nem derrubar o usuário para o login.
+const ANONYMOUS_ROUTES = ['/auth/login', '/auth/refresh', '/auth/esqueci-senha', '/auth/redefinir-senha', '/convite/aceitar']
+
+// A rotação de refresh token invalida o token anterior a cada uso, então
+// dois refreshes simultâneos fariam o segundo falhar. O lock abaixo garante
+// um único refresh em voo; as demais requisições 401 aguardam o mesmo.
 let refreshInFlight: Promise<string> | null = null
 
 async function refreshTokens(): Promise<string> {
@@ -25,7 +32,8 @@ async function refreshTokens(): Promise<string> {
   )
   if (!data.dados) throw new Error('Refresh sem dados')
 
-  tokenStorage.set(data.dados.token, data.dados.refreshToken)
+  // O refresh também renova as claims: é aqui que uma mudança de role passa a valer.
+  tokenStorage.setSession(data.dados)
   return data.dados.token
 }
 
@@ -36,8 +44,9 @@ http.interceptors.response.use(
       | (InternalAxiosRequestConfig & { _retry?: boolean })
       | undefined
 
-    const isAuthRoute = original?.url?.includes('/auth/')
-    if (error.response?.status !== 401 || !original || original._retry || isAuthRoute) {
+    const url = original?.url ?? ''
+    const isAnonymous = ANONYMOUS_ROUTES.some((rota) => url.includes(rota))
+    if (error.response?.status !== 401 || !original || original._retry || isAnonymous) {
       throw error
     }
 
@@ -57,6 +66,7 @@ http.interceptors.response.use(
   },
 )
 
+/** Desembrulha o envelope da API, lançando erro amigável quando sucesso=false. */
 export function unwrap<T>(response: ApiResponse<T>): T {
   if (!response.sucesso || response.dados === null) {
     throw new ApiError(response.mensagem, response.erros ?? [])
