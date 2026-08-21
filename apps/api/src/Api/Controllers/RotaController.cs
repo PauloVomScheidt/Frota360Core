@@ -2,6 +2,7 @@ using Asp.Versioning;
 using FluentValidation;
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Rota.Request;
+using Frota360.Application.DTOs.Rota.Response;
 using Frota360.Application.UseCases.Rotas.Commands.CreateRota;
 using Frota360.Application.UseCases.Rotas.Commands.DeleteRota;
 using Frota360.Application.UseCases.Rotas.Commands.UpdateRota;
@@ -24,19 +25,19 @@ namespace Frota360.Api.Controllers
         /// <summary>Retorna todas as rotas.</summary>
         /// <response code="200">Lista retornada com sucesso</response>
         [HttpGet]
-        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<IEnumerable<RotaResponse>>>(StatusCodes.Status200OK)]
         public async Task<IActionResult> GetAll()
         {
             var rotas = await dispatcher.SendAsync(new GetAllRotasQuery());
-            return Ok(ApiResponse<object>.Ok(rotas));
+            return Ok(ApiResponse<IEnumerable<RotaResponse>>.Ok(rotas));
         }
 
         /// <summary>Retorna uma rota pelo id.</summary>
         /// <response code="200">Rota retornada com sucesso</response>
         /// <response code="404">Rota não encontrada</response>
         [HttpGet("{id:int}")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType<ApiResponse<RotaResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetById(int id)
         {
             var rota = await dispatcher.SendAsync(new GetRotaByIdQuery(id));
@@ -44,15 +45,15 @@ namespace Frota360.Api.Controllers
             if (rota is null)
                 return NotFound(ApiResponse<object>.Fail($"Rota {id} não encontrada."));
 
-            return Ok(ApiResponse<object>.Ok(rota));
+            return Ok(ApiResponse<RotaResponse>.Ok(rota));
         }
 
         /// <summary>Cadastra uma nova rota.</summary>
         /// <response code="201">Rota criada com sucesso</response>
         /// <response code="400">Dados inválidos</response>
         [HttpPost]
-        [ProducesResponseType(StatusCodes.Status201Created)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType<ApiResponse<RotaResponse>>(StatusCodes.Status201Created)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Create([FromBody] CreateRotaRequest request)
         {
             var validation = await createValidator.ValidateAsync(request);
@@ -65,15 +66,16 @@ namespace Frota360.Api.Controllers
 
             var criado = await dispatcher.SendAsync(new CreateRotaCommand(request));
             return CreatedAtAction(nameof(GetById), new { id = criado.Id },
-                ApiResponse<object>.Ok(criado, "Rota cadastrada com sucesso."));
+                ApiResponse<RotaResponse>.Ok(criado, "Rota cadastrada com sucesso."));
         }
 
         /// <summary>Atualiza os dados de uma rota.</summary>
         /// <response code="200">Atualizado com sucesso</response>
         /// <response code="404">Rota não encontrada</response>
         [HttpPut("{id:int}")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType<ApiResponse<RotaResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateRotaRequest request)
         {
             var validation = await updateValidator.ValidateAsync(request);
@@ -89,15 +91,15 @@ namespace Frota360.Api.Controllers
             if (atualizado is null)
                 return NotFound(ApiResponse<object>.Fail($"Rota {id} não encontrada."));
 
-            return Ok(ApiResponse<object>.Ok(atualizado, "Rota atualizada com sucesso."));
+            return Ok(ApiResponse<RotaResponse>.Ok(atualizado, "Rota atualizada com sucesso."));
         }
 
         /// <summary>Remove uma rota.</summary>
-        /// <response code="204">Removido com sucesso</response>
+        /// <response code="200">Removido com sucesso</response>
         /// <response code="404">Rota não encontrada</response>
         [HttpDelete("{id:int}")]
-        [ProducesResponseType(StatusCodes.Status204NoContent)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Delete(int id)
         {
             var deletado = await dispatcher.SendAsync(new DeleteRotaCommand(id));

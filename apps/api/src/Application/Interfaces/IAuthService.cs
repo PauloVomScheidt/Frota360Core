@@ -7,5 +7,7 @@ namespace Frota360.Application.Interfaces
     {
         Task<AuthResponse> RegisterAsync(RegisterRequest request);
         Task<AuthResponse?> LoginAsync(LoginRequest request);
+        Task<AuthResponse?> RefreshAsync(RefreshTokenRequest request);
+        Task LogoutAsync(int usuarioId);
     }
 }

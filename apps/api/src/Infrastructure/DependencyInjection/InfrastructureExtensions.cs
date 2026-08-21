@@ -19,6 +19,12 @@ namespace Frota360.Infrastructure.DependencyInjection
         {
             var connectionString = configuration.GetConnectionString("DefaultConnection")!;
 
+            var jwtKey = configuration["Jwt:Key"];
+            if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey.Length < 32)
+                throw new InvalidOperationException(
+                    "Jwt:Key não configurada ou muito curta (mínimo 32 caracteres). " +
+                    "Em desenvolvimento use 'dotnet user-secrets set Jwt:Key <valor>'; em produção, variável de ambiente Jwt__Key.");
+
             services.AddDbContext<Frota360DbContext>(options =>
                 options.UseSqlServer(connectionString));
 
@@ -41,7 +47,7 @@ namespace Frota360.Infrastructure.DependencyInjection
                         ValidIssuer = configuration["Jwt:Issuer"],
                         ValidAudience = configuration["Jwt:Audience"],
                         IssuerSigningKey = new SymmetricSecurityKey(
-                            Encoding.UTF8.GetBytes(configuration["Jwt:Key"]!))
+                            Encoding.UTF8.GetBytes(jwtKey))
                     };
                 });
 
