@@ -1,10 +1,11 @@
 using Frota360.Application.Abstractions.Messaging;
+using Frota360.Application.Interfaces;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Motoristas.Commands.DeleteMotorista
 {
-    public sealed class DeleteMotoristaHandler(IMotoristaRepository repository, ILogger<DeleteMotoristaHandler> logger)
+    public sealed class DeleteMotoristaHandler(IMotoristaRepository repository, ICurrentUserService currentUser, ILogger<DeleteMotoristaHandler> logger)
         : ICommandHandler<DeleteMotoristaCommand, bool>
     {
         public async Task<bool> HandleAsync(DeleteMotoristaCommand command, CancellationToken cancellationToken = default)
@@ -13,7 +14,7 @@ namespace Frota360.Application.UseCases.Motoristas.Commands.DeleteMotorista
             {
                 logger.LogInformation("Iniciando remoção do motorista Id {Id}", command.Id);
 
-                var motorista = await repository.GetByIdAsync(command.Id);
+                var motorista = await repository.GetByIdAsync(command.Id, currentUser.EmpresaId);
 
                 if (motorista is null)
                 {

@@ -10,8 +10,11 @@ namespace Frota360.Application.DependencyInjection
     {
         public static IServiceCollection AddApplication(this IServiceCollection services)
         {
-            // Auth permanece como serviço (fluxo de token próprio)
+            // Fluxos de autenticação/gestão permanecem como serviços (fora do CQRS)
             services.AddScoped<IAuthService, AuthService>();
+            services.AddScoped<IConviteService, ConviteService>();
+            services.AddScoped<IUsuarioService, UsuarioService>();
+            services.AddScoped<IBackofficeService, BackofficeService>();
 
             // Infraestrutura CQRS manual
             services.AddScoped<IDispatcher, Dispatcher>();

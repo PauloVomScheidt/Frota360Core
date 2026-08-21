@@ -16,6 +16,19 @@ namespace Frota360.Infrastructure.Repositories
         public async Task<Usuario?> GetByRefreshTokenHashAsync(string refreshTokenHash)
             => await context.Usuarios.FirstOrDefaultAsync(u => u.RefreshTokenHash == refreshTokenHash);
 
+        public async Task<Usuario?> GetByResetSenhaTokenHashAsync(string resetSenhaTokenHash)
+            => await context.Usuarios.FirstOrDefaultAsync(u => u.ResetSenhaTokenHash == resetSenhaTokenHash);
+
+        public async Task<IEnumerable<Usuario>> GetAllByEmpresaAsync(int empresaId)
+            => await context.Usuarios.AsNoTracking()
+                .Where(u => u.EmpresaId == empresaId)
+                .OrderBy(u => u.Nome)
+                .ToListAsync();
+
+        public async Task<int> ContarAdminsAtivosAsync(int empresaId)
+            => await context.Usuarios.CountAsync(u =>
+                u.EmpresaId == empresaId && u.Role == Domain.Common.Roles.Admin && u.Ativo);
+
         public async Task<bool> ExisteEmailAsync(string email)
             => await context.Usuarios.AnyAsync(u => u.Email == email);
 

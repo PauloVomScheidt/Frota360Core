@@ -1,9 +1,14 @@
 using Asp.Versioning;
 using Frota360.Api.Middlewares;
+using Frota360.Api.Services;
+using Frota360.Application.Common;
 using Frota360.Application.DependencyInjection;
+using Frota360.Application.Interfaces;
 using Frota360.Infrastructure.Data;
 using Frota360.Infrastructure.DependencyInjection;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.OpenApi;
 using Scalar.AspNetCore;
 using Serilog;
 using System.Threading.RateLimiting;
@@ -32,9 +37,51 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
 // Serviços
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    // Declara o esquema "Bearer" no documento OpenAPI — sem isso o Scalar
+    // não sabe anexar o header Authorization nas requisições de teste.
+    options.AddDocumentTransformer((document, context, cancellationToken) =>
+    {
+        document.Components ??= new();
+        document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+        document.Components.SecuritySchemes["Bearer"] = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            In = ParameterLocation.Header,
+        };
+        return Task.CompletedTask;
+    });
+
+    // Marca como protegidas (no Swagger/Scalar) apenas as operações com [Authorize].
+    options.AddOperationTransformer((operation, context, cancellationToken) =>
+    {
+        var exigeAuth = context.Description.ActionDescriptor.EndpointMetadata
+            .OfType<AuthorizeAttribute>().Any();
+
+        if (exigeAuth)
+        {
+            operation.Security ??= [];
+            operation.Security.Add(new OpenApiSecurityRequirement
+            {
+                [new OpenApiSecuritySchemeReference("Bearer", context.Document)] = []
+            });
+        }
+
+        return Task.CompletedTask;
+    });
+});
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddApplication();
+
+// Usuário atual (claims do JWT) disponível para os handlers
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+
+// URL do front, usada nos links de convite/reset enviados por e-mail
+builder.Services.AddSingleton(new FrontendSettings(builder.Configuration["Frontend:BaseUrl"] ?? string.Empty));
 
 // CORS — origens permitidas vêm de Cors:AllowedOrigins (appsettings por ambiente)
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
@@ -43,7 +90,8 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy => policy
         .WithOrigins(allowedOrigins)
         .AllowAnyHeader()
-        .AllowAnyMethod());
+        .AllowAnyMethod()
+        .AllowCredentials());
 });
 
 //Rate Limiting

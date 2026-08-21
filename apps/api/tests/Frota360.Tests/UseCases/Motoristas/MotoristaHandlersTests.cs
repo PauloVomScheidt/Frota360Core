@@ -1,4 +1,5 @@
 using Frota360.Application.DTOs.Motorista.Request;
+using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Motoristas.Commands.CreateMotorista;
 using Frota360.Application.UseCases.Motoristas.Commands.DeleteMotorista;
 using Frota360.Application.UseCases.Motoristas.Commands.UpdateMotorista;
@@ -13,6 +14,12 @@ namespace Frota360.Tests.UseCases.Motoristas
     public class MotoristaHandlersTests
     {
         private readonly IMotoristaRepository _repository = Substitute.For<IMotoristaRepository>();
+        private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
+
+        public MotoristaHandlersTests()
+        {
+            _currentUser.EmpresaId.Returns(1);
+        }
 
         private static Motorista NovoMotorista(int id = 1) => new()
         {
@@ -37,7 +44,7 @@ namespace Frota360.Tests.UseCases.Motoristas
                     return m;
                 });
 
-            var handler = new CreateMotoristaHandler(_repository, NullLogger<CreateMotoristaHandler>.Instance);
+            var handler = new CreateMotoristaHandler(_repository, _currentUser, NullLogger<CreateMotoristaHandler>.Instance);
             var request = new CreateMotoristaRequest
             {
                 Nome = "Maria",
@@ -53,7 +60,7 @@ namespace Frota360.Tests.UseCases.Motoristas
             Assert.Equal("maria@email.com", resposta.Email);
             Assert.Equal("39053344705", resposta.CPF);
             await _repository.Received(1).AddAsync(Arg.Is<Motorista>(m =>
-                m.Nome == "Maria" && m.DataInclusao != default));
+                m.Nome == "Maria" && m.EmpresaId == 1 && m.DataInclusao != default));
         }
 
         // ----- Update -----
@@ -62,10 +69,10 @@ namespace Frota360.Tests.UseCases.Motoristas
         public async Task Update_QuandoExiste_DeveAtualizarERetornarResposta()
         {
             var existente = NovoMotorista(7);
-            _repository.GetByIdAsync(7).Returns(existente);
+            _repository.GetByIdAsync(7, 1).Returns(existente);
             _repository.UpdateAsync(Arg.Any<Motorista>()).Returns(ci => ci.Arg<Motorista>());
 
-            var handler = new UpdateMotoristaHandler(_repository, NullLogger<UpdateMotoristaHandler>.Instance);
+            var handler = new UpdateMotoristaHandler(_repository, _currentUser, NullLogger<UpdateMotoristaHandler>.Instance);
             var request = new UpdateMotoristaRequest
             {
                 Nome = "Nome Alterado",
@@ -86,9 +93,9 @@ namespace Frota360.Tests.UseCases.Motoristas
         [Fact]
         public async Task Update_QuandoNaoExiste_DeveRetornarNull_ENaoChamarUpdate()
         {
-            _repository.GetByIdAsync(99).Returns((Motorista?)null);
+            _repository.GetByIdAsync(99, 1).Returns((Motorista?)null);
 
-            var handler = new UpdateMotoristaHandler(_repository, NullLogger<UpdateMotoristaHandler>.Instance);
+            var handler = new UpdateMotoristaHandler(_repository, _currentUser, NullLogger<UpdateMotoristaHandler>.Instance);
 
             var resposta = await handler.HandleAsync(
                 new UpdateMotoristaCommand(99, new UpdateMotoristaRequest()));
@@ -103,9 +110,9 @@ namespace Frota360.Tests.UseCases.Motoristas
         public async Task Delete_QuandoExiste_DeveRemoverERetornarTrue()
         {
             var existente = NovoMotorista(5);
-            _repository.GetByIdAsync(5).Returns(existente);
+            _repository.GetByIdAsync(5, 1).Returns(existente);
 
-            var handler = new DeleteMotoristaHandler(_repository, NullLogger<DeleteMotoristaHandler>.Instance);
+            var handler = new DeleteMotoristaHandler(_repository, _currentUser, NullLogger<DeleteMotoristaHandler>.Instance);
 
             var resultado = await handler.HandleAsync(new DeleteMotoristaCommand(5));
 
@@ -116,9 +123,9 @@ namespace Frota360.Tests.UseCases.Motoristas
         [Fact]
         public async Task Delete_QuandoNaoExiste_DeveRetornarFalse_ENaoRemover()
         {
-            _repository.GetByIdAsync(123).Returns((Motorista?)null);
+            _repository.GetByIdAsync(123, 1).Returns((Motorista?)null);
 
-            var handler = new DeleteMotoristaHandler(_repository, NullLogger<DeleteMotoristaHandler>.Instance);
+            var handler = new DeleteMotoristaHandler(_repository, _currentUser, NullLogger<DeleteMotoristaHandler>.Instance);
 
             var resultado = await handler.HandleAsync(new DeleteMotoristaCommand(123));
 
@@ -131,9 +138,9 @@ namespace Frota360.Tests.UseCases.Motoristas
         [Fact]
         public async Task GetAll_DeveMapearTodosOsMotoristas()
         {
-            _repository.GetAllAsync().Returns(new[] { NovoMotorista(1), NovoMotorista(2) });
+            _repository.GetAllAsync(1).Returns(new[] { NovoMotorista(1), NovoMotorista(2) });
 
-            var handler = new GetAllMotoristasHandler(_repository, NullLogger<GetAllMotoristasHandler>.Instance);
+            var handler = new GetAllMotoristasHandler(_repository, _currentUser, NullLogger<GetAllMotoristasHandler>.Instance);
 
             var resposta = (await handler.HandleAsync(new GetAllMotoristasQuery())).ToList();
 

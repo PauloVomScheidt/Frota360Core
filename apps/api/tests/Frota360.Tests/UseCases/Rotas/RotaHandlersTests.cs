@@ -1,4 +1,5 @@
 using Frota360.Application.DTOs.Rota.Request;
+using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Rotas.Commands.CreateRota;
 using Frota360.Application.UseCases.Rotas.Commands.DeleteRota;
 using Frota360.Application.UseCases.Rotas.Commands.UpdateRota;
@@ -13,6 +14,12 @@ namespace Frota360.Tests.UseCases.Rotas
     public class RotaHandlersTests
     {
         private readonly IRotaRepository _repository = Substitute.For<IRotaRepository>();
+        private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
+
+        public RotaHandlersTests()
+        {
+            _currentUser.EmpresaId.Returns(1);
+        }
 
         private static Rota NovaRota(int id = 1) => new()
         {
@@ -37,7 +44,7 @@ namespace Frota360.Tests.UseCases.Rotas
                     return r;
                 });
 
-            var handler = new CreateRotaHandler(_repository, NullLogger<CreateRotaHandler>.Instance);
+            var handler = new CreateRotaHandler(_repository, _currentUser, NullLogger<CreateRotaHandler>.Instance);
             var request = new CreateRotaRequest
             {
                 Origem = "Joinville",
@@ -53,16 +60,16 @@ namespace Frota360.Tests.UseCases.Rotas
             Assert.Equal(8, resposta.Id);
             Assert.Equal("Joinville", resposta.Origem);
             Assert.Equal("Blumenau", resposta.Destino);
-            await _repository.Received(1).AddAsync(Arg.Is<Rota>(r => r.DataInclusao != default));
+            await _repository.Received(1).AddAsync(Arg.Is<Rota>(r => r.EmpresaId == 1 && r.DataInclusao != default));
         }
 
         [Fact]
         public async Task Update_QuandoExiste_DeveAtualizarERetornarResposta()
         {
-            _repository.GetByIdAsync(7).Returns(NovaRota(7));
+            _repository.GetByIdAsync(7, 1).Returns(NovaRota(7));
             _repository.UpdateAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
 
-            var handler = new UpdateRotaHandler(_repository, NullLogger<UpdateRotaHandler>.Instance);
+            var handler = new UpdateRotaHandler(_repository, _currentUser, NullLogger<UpdateRotaHandler>.Instance);
             var request = new UpdateRotaRequest
             {
                 Origem = "Curitiba",
@@ -84,9 +91,9 @@ namespace Frota360.Tests.UseCases.Rotas
         [Fact]
         public async Task Update_QuandoNaoExiste_DeveRetornarNull()
         {
-            _repository.GetByIdAsync(99).Returns((Rota?)null);
+            _repository.GetByIdAsync(99, 1).Returns((Rota?)null);
 
-            var handler = new UpdateRotaHandler(_repository, NullLogger<UpdateRotaHandler>.Instance);
+            var handler = new UpdateRotaHandler(_repository, _currentUser, NullLogger<UpdateRotaHandler>.Instance);
 
             var resposta = await handler.HandleAsync(
                 new UpdateRotaCommand(99, new UpdateRotaRequest()));
@@ -99,9 +106,9 @@ namespace Frota360.Tests.UseCases.Rotas
         public async Task Delete_QuandoExiste_DeveRemoverERetornarTrue()
         {
             var existente = NovaRota(6);
-            _repository.GetByIdAsync(6).Returns(existente);
+            _repository.GetByIdAsync(6, 1).Returns(existente);
 
-            var handler = new DeleteRotaHandler(_repository, NullLogger<DeleteRotaHandler>.Instance);
+            var handler = new DeleteRotaHandler(_repository, _currentUser, NullLogger<DeleteRotaHandler>.Instance);
 
             var resultado = await handler.HandleAsync(new DeleteRotaCommand(6));
 
@@ -112,9 +119,9 @@ namespace Frota360.Tests.UseCases.Rotas
         [Fact]
         public async Task Delete_QuandoNaoExiste_DeveRetornarFalse()
         {
-            _repository.GetByIdAsync(123).Returns((Rota?)null);
+            _repository.GetByIdAsync(123, 1).Returns((Rota?)null);
 
-            var handler = new DeleteRotaHandler(_repository, NullLogger<DeleteRotaHandler>.Instance);
+            var handler = new DeleteRotaHandler(_repository, _currentUser, NullLogger<DeleteRotaHandler>.Instance);
 
             var resultado = await handler.HandleAsync(new DeleteRotaCommand(123));
 
@@ -125,9 +132,9 @@ namespace Frota360.Tests.UseCases.Rotas
         [Fact]
         public async Task GetAll_DeveMapearTodasAsRotas()
         {
-            _repository.GetAllAsync().Returns(new[] { NovaRota(1), NovaRota(2), NovaRota(3) });
+            _repository.GetAllAsync(1).Returns(new[] { NovaRota(1), NovaRota(2), NovaRota(3) });
 
-            var handler = new GetAllRotasHandler(_repository, NullLogger<GetAllRotasHandler>.Instance);
+            var handler = new GetAllRotasHandler(_repository, _currentUser, NullLogger<GetAllRotasHandler>.Instance);
 
             var resposta = (await handler.HandleAsync(new GetAllRotasQuery())).ToList();
 

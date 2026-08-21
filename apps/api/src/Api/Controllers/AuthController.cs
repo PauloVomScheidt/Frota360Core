@@ -4,7 +4,6 @@ using Frota360.Application.DTOs.Usuario.Request;
 using Frota360.Application.DTOs.Usuario.Response;
 using Frota360.Application.Interfaces;
 using Frota360.Domain.Common;
-using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -16,35 +15,11 @@ namespace Frota360.Api.Controllers
     [ApiVersion("1.0")]
     [Route("api/v{version:apiVersion}/[controller]")]
     public class AuthController(IAuthService authService,
-                            IUsuarioRepository usuarioRepository,
-                            IValidator<RegisterRequest> registerValidator,
                             IValidator<LoginRequest> loginValidator,
-                            IValidator<RefreshTokenRequest> refreshValidator) : ControllerBase
+                            IValidator<RefreshTokenRequest> refreshValidator,
+                            IValidator<EsqueciSenhaRequest> esqueciSenhaValidator,
+                            IValidator<RedefinirSenhaRequest> redefinirSenhaValidator) : ControllerBase
     {
-        /// <summary>Registra um novo usuário.</summary>
-        /// <response code="201">Usuário criado com sucesso</response>
-        /// <response code="400">Dados inválidos ou e-mail já cadastrado</response>
-        [HttpPost("register")]
-        [EnableRateLimiting("auth")]
-        [ProducesResponseType<ApiResponse<AuthResponse>>(StatusCodes.Status201Created)]
-        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> Register([FromBody] RegisterRequest request)
-        {
-            var validation = await registerValidator.ValidateAsync(request);
-
-            if (!validation.IsValid)
-            {
-                var erros = validation.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}");
-                return BadRequest(ApiResponse<object>.Fail("Dados inválidos.", erros));
-            }
-
-            if (await usuarioRepository.ExisteEmailAsync(request.Email))
-                return BadRequest(ApiResponse<object>.Fail("E-mail já cadastrado."));
-
-            var response = await authService.RegisterAsync(request);
-            return Created(string.Empty, ApiResponse<AuthResponse>.Ok(response, "Usuário cadastrado com sucesso."));
-        }
-
         /// <summary>Autentica um usuário e retorna o token JWT e o refresh token.</summary>
         /// <response code="200">Login realizado com sucesso</response>
         /// <response code="401">Credenciais inválidas</response>
@@ -93,6 +68,53 @@ namespace Frota360.Api.Controllers
                 return Unauthorized(ApiResponse<object>.Fail("Refresh token inválido ou expirado."));
 
             return Ok(ApiResponse<AuthResponse>.Ok(response, "Token renovado com sucesso."));
+        }
+
+        /// <summary>Solicita o reset de senha; se o e-mail estiver cadastrado, envia o link por e-mail.</summary>
+        /// <response code="200">Pedido registrado (resposta idêntica exista o e-mail ou não)</response>
+        [HttpPost("esqueci-senha")]
+        [EnableRateLimiting("auth")]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> EsqueciSenha([FromBody] EsqueciSenhaRequest request)
+        {
+            var validation = await esqueciSenhaValidator.ValidateAsync(request);
+
+            if (!validation.IsValid)
+            {
+                var erros = validation.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}");
+                return BadRequest(ApiResponse<object>.Fail("Dados inválidos.", erros));
+            }
+
+            await authService.EsqueciSenhaAsync(request);
+
+            return Ok(ApiResponse<object>.Ok(null!,
+                "Se o e-mail estiver cadastrado, você receberá um link para redefinir a senha."));
+        }
+
+        /// <summary>Redefine a senha a partir do token recebido por e-mail; sessões antigas são encerradas.</summary>
+        /// <response code="200">Senha redefinida com sucesso</response>
+        /// <response code="400">Token inválido, expirado ou dados inválidos</response>
+        [HttpPost("redefinir-senha")]
+        [EnableRateLimiting("auth")]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> RedefinirSenha([FromBody] RedefinirSenhaRequest request)
+        {
+            var validation = await redefinirSenhaValidator.ValidateAsync(request);
+
+            if (!validation.IsValid)
+            {
+                var erros = validation.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}");
+                return BadRequest(ApiResponse<object>.Fail("Dados inválidos.", erros));
+            }
+
+            var redefinida = await authService.RedefinirSenhaAsync(request);
+
+            if (!redefinida)
+                return BadRequest(ApiResponse<object>.Fail("Token de redefinição inválido ou expirado."));
+
+            return Ok(ApiResponse<object>.Ok(null!, "Senha redefinida com sucesso. Faça login com a nova senha."));
         }
 
         /// <summary>Encerra a sessão do usuário, revogando o refresh token.</summary>

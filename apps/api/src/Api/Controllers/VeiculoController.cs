@@ -48,12 +48,15 @@ namespace Frota360.Api.Controllers
             return Ok(ApiResponse<VeiculoResponse>.Ok(veiculo));
         }
 
-        /// <summary>Cadastra um novo veículo.</summary>
+        /// <summary>Cadastra um novo veículo. (Admin, Supervisor)</summary>
         /// <response code="201">Veículo criado com sucesso</response>
         /// <response code="400">Dados inválidos</response>
+        /// <response code="403">Sem permissão</response>
         [HttpPost]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Supervisor}")]
         [ProducesResponseType<ApiResponse<VeiculoResponse>>(StatusCodes.Status201Created)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
         public async Task<IActionResult> Create([FromBody] CreateVeiculoRequest request)
         {
             var validation = await createValidator.ValidateAsync(request);
@@ -69,10 +72,13 @@ namespace Frota360.Api.Controllers
                 ApiResponse<VeiculoResponse>.Ok(criado, "Veículo cadastrado com sucesso."));
         }
 
-        /// <summary>Atualiza os dados de um veículo.</summary>
+        /// <summary>Atualiza os dados de um veículo. (Admin, Supervisor)</summary>
         /// <response code="200">Atualizado com sucesso</response>
+        /// <response code="403">Sem permissão</response>
         /// <response code="404">Veículo não encontrado</response>
         [HttpPut("{id:int}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Supervisor}")]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
         [ProducesResponseType<ApiResponse<VeiculoResponse>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
@@ -94,10 +100,13 @@ namespace Frota360.Api.Controllers
             return Ok(ApiResponse<VeiculoResponse>.Ok(atualizado, "Veículo atualizado com sucesso."));
         }
 
-        /// <summary>Remove um veículo da frota.</summary>
+        /// <summary>Remove um veículo da frota. (Admin)</summary>
         /// <response code="200">Removido com sucesso</response>
+        /// <response code="403">Sem permissão</response>
         /// <response code="404">Veículo não encontrado</response>
         [HttpDelete("{id:int}")]
+        [Authorize(Roles = Roles.Admin)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Delete(int id)

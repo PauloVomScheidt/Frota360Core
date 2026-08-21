@@ -1,12 +1,13 @@
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Rota.Response;
+using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Rotas;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Rotas.Commands.UpdateRota
 {
-    public sealed class UpdateRotaHandler(IRotaRepository repository, ILogger<UpdateRotaHandler> logger)
+    public sealed class UpdateRotaHandler(IRotaRepository repository, ICurrentUserService currentUser, ILogger<UpdateRotaHandler> logger)
         : ICommandHandler<UpdateRotaCommand, RotaResponse?>
     {
         public async Task<RotaResponse?> HandleAsync(UpdateRotaCommand command, CancellationToken cancellationToken = default)
@@ -15,7 +16,7 @@ namespace Frota360.Application.UseCases.Rotas.Commands.UpdateRota
             {
                 logger.LogInformation("Iniciando atualização da rota Id {Id}", command.Id);
 
-                var rota = await repository.GetByIdAsync(command.Id);
+                var rota = await repository.GetByIdAsync(command.Id, currentUser.EmpresaId);
 
                 if (rota is null)
                 {

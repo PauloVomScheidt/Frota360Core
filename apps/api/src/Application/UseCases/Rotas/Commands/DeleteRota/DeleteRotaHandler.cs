@@ -1,10 +1,11 @@
 using Frota360.Application.Abstractions.Messaging;
+using Frota360.Application.Interfaces;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Rotas.Commands.DeleteRota
 {
-    public sealed class DeleteRotaHandler(IRotaRepository repository, ILogger<DeleteRotaHandler> logger)
+    public sealed class DeleteRotaHandler(IRotaRepository repository, ICurrentUserService currentUser, ILogger<DeleteRotaHandler> logger)
         : ICommandHandler<DeleteRotaCommand, bool>
     {
         public async Task<bool> HandleAsync(DeleteRotaCommand command, CancellationToken cancellationToken = default)
@@ -13,7 +14,7 @@ namespace Frota360.Application.UseCases.Rotas.Commands.DeleteRota
             {
                 logger.LogInformation("Iniciando remoção da rota Id {Id}", command.Id);
 
-                var rota = await repository.GetByIdAsync(command.Id);
+                var rota = await repository.GetByIdAsync(command.Id, currentUser.EmpresaId);
 
                 if (rota is null)
                 {

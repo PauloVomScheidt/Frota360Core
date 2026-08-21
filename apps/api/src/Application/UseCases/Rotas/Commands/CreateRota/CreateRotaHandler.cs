@@ -1,5 +1,6 @@
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Rota.Response;
+using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Rotas;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
@@ -7,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Rotas.Commands.CreateRota
 {
-    public sealed class CreateRotaHandler(IRotaRepository repository, ILogger<CreateRotaHandler> logger)
+    public sealed class CreateRotaHandler(IRotaRepository repository, ICurrentUserService currentUser, ILogger<CreateRotaHandler> logger)
         : ICommandHandler<CreateRotaCommand, RotaResponse>
     {
         public async Task<RotaResponse> HandleAsync(CreateRotaCommand command, CancellationToken cancellationToken = default)
@@ -20,6 +21,7 @@ namespace Frota360.Application.UseCases.Rotas.Commands.CreateRota
 
                 var rota = new Rota
                 {
+                    EmpresaId = currentUser.EmpresaId,
                     Origem = request.Origem,
                     Destino = request.Destino,
                     CodigoMotorista = request.CodigoMotorista,
