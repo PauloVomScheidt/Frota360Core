@@ -133,7 +133,7 @@ img { display: block; max-width: 100%; }
   border-radius: calc(var(--radius-md) * 0.75);
 }
 .tag-accent { background: var(--color-accent-100); color: var(--color-accent-800); }
-.tag-neutral { background: var(--color-neutral-200); color: var(--color-neutral-800); }
+.tag-neutral { background: var(--color-neutral-100); color: var(--color-neutral-800); }
 
 /* — navigation — */
 .nav {

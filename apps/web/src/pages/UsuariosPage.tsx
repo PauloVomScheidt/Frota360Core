@@ -6,13 +6,10 @@ import type { Role, UsuarioResponse } from '../api/types'
 import { ROLES } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
+import { TableStates } from '../components/Table'
+import { formatDate } from '../lib/format'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
-
-function formatDate(iso: string): string {
-  const date = new Date(iso)
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('pt-BR')
-}
 
 export function UsuariosPage() {
   const queryClient = useQueryClient()
@@ -73,23 +70,15 @@ export function UsuariosPage() {
             </tr>
           </thead>
           <tbody>
-            {usuariosQuery.isPending && (
-              <tr>
-                <td colSpan={6} style={{ color: mutedText }}>Carregando usuários…</td>
-              </tr>
-            )}
-            {usuariosQuery.isError && (
-              <tr>
-                <td colSpan={6} style={{ color: '#a03123' }}>
-                  {mensagensDeErro(usuariosQuery.error, 'Não foi possível carregar os usuários.')[0]}
-                </td>
-              </tr>
-            )}
-            {usuariosQuery.isSuccess && usuarios.length === 0 && (
-              <tr>
-                <td colSpan={6} style={{ color: mutedText }}>Nenhum usuário cadastrado.</td>
-              </tr>
-            )}
+            <TableStates
+              colSpan={6}
+              pending={usuariosQuery.isPending}
+              error={usuariosQuery.error}
+              empty={usuariosQuery.isSuccess && usuarios.length === 0}
+              textoCarregando="Carregando usuários…"
+              textoErro="Não foi possível carregar os usuários."
+              textoVazio="Nenhum usuário cadastrado."
+            />
             {usuarios.map((usuario) => (
               <tr key={usuario.id}>
                 <td className="font-semibold">

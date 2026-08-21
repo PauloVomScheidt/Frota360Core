@@ -102,3 +102,46 @@ export const RouteIcon = (p: IconProps) => (
     <circle cx={18} cy={5} r={3} />
   </Icon>
 )
+
+export const GridIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x={3} y={3} width={7} height={7} />
+    <rect x={14} y={3} width={7} height={7} />
+    <rect x={3} y={14} width={7} height={7} />
+    <rect x={14} y={14} width={7} height={7} />
+  </Icon>
+)
+
+export const MailIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x={2} y={4} width={20} height={16} rx={0} />
+    <path d="m2 6 10 7 10-7" />
+  </Icon>
+)
+
+export const ChevronLeftIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M15 18l-6-6 6-6" />
+  </Icon>
+)
+
+export const ChevronRightIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9 18l6-6-6-6" />
+  </Icon>
+)
+
+export const WhatsappIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 4a8 8 0 0 1 8 8c0 4.4-3.6 8-8 8a7.9 7.9 0 0 1-4-1.1L4 20l1.2-4A7.9 7.9 0 0 1 4 12a8 8 0 0 1 8-8Z" />
+    <path d="M9 9.5c0 3 2.5 5.5 5.5 5.5" />
+  </Icon>
+)
+
+export const InstagramIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x={3} y={3} width={18} height={18} rx={0} />
+    <circle cx={12} cy={12} r={4.5} />
+    <circle cx={17} cy={7} r={0.7} fill="currentColor" />
+  </Icon>
+)

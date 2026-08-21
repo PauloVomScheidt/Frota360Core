@@ -3,21 +3,12 @@ import { useQuery } from '@tanstack/react-query'
 import { motoristasApi } from '../api/motoristas'
 import { veiculosApi } from '../api/veiculos'
 import { rotasApi } from '../api/rotas'
-import { mensagensDeErro } from '../api/errors'
 import { AppLayout, PageHeader } from '../components/AppLayout'
+import { TableStates } from '../components/Table'
+import { formatDate, formatKm } from '../lib/format'
 import { RouteIcon, SearchIcon, TruckIcon, UsersIcon, WrenchIcon } from '../components/icons'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const date = new Date(iso)
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('pt-BR')
-}
-
-function formatKm(km: number): string {
-  return `${km.toLocaleString('pt-BR')} km`
-}
 
 interface Kpi {
   label: string
@@ -147,27 +138,15 @@ export function DashboardPage() {
             </tr>
           </thead>
           <tbody>
-            {veiculosQuery.isPending && (
-              <tr>
-                <td colSpan={6} style={{ color: mutedText }}>
-                  Carregando veículos…
-                </td>
-              </tr>
-            )}
-            {veiculosQuery.isError && (
-              <tr>
-                <td colSpan={6} style={{ color: '#a03123' }}>
-                  {mensagensDeErro(veiculosQuery.error, 'Não foi possível carregar os veículos.')[0]}
-                </td>
-              </tr>
-            )}
-            {veiculosQuery.isSuccess && veiculosFiltrados.length === 0 && (
-              <tr>
-                <td colSpan={6} style={{ color: mutedText }}>
-                  {busca ? 'Nenhum veículo encontrado para a busca.' : 'Nenhum veículo cadastrado ainda.'}
-                </td>
-              </tr>
-            )}
+            <TableStates
+              colSpan={6}
+              pending={veiculosQuery.isPending}
+              error={veiculosQuery.error}
+              empty={veiculosQuery.isSuccess && veiculosFiltrados.length === 0}
+              textoCarregando="Carregando veículos…"
+              textoErro="Não foi possível carregar os veículos."
+              textoVazio={busca ? 'Nenhum veículo encontrado para a busca.' : 'Nenhum veículo cadastrado ainda.'}
+            />
             {veiculosFiltrados.map((v) => (
               <tr key={v.id}>
                 <td className="font-semibold">
