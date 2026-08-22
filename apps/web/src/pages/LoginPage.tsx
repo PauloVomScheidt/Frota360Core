@@ -6,6 +6,7 @@ import { mensagensDeErro } from '../api/errors'
 import { notificarMudancaDeSessao } from '../auth/useSession'
 import { ErrorList } from '../components/AppLayout'
 import { EyeIcon, EyeOffIcon } from '../components/icons'
+import { LogoMark, Wordmark } from '../components/Logo'
 
 const brandPanelStyle: CSSProperties = {
   backgroundColor: 'var(--color-accent-800)',
@@ -16,7 +17,7 @@ const brandPanelStyle: CSSProperties = {
 export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const destino = (location.state as { from?: string } | null)?.from ?? '/'
+  const destino = (location.state as { from?: string } | null)?.from ?? '/dashboard'
 
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
@@ -41,14 +42,9 @@ export function LoginPage() {
         className="relative hidden min-w-[320px] flex-col justify-between p-14 md:flex md:w-[44%]"
         style={{ ...brandPanelStyle, color: '#fdfaf6' }}
       >
-        <div className="flex items-center gap-2.5">
-          <div className="h-[22px] w-[22px] flex-none" style={{ backgroundColor: '#fdfaf6' }} />
-          <span
-            className="text-base font-extrabold tracking-tight"
-            style={{ fontFamily: 'var(--font-heading)', color: '#fdfaf6' }}
-          >
-            FROTA 360
-          </span>
+        <div className="flex flex-col items-start gap-2.5">
+          <LogoMark size={56} tom="light" />
+          <Wordmark size={22} cor="#fdfaf6" corDestaque="#5c7896" />
         </div>
         <div>
           <div

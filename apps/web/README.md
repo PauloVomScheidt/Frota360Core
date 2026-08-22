@@ -37,13 +37,21 @@ A URL da API vem de `VITE_API_URL` (`.env.development` / `.env.production`).
 
 | Rota | Acesso | Descrição |
 |---|---|---|
+| `/` | público | Landing (apresentação do produto) |
 | `/login` | anônimo | Entrar (não há cadastro público) |
 | `/esqueci-senha` | anônimo | Dispara `POST /auth/esqueci-senha` (resposta neutra) |
 | `/redefinir-senha?token=` | anônimo | Destino do e-mail de reset |
 | `/convite?token=` | anônimo | Destino do convite: cria a conta e já autentica |
-| `/` | autenticado | Visão geral da frota |
+| `/dashboard` | autenticado | Visão geral da frota |
+| `/motoristas` | autenticado (cadastro: Admin/Supervisor) | Lista e cadastro de motoristas |
+| `/veiculos` | autenticado (cadastro: Admin/Supervisor) | Lista e cadastro de veículos |
+| `/rotas` | autenticado | Lista e cadastro de rotas |
 | `/usuarios` | Admin | Alterar permissão, ativar/desativar |
 | `/convites` | Admin | Criar, listar e cancelar convites |
+
+A navegação interna é uma **sidebar colapsável** (`AppLayout`) com duas categorias: *Dashboard*
+(Visão geral, Motoristas, Veículos, Rotas) e *Controle* (Usuários, Convites — só para Admin).
+O estado recolhido/expandido fica em `localStorage`.
 
 ## Estrutura
 
@@ -60,8 +68,8 @@ src/
 │   ├── useSession.ts   # usuário logado, reativo a login/logout
 │   ├── permissions.ts  # matriz de roles (espelho da API — o servidor é a autoridade)
 │   └── senha.ts        # regras de senha compartilhadas
-├── components/     # AppLayout (nav), AuthScreen, RequireAuth/RequireAdmin, icons
-├── lib/            # queryClient do TanStack Query
+├── components/     # AppLayout (sidebar+topbar), Table, AuthScreen, Logo, RequireAuth/RequireAdmin, icons
+├── lib/            # queryClient do TanStack Query, format.ts (datas, km, CPF)
 └── pages/          # telas
 ```
 

@@ -27,7 +27,7 @@ export function AcceptInvitePage() {
     mutationFn: aceitarConvite,
     onSuccess: () => {
       notificarMudancaDeSessao()
-      navigate('/', { replace: true })
+      navigate('/dashboard', { replace: true })
     },
   })
 

@@ -5,14 +5,10 @@ import { mensagensDeErro } from '../api/errors'
 import type { ConviteResponse, Role } from '../api/types'
 import { DESCRICAO_ROLE, ROLES } from '../auth/permissions'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
+import { InlineForm, TableStates } from '../components/Table'
+import { formatDateTime } from '../lib/format'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
-
-function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const date = new Date(iso)
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('pt-BR')
-}
 
 type StatusConvite = 'Utilizado' | 'Expirado' | 'Pendente'
 
@@ -74,11 +70,7 @@ export function ConvitesPage() {
         subtitulo="Convide pessoas para a sua empresa. O convite vale 7 dias e só pode ser usado uma vez."
       />
 
-      <form
-        onSubmit={handleSubmit}
-        className="mb-8 flex flex-wrap items-end gap-4 p-5"
-        style={{ border: '1px solid var(--color-divider)', background: 'var(--color-surface)' }}
-      >
+      <InlineForm onSubmit={handleSubmit}>
         <div className="field min-w-[260px] flex-1">
           <label htmlFor="email">E-mail do convidado</label>
           <input
@@ -119,7 +111,7 @@ export function ConvitesPage() {
         <p className="m-0 w-full text-xs" style={{ color: mutedText }}>
           {DESCRICAO_ROLE[role]} Reenviar para o mesmo e-mail invalida o convite pendente anterior.
         </p>
-      </form>
+      </InlineForm>
 
       <div className="mb-4">
         <ErrorList mensagens={erros} />
@@ -160,27 +152,15 @@ export function ConvitesPage() {
             </tr>
           </thead>
           <tbody>
-            {convitesQuery.isPending && (
-              <tr>
-                <td colSpan={6} style={{ color: mutedText }}>
-                  Carregando convites…
-                </td>
-              </tr>
-            )}
-            {convitesQuery.isError && (
-              <tr>
-                <td colSpan={6} style={{ color: '#a03123' }}>
-                  {mensagensDeErro(convitesQuery.error, 'Não foi possível carregar os convites.')[0]}
-                </td>
-              </tr>
-            )}
-            {convitesQuery.isSuccess && convites.length === 0 && (
-              <tr>
-                <td colSpan={6} style={{ color: mutedText }}>
-                  Nenhum convite enviado ainda.
-                </td>
-              </tr>
-            )}
+            <TableStates
+              colSpan={6}
+              pending={convitesQuery.isPending}
+              error={convitesQuery.error}
+              empty={convitesQuery.isSuccess && convites.length === 0}
+              textoCarregando="Carregando convites…"
+              textoErro="Não foi possível carregar os convites."
+              textoVazio="Nenhum convite enviado ainda."
+            />
             {convites.map((convite) => {
               const status = statusDoConvite(convite)
               return (

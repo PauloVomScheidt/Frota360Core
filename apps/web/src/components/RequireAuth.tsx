@@ -16,7 +16,7 @@ export function RequireAuth() {
 export function RequireAdmin() {
   const user = useSession()
   if (!pode.gerenciarUsuarios(user?.role)) {
-    return <Navigate to="/" replace />
+    return <Navigate to="/dashboard" replace />
   }
   return <Outlet />
 }
