@@ -1,18 +1,19 @@
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Motorista.Response;
+using Frota360.Application.Interfaces;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Motoristas.Queries.GetMotoristaById
 {
-    public sealed class GetMotoristaByIdHandler(IMotoristaRepository repository, ILogger<GetMotoristaByIdHandler> logger)
+    public sealed class GetMotoristaByIdHandler(IMotoristaRepository repository, ICurrentUserService currentUser, ILogger<GetMotoristaByIdHandler> logger)
         : IQueryHandler<GetMotoristaByIdQuery, MotoristaResponse?>
     {
         public async Task<MotoristaResponse?> HandleAsync(GetMotoristaByIdQuery query, CancellationToken cancellationToken = default)
         {
             logger.LogInformation("Buscando motorista Id {Id}", query.Id);
 
-            var motorista = await repository.GetByIdAsync(query.Id);
+            var motorista = await repository.GetByIdAsync(query.Id, currentUser.EmpresaId);
 
             if (motorista is null)
             {

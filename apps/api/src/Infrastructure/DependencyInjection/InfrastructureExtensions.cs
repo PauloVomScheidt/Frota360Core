@@ -1,10 +1,13 @@
 ﻿using System.Text;
+using System.Text.Json;
+using Frota360.Domain.Common;
 using Frota360.Domain.Interfaces.Repositories;
 using Frota360.Domain.Interfaces.Services;
 using Frota360.Infrastructure.Data;
 using Frota360.Infrastructure.Repositories;
 using Frota360.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,7 +35,15 @@ namespace Frota360.Infrastructure.DependencyInjection
             services.AddScoped<IUsuarioRepository, UsuarioRepository>();
             services.AddScoped<IMotoristaRepository, MotoristaRepository>();
             services.AddScoped<IRotaRepository, RotaRepository>();
+            services.AddScoped<IConviteRepository, ConviteRepository>();
+            services.AddScoped<IEmpresaRepository, EmpresaRepository>();
             services.AddScoped<ITokenService, TokenService>();
+
+            // E-mail: Resend quando a chave está configurada; em dev sem chave, loga o conteúdo no console
+            if (!string.IsNullOrWhiteSpace(configuration["Resend:ApiKey"]))
+                services.AddHttpClient<IEmailService, ResendEmailService>();
+            else
+                services.AddSingleton<IEmailService, LogEmailService>();
 
             // JWT
             services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -49,9 +60,37 @@ namespace Frota360.Infrastructure.DependencyInjection
                         IssuerSigningKey = new SymmetricSecurityKey(
                             Encoding.UTF8.GetBytes(jwtKey))
                     };
+
+                    // 401/403 no mesmo envelope ApiResponse do resto da API
+                    options.Events = new JwtBearerEvents
+                    {
+                        OnChallenge = context =>
+                        {
+                            context.HandleResponse();
+                            return EscreverEnvelopeAsync(context.Response,
+                                StatusCodes.Status401Unauthorized,
+                                "Não autenticado. Faça login para continuar.");
+                        },
+                        OnForbidden = context =>
+                            EscreverEnvelopeAsync(context.Response,
+                                StatusCodes.Status403Forbidden,
+                                "Você não tem permissão para esta operação.")
+                    };
                 });
 
             return services;
+        }
+
+        private static Task EscreverEnvelopeAsync(HttpResponse response, int statusCode, string mensagem)
+        {
+            response.StatusCode = statusCode;
+            response.ContentType = "application/json";
+
+            var json = JsonSerializer.Serialize(
+                ApiResponse<object>.Fail(mensagem),
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+
+            return response.WriteAsync(json);
         }
     }
 }

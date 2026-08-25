@@ -3,6 +3,7 @@
     public class Rota
     {
         public int Id { get; set; }
+        public int EmpresaId { get; set; }
         public string Origem { get; set; } = string.Empty;
         public string Destino { get; set; } = string.Empty;
         public int CodigoMotorista { get; set; }

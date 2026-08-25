@@ -1,3 +1,4 @@
+using Frota360.Application.Common;
 using Frota360.Application.DTOs.Usuario.Request;
 using Frota360.Application.DTOs.Usuario.Response;
 using Frota360.Application.Interfaces;
@@ -5,51 +6,17 @@ using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
 using Frota360.Domain.Interfaces.Services;
 using Microsoft.Extensions.Logging;
-using System.Security.Cryptography;
-using System.Text;
 
 namespace Frota360.Application.Services
 {
-    public class AuthService(IUsuarioRepository repository, ITokenService tokenService, ILogger<AuthService> logger) : IAuthService
+    public class AuthService(IUsuarioRepository repository,
+                             ITokenService tokenService,
+                             IEmailService emailService,
+                             FrontendSettings frontendSettings,
+                             ILogger<AuthService> logger) : IAuthService
     {
         private static readonly TimeSpan RefreshTokenValidade = TimeSpan.FromDays(7);
-
-        public async Task<AuthResponse> RegisterAsync(RegisterRequest request)
-        {
-            try
-            {
-                logger.LogInformation("Iniciando cadastro de usuário com email {Email}", request.Email);
-
-                var refreshToken = tokenService.GerarRefreshToken();
-
-                var usuario = new Usuario
-                {
-                    Nome = request.Nome,
-                    Email = request.Email,
-                    SenhaHash = BCrypt.Net.BCrypt.HashPassword(request.Senha),
-                    RefreshTokenHash = HashRefreshToken(refreshToken),
-                    RefreshTokenExpiraEm = DateTime.UtcNow.Add(RefreshTokenValidade),
-                    DataInclusao = DateTime.UtcNow
-                };
-
-                var criado = await repository.AddAsync(usuario);
-
-                logger.LogInformation("Usuário cadastrado com sucesso. Id {Id} | Email {Email}", criado.Id, criado.Email);
-
-                return new AuthResponse
-                {
-                    Token = tokenService.GerarToken(criado),
-                    RefreshToken = refreshToken,
-                    Nome = criado.Nome,
-                    Email = criado.Email
-                };
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Erro ao cadastrar usuário com email {Email}", request.Email);
-                throw;
-            }
-        }
+        private static readonly TimeSpan ResetSenhaValidade = TimeSpan.FromMinutes(30);
 
         public async Task<AuthResponse?> LoginAsync(LoginRequest request)
         {
@@ -62,6 +29,12 @@ namespace Frota360.Application.Services
                 if (usuario is null)
                 {
                     logger.LogWarning("Tentativa de login com usuário inexistente. Email {Email}", request.Email);
+                    return null;
+                }
+
+                if (!usuario.Ativo)
+                {
+                    logger.LogWarning("Tentativa de login de usuário desativado. Id {Id}", usuario.Id);
                     return null;
                 }
 
@@ -80,7 +53,8 @@ namespace Frota360.Application.Services
                     Token = tokenService.GerarToken(usuario),
                     RefreshToken = refreshToken,
                     Nome = usuario.Nome,
-                    Email = usuario.Email
+                    Email = usuario.Email,
+                    Role = usuario.Role
                 };
             }
             catch (Exception ex)
@@ -94,7 +68,7 @@ namespace Frota360.Application.Services
         {
             try
             {
-                var usuario = await repository.GetByRefreshTokenHashAsync(HashRefreshToken(request.RefreshToken));
+                var usuario = await repository.GetByRefreshTokenHashAsync(TokenHelper.Hash(request.RefreshToken));
 
                 if (usuario is null)
                 {
@@ -108,6 +82,12 @@ namespace Frota360.Application.Services
                     return null;
                 }
 
+                if (!usuario.Ativo)
+                {
+                    logger.LogWarning("Tentativa de refresh de usuário desativado. Id {Id}", usuario.Id);
+                    return null;
+                }
+
                 var refreshToken = await RotacionarRefreshTokenAsync(usuario);
 
                 logger.LogInformation("Token renovado com sucesso. Id {Id}", usuario.Id);
@@ -117,7 +97,8 @@ namespace Frota360.Application.Services
                     Token = tokenService.GerarToken(usuario),
                     RefreshToken = refreshToken,
                     Nome = usuario.Nome,
-                    Email = usuario.Email
+                    Email = usuario.Email,
+                    Role = usuario.Role
                 };
             }
             catch (Exception ex)
@@ -141,19 +122,75 @@ namespace Frota360.Application.Services
             logger.LogInformation("Logout realizado. Id {Id}", usuarioId);
         }
 
+        public async Task EsqueciSenhaAsync(EsqueciSenhaRequest request)
+        {
+            var usuario = await repository.GetByEmailAsync(request.Email);
+
+            // Resposta sempre neutra: nunca revelamos se o e-mail existe
+            if (usuario is null || !usuario.Ativo)
+            {
+                logger.LogInformation("Pedido de reset para e-mail não elegível");
+                return;
+            }
+
+            var token = tokenService.GerarRefreshToken();
+
+            usuario.ResetSenhaTokenHash = TokenHelper.Hash(token);
+            usuario.ResetSenhaExpiraEm = DateTime.UtcNow.Add(ResetSenhaValidade);
+            await repository.UpdateAsync(usuario);
+
+            var link = $"{frontendSettings.BaseUrl.TrimEnd('/')}/redefinir-senha?token={Uri.EscapeDataString(token)}";
+
+            await emailService.EnviarAsync(usuario.Email, "Redefinição de senha — Frota360", $"""
+                <p>Recebemos um pedido para redefinir a senha da sua conta no <strong>Frota360</strong>.</p>
+                <p><a href="{link}">Clique aqui para criar uma nova senha</a>. O link é válido por 30 minutos.</p>
+                <p>Se você não fez este pedido, ignore este e-mail — sua senha continua a mesma.</p>
+                """);
+
+            logger.LogInformation("E-mail de reset de senha enviado. Id {Id}", usuario.Id);
+        }
+
+        public async Task<bool> RedefinirSenhaAsync(RedefinirSenhaRequest request)
+        {
+            var usuario = await repository.GetByResetSenhaTokenHashAsync(TokenHelper.Hash(request.Token));
+
+            if (usuario is null || usuario.ResetSenhaExpiraEm is null || usuario.ResetSenhaExpiraEm < DateTime.UtcNow)
+            {
+                logger.LogWarning("Tentativa de redefinição com token inválido ou expirado");
+                return false;
+            }
+
+            if (!usuario.Ativo)
+            {
+                logger.LogWarning("Tentativa de redefinição de senha de usuário desativado. Id {Id}", usuario.Id);
+                return false;
+            }
+
+            usuario.SenhaHash = BCrypt.Net.BCrypt.HashPassword(request.NovaSenha);
+            usuario.ResetSenhaTokenHash = null;
+            usuario.ResetSenhaExpiraEm = null;
+
+            // Derruba sessões antigas: quem tiver o refresh token anterior perde o acesso
+            usuario.RefreshTokenHash = null;
+            usuario.RefreshTokenExpiraEm = null;
+
+            await repository.UpdateAsync(usuario);
+
+            logger.LogInformation("Senha redefinida com sucesso. Id {Id}", usuario.Id);
+
+            return true;
+        }
+
         /// <summary>Gera um novo refresh token, persiste apenas o hash e devolve o valor em claro.</summary>
         private async Task<string> RotacionarRefreshTokenAsync(Usuario usuario)
         {
             var refreshToken = tokenService.GerarRefreshToken();
 
-            usuario.RefreshTokenHash = HashRefreshToken(refreshToken);
+            usuario.RefreshTokenHash = TokenHelper.Hash(refreshToken);
             usuario.RefreshTokenExpiraEm = DateTime.UtcNow.Add(RefreshTokenValidade);
             await repository.UpdateAsync(usuario);
 
             return refreshToken;
         }
-
-        private static string HashRefreshToken(string refreshToken)
-            => Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken)));
     }
 }

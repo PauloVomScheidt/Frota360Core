@@ -1,12 +1,13 @@
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Motorista.Response;
+using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Motoristas;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Motoristas.Commands.UpdateMotorista
 {
-    public sealed class UpdateMotoristaHandler(IMotoristaRepository repository, ILogger<UpdateMotoristaHandler> logger)
+    public sealed class UpdateMotoristaHandler(IMotoristaRepository repository, ICurrentUserService currentUser, ILogger<UpdateMotoristaHandler> logger)
         : ICommandHandler<UpdateMotoristaCommand, MotoristaResponse?>
     {
         public async Task<MotoristaResponse?> HandleAsync(UpdateMotoristaCommand command, CancellationToken cancellationToken = default)
@@ -15,7 +16,7 @@ namespace Frota360.Application.UseCases.Motoristas.Commands.UpdateMotorista
             {
                 logger.LogInformation("Iniciando atualização do motorista Id {Id}", command.Id);
 
-                var motorista = await repository.GetByIdAsync(command.Id);
+                var motorista = await repository.GetByIdAsync(command.Id, currentUser.EmpresaId);
 
                 if (motorista is null)
                 {

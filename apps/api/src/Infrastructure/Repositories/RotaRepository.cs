@@ -7,11 +7,13 @@ namespace Frota360.Infrastructure.Repositories
 {
     public class RotaRepository(Frota360DbContext context) : IRotaRepository
     {
-        public async Task<IEnumerable<Rota>> GetAllAsync()
-            => await context.Rotas.AsNoTracking().ToListAsync();
+        public async Task<IEnumerable<Rota>> GetAllAsync(int empresaId)
+            => await context.Rotas.AsNoTracking()
+                .Where(r => r.EmpresaId == empresaId)
+                .ToListAsync();
 
-        public async Task<Rota?> GetByIdAsync(int id)
-        => await context.Rotas.FirstOrDefaultAsync(v => v.Id == id);
+        public async Task<Rota?> GetByIdAsync(int id, int empresaId)
+            => await context.Rotas.FirstOrDefaultAsync(r => r.Id == id && r.EmpresaId == empresaId);
 
         public async Task<Rota> AddAsync(Rota rota)
         {

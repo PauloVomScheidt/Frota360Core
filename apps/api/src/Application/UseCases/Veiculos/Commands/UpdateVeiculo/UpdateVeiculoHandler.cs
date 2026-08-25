@@ -1,12 +1,13 @@
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Veiculo.Response;
+using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Veiculos;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Veiculos.Commands.UpdateVeiculo
 {
-    public sealed class UpdateVeiculoHandler(IVeiculoRepository repository, ILogger<UpdateVeiculoHandler> logger)
+    public sealed class UpdateVeiculoHandler(IVeiculoRepository repository, ICurrentUserService currentUser, ILogger<UpdateVeiculoHandler> logger)
         : ICommandHandler<UpdateVeiculoCommand, VeiculoResponse?>
     {
         public async Task<VeiculoResponse?> HandleAsync(UpdateVeiculoCommand command, CancellationToken cancellationToken = default)
@@ -15,7 +16,7 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.UpdateVeiculo
             {
                 logger.LogInformation("Iniciando atualização do veículo Id {Id}", command.Id);
 
-                var veiculo = await repository.GetByIdAsync(command.Id);
+                var veiculo = await repository.GetByIdAsync(command.Id, currentUser.EmpresaId);
 
                 if (veiculo is null)
                 {

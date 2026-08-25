@@ -7,11 +7,13 @@ namespace Frota360.Infrastructure.Repositories
 {
     public class VeiculoRepository(Frota360DbContext context) : IVeiculoRepository
     {
-        public async Task<IEnumerable<Veiculo>> GetAllAsync()
-            => await context.Veiculos.AsNoTracking().ToListAsync();
+        public async Task<IEnumerable<Veiculo>> GetAllAsync(int empresaId)
+            => await context.Veiculos.AsNoTracking()
+                .Where(v => v.EmpresaId == empresaId)
+                .ToListAsync();
 
-        public async Task<Veiculo?> GetByIdAsync(int id)
-        => await context.Veiculos.FirstOrDefaultAsync(v => v.Id == id);
+        public async Task<Veiculo?> GetByIdAsync(int id, int empresaId)
+            => await context.Veiculos.FirstOrDefaultAsync(v => v.Id == id && v.EmpresaId == empresaId);
 
         public async Task<Veiculo> AddAsync(Veiculo veiculo)
         {

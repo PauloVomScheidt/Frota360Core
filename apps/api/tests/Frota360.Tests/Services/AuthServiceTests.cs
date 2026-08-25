@@ -1,3 +1,4 @@
+using Frota360.Application.Common;
 using Frota360.Application.DTOs.Usuario.Request;
 using Frota360.Application.Services;
 using Frota360.Domain.Entities;
@@ -14,45 +15,14 @@ namespace Frota360.Tests.Services
     {
         private readonly IUsuarioRepository _repository = Substitute.For<IUsuarioRepository>();
         private readonly ITokenService _tokenService = Substitute.For<ITokenService>();
+        private readonly IEmailService _emailService = Substitute.For<IEmailService>();
 
         private AuthService CriarServico() =>
-            new(_repository, _tokenService, NullLogger<AuthService>.Instance);
+            new(_repository, _tokenService, _emailService,
+                new FrontendSettings("http://localhost:5173"), NullLogger<AuthService>.Instance);
 
         private static string HashDe(string refreshToken) =>
             Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken)));
-
-        [Fact]
-        public async Task Register_DeveHashearSenha_PersistirERetornarToken()
-        {
-            _repository.AddAsync(Arg.Any<Usuario>())
-                .Returns(ci =>
-                {
-                    var u = ci.Arg<Usuario>();
-                    u.Id = 1;
-                    return u;
-                });
-            _tokenService.GerarToken(Arg.Any<Usuario>()).Returns("token-jwt");
-            _tokenService.GerarRefreshToken().Returns("refresh-token");
-
-            var service = CriarServico();
-            var request = new RegisterRequest
-            {
-                Nome = "Ana",
-                Email = "ana@email.com",
-                Senha = "SenhaForte123"
-            };
-
-            var resposta = await service.RegisterAsync(request);
-
-            Assert.Equal("token-jwt", resposta.Token);
-            Assert.Equal("refresh-token", resposta.RefreshToken);
-            Assert.Equal("Ana", resposta.Nome);
-            Assert.Equal("ana@email.com", resposta.Email);
-            // A senha nunca deve ser persistida em texto puro
-            await _repository.Received(1).AddAsync(Arg.Is<Usuario>(u =>
-                u.SenhaHash != "SenhaForte123" &&
-                BCrypt.Net.BCrypt.Verify("SenhaForte123", u.SenhaHash)));
-        }
 
         [Fact]
         public async Task Login_ComCredenciaisValidas_DeveRetornarToken()
@@ -110,6 +80,48 @@ namespace Frota360.Tests.Services
 
             var resposta = await service.LoginAsync(
                 new LoginRequest { Email = "ana@email.com", Senha = "SenhaErrada" });
+
+            Assert.Null(resposta);
+            _tokenService.DidNotReceive().GerarToken(Arg.Any<Usuario>());
+        }
+
+        [Fact]
+        public async Task Login_UsuarioDesativado_DeveRetornarNull()
+        {
+            var usuario = new Usuario
+            {
+                Id = 1,
+                Email = "ana@email.com",
+                SenhaHash = BCrypt.Net.BCrypt.HashPassword("SenhaForte123"),
+                Ativo = false
+            };
+            _repository.GetByEmailAsync("ana@email.com").Returns(usuario);
+
+            var service = CriarServico();
+
+            var resposta = await service.LoginAsync(
+                new LoginRequest { Email = "ana@email.com", Senha = "SenhaForte123" });
+
+            Assert.Null(resposta);
+            _tokenService.DidNotReceive().GerarToken(Arg.Any<Usuario>());
+        }
+
+        [Fact]
+        public async Task Refresh_UsuarioDesativado_DeveRetornarNull()
+        {
+            var usuario = new Usuario
+            {
+                Id = 1,
+                RefreshTokenHash = HashDe("refresh-token"),
+                RefreshTokenExpiraEm = DateTime.UtcNow.AddDays(1),
+                Ativo = false
+            };
+            _repository.GetByRefreshTokenHashAsync(HashDe("refresh-token")).Returns(usuario);
+
+            var service = CriarServico();
+
+            var resposta = await service.RefreshAsync(
+                new RefreshTokenRequest { RefreshToken = "refresh-token" });
 
             Assert.Null(resposta);
             _tokenService.DidNotReceive().GerarToken(Arg.Any<Usuario>());
@@ -176,6 +188,111 @@ namespace Frota360.Tests.Services
             Assert.Null(resposta);
             _tokenService.DidNotReceive().GerarToken(Arg.Any<Usuario>());
             await _repository.DidNotReceive().UpdateAsync(Arg.Any<Usuario>());
+        }
+
+        [Fact]
+        public async Task EsqueciSenha_UsuarioExistente_DevePersistirHashEEnviarEmailComLink()
+        {
+            var usuario = new Usuario { Id = 1, Email = "ana@email.com", Ativo = true };
+            _repository.GetByEmailAsync("ana@email.com").Returns(usuario);
+            _tokenService.GerarRefreshToken().Returns("token-reset");
+
+            var service = CriarServico();
+
+            await service.EsqueciSenhaAsync(new EsqueciSenhaRequest { Email = "ana@email.com" });
+
+            await _repository.Received(1).UpdateAsync(Arg.Is<Usuario>(u =>
+                u.ResetSenhaTokenHash == HashDe("token-reset") &&
+                u.ResetSenhaExpiraEm > DateTime.UtcNow));
+            await _emailService.Received(1).EnviarAsync("ana@email.com",
+                Arg.Any<string>(), Arg.Is<string>(corpo => corpo.Contains("token-reset")));
+        }
+
+        [Fact]
+        public async Task EsqueciSenha_EmailInexistente_NaoDeveEnviarNemLancar()
+        {
+            _repository.GetByEmailAsync(Arg.Any<string>()).Returns((Usuario?)null);
+
+            var service = CriarServico();
+
+            await service.EsqueciSenhaAsync(new EsqueciSenhaRequest { Email = "naoexiste@email.com" });
+
+            await _emailService.DidNotReceive().EnviarAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+            await _repository.DidNotReceive().UpdateAsync(Arg.Any<Usuario>());
+        }
+
+        [Fact]
+        public async Task EsqueciSenha_UsuarioDesativado_NaoDeveEnviar()
+        {
+            var usuario = new Usuario { Id = 1, Email = "ana@email.com", Ativo = false };
+            _repository.GetByEmailAsync("ana@email.com").Returns(usuario);
+
+            var service = CriarServico();
+
+            await service.EsqueciSenhaAsync(new EsqueciSenhaRequest { Email = "ana@email.com" });
+
+            await _emailService.DidNotReceive().EnviarAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+        }
+
+        [Fact]
+        public async Task RedefinirSenha_TokenValido_DeveTrocarSenhaLimparResetERevogarSessao()
+        {
+            var usuario = new Usuario
+            {
+                Id = 1,
+                SenhaHash = BCrypt.Net.BCrypt.HashPassword("SenhaAntiga1"),
+                ResetSenhaTokenHash = HashDe("token-reset"),
+                ResetSenhaExpiraEm = DateTime.UtcNow.AddMinutes(10),
+                RefreshTokenHash = "sessao-ativa",
+                RefreshTokenExpiraEm = DateTime.UtcNow.AddDays(1)
+            };
+            _repository.GetByResetSenhaTokenHashAsync(HashDe("token-reset")).Returns(usuario);
+
+            var service = CriarServico();
+
+            var resultado = await service.RedefinirSenhaAsync(
+                new RedefinirSenhaRequest { Token = "token-reset", NovaSenha = "SenhaNova1" });
+
+            Assert.True(resultado);
+            await _repository.Received(1).UpdateAsync(Arg.Is<Usuario>(u =>
+                BCrypt.Net.BCrypt.Verify("SenhaNova1", u.SenhaHash) &&
+                u.ResetSenhaTokenHash == null &&
+                u.ResetSenhaExpiraEm == null &&
+                u.RefreshTokenHash == null &&
+                u.RefreshTokenExpiraEm == null));
+        }
+
+        [Fact]
+        public async Task RedefinirSenha_TokenExpirado_DeveRetornarFalse()
+        {
+            var usuario = new Usuario
+            {
+                Id = 1,
+                ResetSenhaTokenHash = HashDe("token-expirado"),
+                ResetSenhaExpiraEm = DateTime.UtcNow.AddMinutes(-1)
+            };
+            _repository.GetByResetSenhaTokenHashAsync(HashDe("token-expirado")).Returns(usuario);
+
+            var service = CriarServico();
+
+            var resultado = await service.RedefinirSenhaAsync(
+                new RedefinirSenhaRequest { Token = "token-expirado", NovaSenha = "SenhaNova1" });
+
+            Assert.False(resultado);
+            await _repository.DidNotReceive().UpdateAsync(Arg.Any<Usuario>());
+        }
+
+        [Fact]
+        public async Task RedefinirSenha_TokenDesconhecido_DeveRetornarFalse()
+        {
+            _repository.GetByResetSenhaTokenHashAsync(Arg.Any<string>()).Returns((Usuario?)null);
+
+            var service = CriarServico();
+
+            var resultado = await service.RedefinirSenhaAsync(
+                new RedefinirSenhaRequest { Token = "nao-existe", NovaSenha = "SenhaNova1" });
+
+            Assert.False(resultado);
         }
 
         [Fact]

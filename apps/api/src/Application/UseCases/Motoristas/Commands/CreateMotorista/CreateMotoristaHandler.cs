@@ -1,5 +1,6 @@
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Motorista.Response;
+using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Motoristas;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
@@ -7,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Motoristas.Commands.CreateMotorista
 {
-    public sealed class CreateMotoristaHandler(IMotoristaRepository repository, ILogger<CreateMotoristaHandler> logger)
+    public sealed class CreateMotoristaHandler(IMotoristaRepository repository, ICurrentUserService currentUser, ILogger<CreateMotoristaHandler> logger)
         : ICommandHandler<CreateMotoristaCommand, MotoristaResponse>
     {
         public async Task<MotoristaResponse> HandleAsync(CreateMotoristaCommand command, CancellationToken cancellationToken = default)
@@ -20,6 +21,7 @@ namespace Frota360.Application.UseCases.Motoristas.Commands.CreateMotorista
 
                 var motorista = new Motorista
                 {
+                    EmpresaId = currentUser.EmpresaId,
                     Nome = request.Nome,
                     Email = request.Email,
                     CPF = request.CPF,

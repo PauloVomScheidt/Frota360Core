@@ -1,19 +1,18 @@
-﻿using FluentValidation;
-using Frota360.Application.DTOs.Usuario.Request;
+using FluentValidation;
+using Frota360.Application.DTOs.Convite.Request;
 
-namespace Frota360.Application.Validators.Usuario
+namespace Frota360.Application.Validators.Convite
 {
-    public class RegisterValidator : AbstractValidator<RegisterRequest>
+    public class AceitarConviteValidator : AbstractValidator<AceitarConviteRequest>
     {
-        public RegisterValidator()
+        public AceitarConviteValidator()
         {
+            RuleFor(x => x.Token)
+                .NotEmpty().WithMessage("O token do convite é obrigatório.");
+
             RuleFor(x => x.Nome)
                 .NotEmpty().WithMessage("Nome é obrigatório.")
                 .MaximumLength(100).WithMessage("Nome deve ter no máximo 100 caracteres.");
-
-            RuleFor(x => x.Email)
-                .NotEmpty().WithMessage("E-mail é obrigatório.")
-                .EmailAddress().WithMessage("E-mail inválido.");
 
             RuleFor(x => x.Senha)
                 .NotEmpty().WithMessage("Senha é obrigatória.")

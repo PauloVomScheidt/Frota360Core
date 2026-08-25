@@ -23,7 +23,9 @@ namespace Frota360.Infrastructure.Services
             new Claim(JwtRegisteredClaimNames.Sub,   usuario.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, usuario.Email),
             new Claim(JwtRegisteredClaimNames.Name,  usuario.Nome),
-            new Claim(JwtRegisteredClaimNames.Jti,   Guid.NewGuid().ToString())
+            new Claim(JwtRegisteredClaimNames.Jti,   Guid.NewGuid().ToString()),
+            new Claim("empresaId",                   usuario.EmpresaId.ToString()),
+            new Claim(ClaimTypes.Role,               usuario.Role)
         };
 
             var token = new JwtSecurityToken(

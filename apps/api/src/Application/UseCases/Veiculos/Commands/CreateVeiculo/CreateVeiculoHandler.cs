@@ -1,5 +1,6 @@
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Veiculo.Response;
+using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Veiculos;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
@@ -7,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Veiculos.Commands.CreateVeiculo
 {
-    public sealed class CreateVeiculoHandler(IVeiculoRepository repository, ILogger<CreateVeiculoHandler> logger)
+    public sealed class CreateVeiculoHandler(IVeiculoRepository repository, ICurrentUserService currentUser, ILogger<CreateVeiculoHandler> logger)
         : ICommandHandler<CreateVeiculoCommand, VeiculoResponse>
     {
         public async Task<VeiculoResponse> HandleAsync(CreateVeiculoCommand command, CancellationToken cancellationToken = default)
@@ -20,6 +21,7 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.CreateVeiculo
 
                 var veiculo = new Veiculo
                 {
+                    EmpresaId = currentUser.EmpresaId,
                     NomeVeiculo = request.NomeVeiculo,
                     MarcaVeiculo = request.MarcaVeiculo,
                     Placa = request.Placa,
