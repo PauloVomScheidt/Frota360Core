@@ -4,7 +4,7 @@ export const ROLES: Role[] = ['Admin', 'Supervisor', 'Operador']
 
 export const DESCRICAO_ROLE: Record<Role, string> = {
   Admin: 'Acesso total: usuários, convites e exclusões.',
-  Supervisor: 'Cadastra e edita motoristas, veículos e rotas.',
+  Supervisor: 'Cadastra e edita motoristas, veículos, rotas e manutenções.',
   Operador: 'Visualiza tudo e gerencia rotas.',
 }
 
@@ -18,4 +18,8 @@ export const pode = {
   editarCadastros: (role?: Role) => role === 'Admin' || role === 'Supervisor',
   excluir: (role?: Role) => role === 'Admin',
   editarRotas: (role?: Role) => role !== undefined,
+  /** Criar, editar e concluir manutenções — mesma régua de motoristas/veículos. */
+  editarManutencoes: (role?: Role) => role === 'Admin' || role === 'Supervisor',
+  /** Manter o catálogo de tipos de manutenção (todos podem apenas visualizar). */
+  editarTiposManutencao: (role?: Role) => role === 'Admin' || role === 'Supervisor',
 }
