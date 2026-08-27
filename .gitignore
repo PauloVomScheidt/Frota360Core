@@ -368,3 +368,15 @@ appsettings.Development.json
 appsettings.Production.json
 /Frota360/appsettings.json
 /Frota360/appsettings.Development.json
+
+##
+## Monorepo Frota360
+##
+
+# Índice do CodeGraph (rode `codegraph init` na raiz do repo)
+.codegraph/
+
+# Configuração local do Claude Code
+.claude/settings.local.json
+
+# Build do front (src/Web tem seu próprio .gitignore com node_modules/dist)

@@ -2,7 +2,32 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-API REST .NET 10 de gestão de frotas, multi-tenant por empresa. **Escreva tudo em português**: classes, métodos, DTOs, comentários, logs e mensagens de resposta.
+Monorepo do **Frota360** — sistema de gestão de frotas multi-tenant por empresa. Reúne a API REST .NET 10 e o front-end React que a consome, que antes viviam em repositórios separados (`Frota360`/`Rota360` e `Frota360Web`).
+
+**Escreva tudo em português**: classes, métodos, DTOs, comentários, logs, textos de UI e mensagens de resposta. A única exceção está registrada em [Diagrama de arquitetura](#diagrama-de-arquitetura).
+
+## Mapa do repositório
+
+```
+Frota360.slnx              solution .NET (só os projetos do backend)
+src/
+├── Domain/                Frota360.Domain — entidades, enums, ApiResponse<T>, Roles, interfaces
+├── Application/           Frota360.Application — UseCases (CQRS), Services, DTOs, Validators
+├── Infrastructure/        Frota360.Infrastructure — DbContext, repositórios, TokenService, e-mail, JWT
+├── Api/                   Frota360.Api — Controllers, ExceptionMiddleware, CurrentUserService
+└── Web/                   front-end React + Vite ── tem seu próprio CLAUDE.md
+tests/
+└── Frota360.Tests/        xUnit + NSubstitute (cobre Application e Domain)
+docs/
+├── contexto-api.md        contexto profundo do backend
+├── contexto-web.md        contexto profundo do front (tela a tela, cache keys, endpoints)
+└── arquitetura.py         gera docs/arquitetura.png
+Dockerfile                 build da API (contexto = raiz do repo)
+```
+
+Os nomes dos `.csproj` continuam com o prefixo `Frota360.` (`src/Api/Frota360.Api.csproj`); só os **diretórios** foram encurtados. Ao referenciar um projeto, o caminho é relativo à nova estrutura — `..\Domain\Frota360.Domain.csproj` dentro de `src/`, `..\..\src\Domain\Frota360.Domain.csproj` a partir de `tests/`.
+
+**Ao mexer no front-end, leia também [src/Web/CLAUDE.md](src/Web/CLAUDE.md).** Este arquivo cobre o backend e o que é transversal aos dois.
 
 ## Navegação de código
 Para perguntas estruturais (como X funciona, o que chama Y, o que quebra se eu mudar Z),
@@ -11,24 +36,59 @@ use `codegraph_explore` em vez de Grep/Read. O índice está sempre atualizado.
 ## Documentation
 Apos todas as alterações realizadas atualizar as documentações de contexto, claude.md e readme para refletir as mudanças. Documentação de contexto é obrigatória para qualquer alteração estrutural, regra de negócio ou endpoint novo.
 
-O diagrama de arquitetura vive em `docs/arquitetura.png` e é **gerado** por `docs/arquitetura.py` (Pillow). Não edite o PNG à mão: altere o script e rode `python docs/arquitetura.py`. Regenere sempre que mudar camada, pipeline de request ou ponto de isolamento por `EmpresaId`.
+O aprofundamento vive em `docs/contexto-api.md` (backend) e `docs/contexto-web.md` (front) — atualize o lado correspondente, e **os dois** quando a mudança atravessa a fronteira (endpoint, envelope, papel, regra de negócio visível na tela).
+
+### Diagrama de arquitetura
+
+O diagrama vive em `docs/arquitetura.png` e é **gerado** por `docs/arquitetura.py` (Pillow). Não edite o PNG à mão: altere o script e rode `python docs/arquitetura.py`. Regenere sempre que mudar camada, pipeline de request ou ponto de isolamento por `EmpresaId`.
 
 O diagrama é a **única exceção à regra do português**: seus rótulos são em inglês, para circular fora do time. Paleta monocromática (tons de cinza + preto), sem cor de destaque — os pontos de isolamento por `EmpresaId` são marcados por contorno preto e selo numerado, não por cor. Mantenha isso ao editar o script.
 
+## O contrato entre API e front
+
+O motivo de os dois viverem no mesmo repositório: mudança de um lado quase sempre exige mexer no outro **no mesmo commit**.
+
+| Ponto de contato | Backend | Front |
+|---|---|---|
+| Envelope de resposta | `ApiResponse<T>` montado no controller (`Sucesso`/`Mensagem`/`Dados`/`Erros`) | `unwrap()` em `src/Web/src/api/http.ts` desempacota `dados` e lança `ApiError` |
+| Tipos dos DTOs | `src/Application/DTOs/**` | `src/Web/src/api/types.ts` — **mantido à mão**, não gerado |
+| Papéis | `Roles` em `src/Domain` + `[Authorize(Roles = ...)]` nos controllers | `pode.*` em `src/Web/src/auth/permissions.ts` — espelho apenas para esconder ações; **o servidor é a autoridade** |
+| Multi-tenant | `EmpresaId` vem da claim `empresaId` do JWT | transparente — o cliente nunca envia id de empresa |
+| Erro de regra de negócio | `throw new InvalidOperationException("texto ao usuário")` → 422 | mensagem exibida literalmente via `mensagensDeErro()` |
+| URL da API | `https://localhost:7271` / `http://localhost:5062` (`src/Api/Properties/launchSettings.json`) | `VITE_API_URL` em `src/Web/.env.development` |
+| CORS | origem liberada: `http://localhost:5173` | `npm run dev` usa porta fixa 5173 por causa disso |
+
+**Ao criar ou alterar um endpoint, o roteiro completo é:** controller + handler + validator + teste → `docs/contexto-api.md` → `src/Web/src/api/<recurso>.ts` e `types.ts` → `docs/contexto-web.md` (mapa de endpoints §6.5 e cross-invalidation §6.4) → tela.
+
+`npm run gen:api` (em `src/Web/`) regenera só `src/api/schema.d.ts` a partir do OpenAPI e **exige a API rodando** — ele não atualiza `types.ts`.
+
 ## Comandos
+
+Backend, a partir da raiz do repositório:
 
 ```powershell
 dotnet build Frota360.slnx
 dotnet test
 dotnet test --filter "FullyQualifiedName~ManutencaoHandlersTests"   # uma classe
 dotnet test --filter "DisplayName~Create_DevePersistir"             # um teste
-dotnet run --project Frota360                                       # localhost:5062 → /scalar/v1
+dotnet run --project src/Api                                        # localhost:5062 → /scalar/v1
 
-dotnet ef migrations add <Nome> --project Frota360.Infrastructure --startup-project Frota360
-dotnet ef database update --project Frota360.Infrastructure --startup-project Frota360
+dotnet ef migrations add <Nome> --project src/Infrastructure --startup-project src/Api
+dotnet ef database update --project src/Infrastructure --startup-project src/Api
 
-dotnet user-secrets set "Jwt:Key" "<32+ caracteres>" --project Frota360
+dotnet user-secrets set "Jwt:Key" "<32+ caracteres>" --project src/Api
 ```
+
+Front-end, a partir de `src/Web/`:
+
+```powershell
+npm install
+npm run dev      # http://localhost:5173 (porta fixa — origem liberada no CORS da API)
+npm run build    # tsc -b (type-check) + vite build
+npm run lint     # oxlint
+```
+
+Não há suíte de testes no front. Subir o sistema inteiro em desenvolvimento = dois terminais: `dotnet run --project src/Api` e, em `src/Web/`, `npm run dev`.
 
 `AddInfrastructure` lança na inicialização se `Jwt:Key` faltar ou tiver menos de 32 caracteres. Em produção: `Jwt__Key`, `Resend__ApiKey`, `Backoffice__ApiKey`, `ConnectionStrings__DefaultConnection` por variável de ambiente.
 
@@ -36,12 +96,12 @@ dotnet user-secrets set "Jwt:Key" "<32+ caracteres>" --project Frota360
 
 | Projeto | Pode referenciar | Nunca referencia |
 |---|---|---|
-| **Frota360.Domain** — entidades, enums, `ApiResponse<T>`, `Roles`, interfaces de repositório/serviço | nada (sem pacotes) | EF Core, ASP.NET |
-| **Frota360.Application** — `UseCases/` (CQRS), `Services/`, `DTOs/`, validators | Domain | Infrastructure, ASP.NET, `DbContext` |
-| **Frota360.Infrastructure** — `Frota360DbContext`, repositórios, `TokenService`, e-mail, config do JWT | Domain | Application |
-| **Frota360** (`Frota360.Api`) — controllers, `ExceptionMiddleware`, `CurrentUserService` | Application + Infrastructure | — |
+| **Frota360.Domain** (`src/Domain`) — entidades, enums, `ApiResponse<T>`, `Roles`, interfaces de repositório/serviço | nada (sem pacotes) | EF Core, ASP.NET |
+| **Frota360.Application** (`src/Application`) — `UseCases/` (CQRS), `Services/`, `DTOs/`, validators | Domain | Infrastructure, ASP.NET, `DbContext` |
+| **Frota360.Infrastructure** (`src/Infrastructure`) — `Frota360DbContext`, repositórios, `TokenService`, e-mail, config do JWT | Domain | Application |
+| **Frota360.Api** (`src/Api`) — controllers, `ExceptionMiddleware`, `CurrentUserService` | Application + Infrastructure | — |
 
-Interface de repositório nova vai em `Domain/Interfaces/Repositories`, implementação em `Infrastructure/Repositories`, registro em `InfrastructureExtensions.AddInfrastructure`.
+Interface de repositório nova vai em `src/Domain/Interfaces/Repositories`, implementação em `src/Infrastructure/Repositories`, registro em `InfrastructureExtensions.AddInfrastructure`.
 
 ### Fluxo de um request
 
@@ -114,14 +174,14 @@ Ao escrever qualquer acesso a dados novo:
 1. Injete `ICurrentUserService` no handler e passe `currentUser.EmpresaId` ao repositório.
 2. Assinatura de repositório inclui `empresaId` e filtra por ele: `GetAllAsync(int empresaId)`, `GetByIdAsync(int id, int empresaId)`, `ExisteXAsync(int empresaId, ...)`. Não crie sobrecarga sem `empresaId`.
 3. No create, `EmpresaId = currentUser.EmpresaId` na entidade.
-4. **Todo id de FK vindo do request é resolvido por `GetByIdAsync(id, currentUser.EmpresaId)` antes de gravar** — assim um id de outra empresa simplesmente "não existe". `CreateManutencaoHandler` é o modelo a copiar; `CreateRotaHandler`/`UpdateRotaHandler` seguem o mesmo padrão desde a RN07. A auditoria completa da regra está em `contexto_api.md` (§ Auditoria de isolamento por EmpresaId).
+4. **Todo id de FK vindo do request é resolvido por `GetByIdAsync(id, currentUser.EmpresaId)` antes de gravar** — assim um id de outra empresa simplesmente "não existe". `CreateManutencaoHandler` é o modelo a copiar; `CreateRotaHandler`/`UpdateRotaHandler` seguem o mesmo padrão desde a RN07. A auditoria completa da regra está em `docs/contexto-api.md` (§ Auditoria de isolamento por EmpresaId).
 5. Índice único no `DbContext` é composto com `EmpresaId` (`(EmpresaId, CPF)`, `(EmpresaId, Nome)`). Exceção: `Usuario.Email` é único global.
 
 Não há query filter global no EF — o filtro é responsabilidade de cada método de repositório.
 
 ## Testes
 
-`Frota360.Tests/`, espelhando a Application: `UseCases/<Agregado>/<Agregado>HandlersTests.cs`, `<Agregado>MappingsTests.cs`, `<X>ValidatorTests.cs`; `Services/<Servico>Tests.cs`; `Abstractions/DispatcherTests.cs`. O projeto referencia Application e Domain — **não referencia Infrastructure nem a API**, então não há teste de repositório, DbContext ou endpoint.
+`tests/Frota360.Tests/`, espelhando a Application: `UseCases/<Agregado>/<Agregado>HandlersTests.cs`, `<Agregado>MappingsTests.cs`, `<X>ValidatorTests.cs`; `Services/<Servico>Tests.cs`; `Abstractions/DispatcherTests.cs`. O projeto referencia Application e Domain — **não referencia Infrastructure nem a API**, então não há teste de repositório, DbContext ou endpoint.
 
 Padrão: xUnit + NSubstitute, sem banco.
 

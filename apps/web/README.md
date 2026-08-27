@@ -11,7 +11,8 @@ Front-end React da API [Frota360](http://localhost:5062/scalar/v1) — gestão m
 
 ## Como rodar
 
-Pré-requisitos: Node 20+, API Frota360 rodando em `http://localhost:5062`.
+Pré-requisitos: Node 20+ e a API Frota360 rodando — ela vive neste mesmo repositório:
+`dotnet run --project src/Api` a partir da raiz (`http://localhost:5062`).
 
 ```powershell
 npm install

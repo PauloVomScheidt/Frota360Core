@@ -1,11 +1,19 @@
 # Frota360
 
-API REST de **gestão de frotas multi-tenant**, construída em .NET 10. Cada empresa cliente enxerga apenas os seus veículos, motoristas, rotas e manutenções — o isolamento é aplicado em cada acesso a dados, a partir da claim `empresaId` do JWT.
+Monorepo do **Frota360** — gestão de frotas multi-tenant. Reúne a API REST em .NET 10 e o front-end React que a consome. Cada empresa cliente enxerga apenas os seus veículos, motoristas, rotas e manutenções — o isolamento é aplicado em cada acesso a dados, a partir da claim `empresaId` do JWT.
+
+| Parte | Onde | Stack | Documentação |
+|---|---|---|---|
+| API | [`src/Api`](src/Api) + `src/Application` · `src/Domain` · `src/Infrastructure` | .NET 10, EF Core, JWT | este README · [CLAUDE.md](CLAUDE.md) · [docs/contexto-api.md](docs/contexto-api.md) |
+| Front | [`src/Web`](src/Web) | React 19, Vite, TanStack Query | [src/Web/README.md](src/Web/README.md) · [src/Web/CLAUDE.md](src/Web/CLAUDE.md) · [docs/contexto-web.md](docs/contexto-web.md) |
+
+O restante deste README cobre a **API**.
 
 ---
 
 ## Sumário
 
+- [Estrutura do repositório](#estrutura-do-repositório)
 - [O que a API faz](#o-que-a-api-faz)
 - [Stack](#stack)
 - [Arquitetura](#arquitetura)
@@ -17,6 +25,31 @@ API REST de **gestão de frotas multi-tenant**, construída em .NET 10. Cada emp
 - [Regras de negócio principais](#regras-de-negócio-principais)
 - [Testes](#testes)
 - [Docker](#docker)
+
+---
+
+## Estrutura do repositório
+
+```
+Frota360.slnx              solution .NET (só os projetos do backend)
+src/
+├── Domain/                Frota360.Domain
+├── Application/           Frota360.Application
+├── Infrastructure/        Frota360.Infrastructure
+├── Api/                   Frota360.Api  ← ponto de entrada da API
+└── Web/                   front-end React + Vite (package.json próprio)
+tests/
+└── Frota360.Tests/        xUnit + NSubstitute
+docs/
+├── contexto-api.md        contexto profundo do backend
+├── contexto-web.md        contexto profundo do front
+└── arquitetura.py         gera docs/arquitetura.png
+Dockerfile                 build da API (contexto = raiz do repo)
+```
+
+Os `.csproj` mantêm o prefixo `Frota360.` (`src/Api/Frota360.Api.csproj`); só os diretórios foram encurtados.
+
+Este repositório substitui os antigos `Frota360`/`Rota360` (API) e `Frota360Web` (front), cujo histórico foi preservado aqui.
 
 ---
 
@@ -58,21 +91,21 @@ Clean Architecture em quatro projetos, com CQRS manual na camada de aplicação.
 > O diagrama acima ([`docs/arquitetura.png`](docs/arquitetura.png)) mostra, num único desenho, as quatro camadas, o caminho de um request pelo pipeline CQRS e os cinco pontos onde o isolamento por `EmpresaId` é aplicado. Os rótulos estão em inglês, para circular fora do time. Ele é gerado por script — veja [Diagrama de arquitetura](#diagrama-de-arquitetura).
 
 ```
-Frota360.Domain          entidades, enums, ApiResponse<T>, Roles, interfaces de repositório
+src/Domain           Frota360.Domain — entidades, enums, ApiResponse<T>, Roles, interfaces
       ^
-Frota360.Application     UseCases (Commands/Queries/Handlers), Services, DTOs, Validators
+src/Application      Frota360.Application — UseCases (Commands/Queries/Handlers), Services, DTOs, Validators
       ^                                        ^
-Frota360.Infrastructure  DbContext, repositórios, TokenService, e-mail, config do JWT
+src/Infrastructure   Frota360.Infrastructure — DbContext, repositórios, TokenService, e-mail, config do JWT
       ^
-Frota360 (Frota360.Api)  Controllers, ExceptionMiddleware, CurrentUserService
+src/Api              Frota360.Api — Controllers, ExceptionMiddleware, CurrentUserService
 ```
 
 | Projeto | Pode referenciar | Nunca referencia |
 |---|---|---|
-| `Frota360.Domain` | nada (sem pacotes) | EF Core, ASP.NET |
-| `Frota360.Application` | Domain | Infrastructure, ASP.NET, `DbContext` |
-| `Frota360.Infrastructure` | Domain | Application |
-| `Frota360` (API) | Application + Infrastructure | — |
+| `Frota360.Domain` (`src/Domain`) | nada (sem pacotes) | EF Core, ASP.NET |
+| `Frota360.Application` (`src/Application`) | Domain | Infrastructure, ASP.NET, `DbContext` |
+| `Frota360.Infrastructure` (`src/Infrastructure`) | Domain | Application |
+| `Frota360.Api` (`src/Api`) | Application + Infrastructure | — |
 
 ### Diagrama de arquitetura
 
@@ -120,23 +153,35 @@ Pré-requisitos: **.NET 10 SDK** e uma instância de **SQL Server** (LocalDB ou 
 dotnet build Frota360.slnx
 
 # 2. Configurar a chave do JWT (obrigatória, mínimo 32 caracteres)
-dotnet user-secrets set "Jwt:Key" "uma-chave-secreta-com-pelo-menos-32-caracteres" --project Frota360
+dotnet user-secrets set "Jwt:Key" "uma-chave-secreta-com-pelo-menos-32-caracteres" --project src/Api
 
 # 3. Aplicar as migrations
-dotnet ef database update --project Frota360.Infrastructure --startup-project Frota360
+dotnet ef database update --project src/Infrastructure --startup-project src/Api
 
 # 4. Subir a API
-dotnet run --project Frota360
+dotnet run --project src/Api
 ```
 
+Todos os comandos rodam a partir da **raiz do repositório**.
+
 A API sobe em `http://localhost:5062`. A documentação interativa fica em **`/scalar/v1`**.
+
+### Subir o front junto
+
+```powershell
+cd src/Web
+npm install
+npm run dev     # http://localhost:5173 (porta fixa — origem liberada no CORS da API)
+```
+
+São dois terminais: a API na raiz, o front em `src/Web`. Detalhes em [src/Web/README.md](src/Web/README.md).
 
 > `AddInfrastructure` derruba a inicialização se `Jwt:Key` faltar ou tiver menos de 32 caracteres.
 
 ### Nova migration
 
 ```powershell
-dotnet ef migrations add <Nome> --project Frota360.Infrastructure --startup-project Frota360
+dotnet ef migrations add <Nome> --project src/Infrastructure --startup-project src/Api
 ```
 
 ### Primeiro acesso
@@ -291,7 +336,7 @@ docker run -p 8080:8080 `
   frota360
 ```
 
-Build multi-estágio sobre `dotnet/sdk:10.0` → `dotnet/aspnet:10.0`, expondo a porta **8080**.
+Build multi-estágio sobre `dotnet/sdk:10.0` → `dotnet/aspnet:10.0`, expondo a porta **8080**. O `Dockerfile` na raiz builda **apenas a API** — o contexto é a raiz do repositório e os `COPY` apontam para `src/`.
 
 ---
 
@@ -315,4 +360,4 @@ UseCases/<Agregado>s/
 - **Mapeamento é manual** via extensão `ToResponse()` — não há `IMapper` em uso.
 - DTOs são classes com `{ get; set; }`, não records. Nenhuma Response expõe `EmpresaId`.
 
-Detalhes completos em [CLAUDE.md](CLAUDE.md) e o aprofundamento de domínio em [contexto_api.md](contexto_api.md).
+Detalhes completos em [CLAUDE.md](CLAUDE.md) e o aprofundamento de domínio em [docs/contexto-api.md](docs/contexto-api.md). Para o front, [src/Web/CLAUDE.md](src/Web/CLAUDE.md) e [docs/contexto-web.md](docs/contexto-web.md).

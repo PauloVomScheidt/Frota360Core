@@ -1,7 +1,8 @@
 # Frota360 Web — Contexto do Front-end
 
 > Documento **único** de referência do front-end (React + Vite): arquitetura, rotas, endpoints consumidos, o que cada tela faz e as armadilhas conhecidas.
-> Complementa o `CONTEXTO.md` da API: lá está o contrato do servidor, aqui está o que a aplicação faz com ele.
+> Complementa [`contexto-api.md`](contexto-api.md): lá está o contrato do servidor, aqui está o que a aplicação faz com ele.
+> **Caminhos**: relativos à raiz do monorepo — o código do front vive em `src/Web/`, e os comandos `npm` rodam de lá.
 > Última atualização: 2026-08-26 — consolidação do antigo `contexto_web.md` neste documento (endpoints em §6.5, inconsistências em §10).
 
 ---
@@ -16,7 +17,7 @@ SPA React 19 + Vite 8 + TypeScript, front-end da API Frota360 — gestão de fro
 | Rotas | react-router-dom 7 (`BrowserRouter`) |
 | Dados | TanStack Query 5 |
 | HTTP | axios com interceptors (Bearer + refresh) |
-| Estilo | Tailwind 4 + design system próprio (`src/styles/design-system.css`) |
+| Estilo | Tailwind 4 + design system próprio (`src/Web/src/styles/design-system.css`) |
 | Lint | oxlint |
 | Sessão | `localStorage` (token, refreshToken, identidade) |
 
@@ -37,7 +38,7 @@ Em base nova não existe usuário: é preciso provisionar uma empresa pelo backo
 
 ## 2. Mapa de rotas
 
-Definido em [`src/App.tsx`](src/App.tsx). Qualquer rota desconhecida cai em `/`.
+Definido em [`src/Web/src/App.tsx`](src/Web/src/App.tsx). Qualquer rota desconhecida cai em `/`.
 
 | Rota | Tela | Acesso |
 |---|---|---|
@@ -55,7 +56,7 @@ Definido em [`src/App.tsx`](src/App.tsx). Qualquer rota desconhecida cai em `/`.
 | `/usuarios` | `UsuariosPage` | **Admin** |
 | `/convites` | `ConvitesPage` | **Admin** |
 
-Os guardas estão em [`src/components/RequireAuth.tsx`](src/components/RequireAuth.tsx): `RequireAuth` redireciona para `/login` quando não há token (guardando a origem em `location.state.from`); `RequireAdmin` devolve para `/dashboard` quem não é Admin; `RequireGestor` faz o mesmo com quem não é Admin nem Supervisor (catálogo de tipos). O servidor continua sendo a autoridade — os guardas só evitam telas que resultariam em 401/403.
+Os guardas estão em [`src/Web/src/components/RequireAuth.tsx`](src/Web/src/components/RequireAuth.tsx): `RequireAuth` redireciona para `/login` quando não há token (guardando a origem em `location.state.from`); `RequireAdmin` devolve para `/dashboard` quem não é Admin; `RequireGestor` faz o mesmo com quem não é Admin nem Supervisor (catálogo de tipos). O servidor continua sendo a autoridade — os guardas só evitam telas que resultariam em 401/403.
 
 ---
 
@@ -65,13 +66,13 @@ Os guardas estão em [`src/components/RequireAuth.tsx`](src/components/RequireAu
 
 Página de apresentação do produto (v2 do desenho feito no Claude Design). Não consome a API.
 
-**Linguagem visual própria.** Ao contrário do painel — reto, bege, sem sombra —, a landing usa cantos arredondados, cartões brancos sobre off-white, botões-pílula e sombras difusas. Por isso ela tem a própria folha de estilo, [`src/styles/landing.css`](src/styles/landing.css), escopada em `.lp` e importada só por esta tela; ela neutraliza localmente os padrões do design system (peso de título, margens de `p`, cor de link) sem alterá-los para o resto da aplicação.
+**Linguagem visual própria.** Ao contrário do painel — reto, bege, sem sombra —, a landing usa cantos arredondados, cartões brancos sobre off-white, botões-pílula e sombras difusas. Por isso ela tem a própria folha de estilo, [`src/Web/src/styles/landing.css`](src/Web/src/styles/landing.css), escopada em `.lp` e importada só por esta tela; ela neutraliza localmente os padrões do design system (peso de título, margens de `p`, cor de link) sem alterá-los para o resto da aplicação.
 
 Seções, na ordem: barra flutuante fixa (pílula com blur, âncoras, "Entrar", CTA de WhatsApp) → hero centralizado com selo, dois CTAs e letra miúda → mock do painel (sidebar + tabela de veículos) → chips "Construído sobre" → 4 números → "O problema" (4 cartões) → comparativo planilha × Frota360 → "Recursos" (4 cartões: Motoristas, Veículos, Rotas, Manutenções) → "Como funciona" (3 passos) → bloco de Rotas com mock de lista → **Manutenção preventiva** (mock da lista + catálogo de tipos) → "Permissões" com a matriz → 3 cartões de segurança → objeções da primeira conversa → FAQ (7 perguntas) → CTA azul com formulário de demonstração → rodapé.
 
 - **Animação**: as seções abaixo do mock aparecem com fade + deslize conforme entram na tela (`IntersectionObserver`). Sem suporte ao observer, tudo é revelado de imediato; `prefers-reduced-motion` desliga a transição.
 - **Formulário de demonstração**: não existe endpoint público na API, então o envio monta um `mailto:` já preenchido com nome, empresa, e-mail e tamanho da frota. Trocar por um endpoint real é uma alteração local em `FormularioDemonstracao`.
-- Os contatos são as constantes `WHATSAPP` e `EMAIL` no topo de [`LandingPage.tsx`](src/pages/LandingPage.tsx) — trocar ali muda todos os links da página.
+- Os contatos são as constantes `WHATSAPP` e `EMAIL` no topo de [`LandingPage.tsx`](src/Web/src/pages/LandingPage.tsx) — trocar ali muda todos os links da página.
 - Todos os dados dos mocks (placas, quilometragens, manutenções) são **ilustrativos**; nada vem da API.
 
 ### 3.2 `/login` — Entrar
@@ -93,7 +94,7 @@ Formulário de um campo. `POST /auth/esqueci-senha` responde **sempre 200 neutro
 Três estados:
 
 1. **Sem token na URL** → tela "Link inválido" com botão para pedir outro.
-2. **Formulário** → nova senha + confirmação, validadas no cliente por [`validarSenha`](src/auth/senha.ts) (≥ 6 caracteres, 1 maiúscula, 1 número, iguais) antes de chamar a API.
+2. **Formulário** → nova senha + confirmação, validadas no cliente por [`validarSenha`](src/Web/src/auth/senha.ts) (≥ 6 caracteres, 1 maiúscula, 1 número, iguais) antes de chamar a API.
 3. **Sucesso** → avisa que as sessões antigas foram encerradas e redireciona para `/login` em 2,5 s.
 
 ### 3.5 `/convite?token=…`
@@ -106,7 +107,7 @@ Formulário: nome, senha, confirmação e checkbox de termos (obrigatório, vali
 
 ## 4. Layout interno
 
-Todas as telas autenticadas são embrulhadas por `AppLayout` ([`src/components/AppLayout.tsx`](src/components/AppLayout.tsx)):
+Todas as telas autenticadas são embrulhadas por `AppLayout` ([`src/Web/src/components/AppLayout.tsx`](src/Web/src/components/AppLayout.tsx)):
 
 - **Sidebar** recolhível (preferência guardada no `localStorage`), com as categorias "Dashboard" (Visão geral, Motoristas, Veículos, Rotas, Manutenções e — só para Admin/Supervisor — Tipos de manutenção) e "Controle" (Usuários, Convites) — esta só aparece para Admin.
 - **Header** com o avatar de iniciais, nome e papel do usuário, e o botão de sair (`POST /auth/logout` → limpa tokens, limpa o cache do React Query, vai para `/login`).
@@ -218,7 +219,7 @@ Gestão da equipe, tudo editado direto na linha:
 
 ## 6. Camada de API e sessão
 
-### 6.1 `src/api/http.ts`
+### 6.1 `src/Web/src/api/http.ts`
 
 - `baseURL` = `VITE_API_URL`; interceptor de request injeta `Authorization: Bearer`.
 - Interceptor de response: em **401**, dispara um único refresh (`refreshInFlight` como lock — a rotação do refresh token invalida o anterior, então dois refreshes paralelos quebrariam o segundo), refaz a requisição original uma vez e, se o refresh falhar, limpa a sessão e força `/login`.
@@ -227,23 +228,23 @@ Gestão da equipe, tudo editado direto na linha:
 
 ### 6.2 Erros
 
-[`mensagensDeErro`](src/api/errors.ts) transforma qualquer falha numa lista de strings: usa `erros` do envelope quando existe (alimenta formulários), cai para `mensagem` (em português, serve de resumo) e detecta API fora do ar. Toda tela renderiza isso pelo componente `ErrorList`.
+[`mensagensDeErro`](src/Web/src/api/errors.ts) transforma qualquer falha numa lista de strings: usa `erros` do envelope quando existe (alimenta formulários), cai para `mensagem` (em português, serve de resumo) e detecta API fora do ar. Toda tela renderiza isso pelo componente `ErrorList`.
 
 ### 6.3 Sessão
 
-- [`tokenStorage`](src/api/tokenStorage.ts) guarda `frota360.token`, `frota360.refreshToken` e `frota360.user` (nome, e-mail, role) no `localStorage`.
-- [`useSession`](src/auth/useSession.ts) expõe o usuário logado de forma reativa via `useSyncExternalStore`, ouvindo o evento `storage` (outras abas) e um evento próprio `frota360:sessao` (esta aba — `localStorage` não notifica quem escreveu).
+- [`tokenStorage`](src/Web/src/api/tokenStorage.ts) guarda `frota360.token`, `frota360.refreshToken` e `frota360.user` (nome, e-mail, role) no `localStorage`.
+- [`useSession`](src/Web/src/auth/useSession.ts) expõe o usuário logado de forma reativa via `useSyncExternalStore`, ouvindo o evento `storage` (outras abas) e um evento próprio `frota360:sessao` (esta aba — `localStorage` não notifica quem escreveu).
 - O papel usado pela UI vem desse cache local; ele só é atualizado quando o token renova. Mudança de papel pode levar até 1 h para refletir na interface — o servidor, porém, já recusa a ação antes disso.
 
 ### 6.4 Chaves do React Query
 
-`['motoristas']`, `['veiculos']`, `['rotas']`, `['usuarios']`, `['convites']`, `['manutencoes', filtro]`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`src/lib/queryClient.ts`](src/lib/queryClient.ts)).
+`['motoristas']`, `['veiculos']`, `['rotas']`, `['usuarios']`, `['convites']`, `['manutencoes', filtro]`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`src/Web/src/lib/queryClient.ts`](src/Web/src/lib/queryClient.ts)).
 
 Cruzamentos que não são óbvios, conferidos no código:
 
-- **Excluir motorista** invalida `['rotas']` ([MotoristasPage.tsx:56](src/pages/MotoristasPage.tsx#L56)) e **excluir veículo**, idem ([VeiculosPage.tsx:56](src/pages/VeiculosPage.tsx#L56)) — a tabela de rotas exibe o nome e a placa deles.
-- **Concluir uma manutenção** invalida também `['veiculos']` ([ManutencoesPage.tsx:165](src/pages/ManutencoesPage.tsx#L165)) — o odômetro pode ter avançado.
-- **Abrir** ([RotasPage.tsx:118-119](src/pages/RotasPage.tsx#L118-L119)) e **encerrar** ([RotasPage.tsx:139-140](src/pages/RotasPage.tsx#L139-L140)) uma rota invalidam `['rotas']`, `['veiculos']` e `['manutencoes']`. É a cadeia mais longa do app: rota → veículo → manutenção. Os dois momentos mexem no odômetro (a abertura quando `kmInicial` é maior que o atual; o encerramento quando `kmFinal` é), e é do odômetro que `atrasada` e `kmRestantes` dependem. Sem invalidar a ponta da cadeia, o alerta de atraso só apareceria no próximo `staleTime`.
+- **Excluir motorista** invalida `['rotas']` ([MotoristasPage.tsx:56](src/Web/src/pages/MotoristasPage.tsx#L56)) e **excluir veículo**, idem ([VeiculosPage.tsx:56](src/Web/src/pages/VeiculosPage.tsx#L56)) — a tabela de rotas exibe o nome e a placa deles.
+- **Concluir uma manutenção** invalida também `['veiculos']` ([ManutencoesPage.tsx:165](src/Web/src/pages/ManutencoesPage.tsx#L165)) — o odômetro pode ter avançado.
+- **Abrir** ([RotasPage.tsx:118-119](src/Web/src/pages/RotasPage.tsx#L118-L119)) e **encerrar** ([RotasPage.tsx:139-140](src/Web/src/pages/RotasPage.tsx#L139-L140)) uma rota invalidam `['rotas']`, `['veiculos']` e `['manutencoes']`. É a cadeia mais longa do app: rota → veículo → manutenção. Os dois momentos mexem no odômetro (a abertura quando `kmInicial` é maior que o atual; o encerramento quando `kmFinal` é), e é do odômetro que `atrasada` e `kmRestantes` dependem. Sem invalidar a ponta da cadeia, o alerta de atraso só apareceria no próximo `staleTime`.
 - Qualquer mutação no catálogo invalida o prefixo `['tiposManutencao']`, que cobre de uma vez o catálogo completo e a lista de ativos usada no agendamento.
 
 ### 6.5 Endpoints consumidos
@@ -277,7 +278,7 @@ Cruzamentos que não são óbvios, conferidos no código:
 
 ## 7. Permissões na interface
 
-[`src/auth/permissions.ts`](src/auth/permissions.ts) espelha a matriz do §5 do `CONTEXTO.md`. A UI só esconde o que resultaria em 403 — quem decide é a API.
+[`src/Web/src/auth/permissions.ts`](src/Web/src/auth/permissions.ts) espelha a matriz do §5 do `CONTEXTO.md`. A UI só esconde o que resultaria em 403 — quem decide é a API.
 
 | Ação | Admin | Supervisor | Operador |
 |---|---|---|---|
@@ -294,7 +295,7 @@ Na prática: sem permissão de edição, o botão "Novo…" e o ícone de lápis
 
 ## 8. Design system e componentes compartilhados
 
-Tokens e classes em [`src/styles/design-system.css`](src/styles/design-system.css): fundo `#fdfaf6`, superfície `#f2ede4`, texto `#201e1d`, acento `#1f3a5f` (com rampa 100–900), perigo `#a03123`, tipografia Archivo e **raio 0 em tudo** — o visual é de réguas retas, não de cartões arredondados.
+Tokens e classes em [`src/Web/src/styles/design-system.css`](src/Web/src/styles/design-system.css): fundo `#fdfaf6`, superfície `#f2ede4`, texto `#201e1d`, acento `#1f3a5f` (com rampa 100–900), perigo `#a03123`, tipografia Archivo e **raio 0 em tudo** — o visual é de réguas retas, não de cartões arredondados.
 
 Classes: `.btn` (`.btn-primary`, `.btn-secondary`, `.btn-icon`, `.btn-danger`), `.field` + `.input` (`.input-underline` no login), `.tag` (`.tag-accent`, `.tag-neutral`, `.tag-danger`, `.tag-warning`), `.nav`, `.table`, `.dialog*`.
 

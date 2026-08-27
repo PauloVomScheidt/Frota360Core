@@ -1,6 +1,10 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with the **front-end** of the Frota360 monorepo (`src/Web/`).
+
+The repository root has its own [CLAUDE.md](../../CLAUDE.md) covering the .NET backend, the shared conventions, and — most relevant here — the **contract between API and front** (response envelope, DTO types, role matrix, ports/CORS). Read it before any change that crosses the boundary; this file covers the front-end only.
+
+All commands below run from `src/Web/`.
 
 ## Navegação de código
 Para perguntas estruturais (como X funciona, o que chama Y, o que quebra se eu mudar Z),
@@ -8,9 +12,9 @@ use `codegraph_explore` em vez de Grep/Read. O índice está sempre atualizado.
 
 ## Project
 
-Frota360 Web — the React front-end for the Frota360 API, a multi-tenant fleet management system (motoristas/veículos/rotas/manutenções preventivas). All UI copy, comments, and docs in this repo are in **Portuguese**; match that when editing existing files.
+Frota360 Web — the React front-end for the Frota360 API (`src/Api`, same repo), a multi-tenant fleet management system (motoristas/veículos/rotas/manutenções preventivas). All UI copy, comments, and docs in this repo are in **Portuguese**; match that when editing existing files.
 
-The authoritative, detailed reference for screen-by-screen behavior, API conventions, and React Query cache keys is [src/CONTEXTO-FRONT.md](src/CONTEXTO-FRONT.md) — the single consolidated context document for this repo (it also carries the endpoint map in §6.5 and known inconsistencies in §10). Read it before making non-trivial changes to a page. This file covers commands and cross-cutting architecture only, to avoid duplicating that document.
+The authoritative, detailed reference for screen-by-screen behavior, API conventions, and React Query cache keys is [docs/contexto-web.md](../../docs/contexto-web.md) — the single consolidated context document for the front-end (it also carries the endpoint map in §6.5 and known inconsistencies in §10). Read it before making non-trivial changes to a page. This file covers commands and cross-cutting architecture only, to avoid duplicating that document.
 
 ## Documentation
 Apos todas as alterações realizadas atualizar as documentações de contexto, claude.md e readme para refletir as mudanças. Documentação de contexto é obrigatória para qualquer alteração estrutural, regra de negócio ou endpoint novo.
@@ -24,9 +28,9 @@ npm run lint     # oxlint
 npm run gen:api  # regenerates src/api/schema.d.ts from the API's OpenAPI spec — requires the API running locally
 ```
 
-There is no test suite in this repo. There is no single-file lint/typecheck shortcut beyond running the full `lint`/`build` commands (oxlint and `tsc -b` don't take a useful single-file mode here).
+There is no test suite in the front-end. There is no single-file lint/typecheck shortcut beyond running the full `lint`/`build` commands (oxlint and `tsc -b` don't take a useful single-file mode here).
 
-Requires the Frota360 API running locally (default `https://localhost:7271/api/v1` per `.env.development`, overridden by `VITE_API_URL`). On a fresh database there are no users — provision a company via the API's backoffice (`POST /backoffice/empresa`) and open the returned `linkConvite`, which lands on `/convite?token=...`.
+Requires the Frota360 API running locally — it lives in this same repo: `dotnet run --project src/Api` from the repository root (default `https://localhost:7271/api/v1` per `.env.development`, overridden by `VITE_API_URL`). On a fresh database there are no users — provision a company via the API's backoffice (`POST /backoffice/empresa`) and open the returned `linkConvite`, which lands on `/convite?token=...`.
 
 ## Architecture
 
@@ -48,7 +52,7 @@ Requires the Frota360 API running locally (default `https://localhost:7271/api/v
 
 ### Data fetching
 
-TanStack Query 5. Cache keys are simple arrays per resource (`['motoristas']`, `['veiculos']`, `['rotas']`, `['manutencoes', filtro]`, `['tiposManutencao']`, `['tiposManutencao', 'ativos']`, `['usuarios']`, `['convites']`), invalidated after each mutation on the owning page. Watch for **cross-invalidation** where one resource's mutation affects another list's displayed data (e.g. deleting a motorista/veículo also invalidates `['rotas']` because that table denormalizes their name/plate; concluding a manutenção also invalidates `['veiculos']` because it can advance the vehicle's odometer). The longest chain is **rota → veículo → manutenção**: both opening a rota (when `kmInicial` exceeds the current odometer) and closing one (`POST /rota/{id}/encerrar`) advance the vehicle's odometer, which is what `atrasada`/`kmRestantes` are derived from — so those mutations invalidate `['rotas']`, `['veiculos']` **and** `['manutencoes']`. When adding a mutation, check `src/CONTEXTO-FRONT.md` §6.4 for the current cross-invalidation map before assuming a single `invalidateQueries` call is sufficient.
+TanStack Query 5. Cache keys are simple arrays per resource (`['motoristas']`, `['veiculos']`, `['rotas']`, `['manutencoes', filtro]`, `['tiposManutencao']`, `['tiposManutencao', 'ativos']`, `['usuarios']`, `['convites']`), invalidated after each mutation on the owning page. Watch for **cross-invalidation** where one resource's mutation affects another list's displayed data (e.g. deleting a motorista/veículo also invalidates `['rotas']` because that table denormalizes their name/plate; concluding a manutenção also invalidates `['veiculos']` because it can advance the vehicle's odometer). The longest chain is **rota → veículo → manutenção**: both opening a rota (when `kmInicial` exceeds the current odometer) and closing one (`POST /rota/{id}/encerrar`) advance the vehicle's odometer, which is what `atrasada`/`kmRestantes` are derived from — so those mutations invalidate `['rotas']`, `['veiculos']` **and** `['manutencoes']`. When adding a mutation, check `docs/contexto-web.md` §6.4 for the current cross-invalidation map before assuming a single `invalidateQueries` call is sufficient.
 
 ### Page structure & shared components
 

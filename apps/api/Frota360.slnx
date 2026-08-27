@@ -1,7 +1,7 @@
 <Solution>
-  <Project Path="Frota360.Application/Frota360.Application.csproj" />
-  <Project Path="Frota360.Domain/Frota360.Domain.csproj" />
-  <Project Path="Frota360.Infrastructure/Frota360.Infrastructure.csproj" />
-  <Project Path="Frota360.Tests/Frota360.Tests.csproj" />
-  <Project Path="Frota360/Frota360.Api.csproj" />
+  <Project Path="src/Application/Frota360.Application.csproj" />
+  <Project Path="src/Domain/Frota360.Domain.csproj" />
+  <Project Path="src/Infrastructure/Frota360.Infrastructure.csproj" />
+  <Project Path="tests/Frota360.Tests/Frota360.Tests.csproj" />
+  <Project Path="src/Api/Frota360.Api.csproj" />
 </Solution>

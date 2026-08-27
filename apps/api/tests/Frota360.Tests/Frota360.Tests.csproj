@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -22,8 +22,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Frota360.Application\Frota360.Application.csproj" />
-    <ProjectReference Include="..\Frota360.Domain\Frota360.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Application\Frota360.Application.csproj" />
+    <ProjectReference Include="..\..\src\Domain\Frota360.Domain.csproj" />
   </ItemGroup>
 
 </Project>
