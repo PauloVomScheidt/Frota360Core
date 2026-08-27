@@ -9,25 +9,26 @@ Monorepo do **Frota360** — sistema de gestão de frotas multi-tenant por empre
 ## Mapa do repositório
 
 ```
-Frota360.slnx              solution .NET (só os projetos do backend)
-src/
-├── Domain/                Frota360.Domain — entidades, enums, ApiResponse<T>, Roles, interfaces
-├── Application/           Frota360.Application — UseCases (CQRS), Services, DTOs, Validators
-├── Infrastructure/        Frota360.Infrastructure — DbContext, repositórios, TokenService, e-mail, JWT
-├── Api/                   Frota360.Api — Controllers, ExceptionMiddleware, CurrentUserService
-└── Web/                   front-end React + Vite ── tem seu próprio CLAUDE.md
-tests/
-└── Frota360.Tests/        xUnit + NSubstitute (cobre Application e Domain)
+apps/
+├── api/                   backend .NET 10 — autocontido
+│   ├── CLAUDE.md          ← convenções do backend
+│   ├── Frota360.slnx
+│   ├── Dockerfile
+│   ├── src/{Domain,Application,Infrastructure,Api}
+│   └── tests/Frota360.Tests
+└── web/                   front React 19 + Vite — autocontido
+    ├── CLAUDE.md          ← convenções do front
+    ├── package.json
+    └── src/
 docs/
 ├── contexto-api.md        contexto profundo do backend
 ├── contexto-web.md        contexto profundo do front (tela a tela, cache keys, endpoints)
 └── arquitetura.py         gera docs/arquitetura.png
-Dockerfile                 build da API (contexto = raiz do repo)
 ```
 
-Os nomes dos `.csproj` continuam com o prefixo `Frota360.` (`src/Api/Frota360.Api.csproj`); só os **diretórios** foram encurtados. Ao referenciar um projeto, o caminho é relativo à nova estrutura — `..\Domain\Frota360.Domain.csproj` dentro de `src/`, `..\..\src\Domain\Frota360.Domain.csproj` a partir de `tests/`.
+Cada app é independente: comandos rodam de dentro dele, e os caminhos nos seus `CLAUDE.md`, `.slnx`, `.csproj` e `Dockerfile` são relativos à raiz do próprio app.
 
-**Ao mexer no front-end, leia também [src/Web/CLAUDE.md](src/Web/CLAUDE.md).** Este arquivo cobre o backend e o que é transversal aos dois.
+**Antes de mexer em código, leia o `CLAUDE.md` do app**: [apps/api/CLAUDE.md](apps/api/CLAUDE.md) ou [apps/web/CLAUDE.md](apps/web/CLAUDE.md). Este arquivo cobre só o que é transversal aos dois.
 
 ## Navegação de código
 Para perguntas estruturais (como X funciona, o que chama Y, o que quebra se eu mudar Z),
@@ -36,11 +37,11 @@ use `codegraph_explore` em vez de Grep/Read. O índice está sempre atualizado.
 ## Documentation
 Apos todas as alterações realizadas atualizar as documentações de contexto, claude.md e readme para refletir as mudanças. Documentação de contexto é obrigatória para qualquer alteração estrutural, regra de negócio ou endpoint novo.
 
-O aprofundamento vive em `docs/contexto-api.md` (backend) e `docs/contexto-web.md` (front) — atualize o lado correspondente, e **os dois** quando a mudança atravessa a fronteira (endpoint, envelope, papel, regra de negócio visível na tela).
+O aprofundamento vive em `docs/contexto-api.md` e `docs/contexto-web.md` — atualize o lado correspondente, e **os dois** quando a mudança atravessa a fronteira (endpoint, envelope, papel, regra de negócio visível na tela).
 
 ### Diagrama de arquitetura
 
-O diagrama vive em `docs/arquitetura.png` e é **gerado** por `docs/arquitetura.py` (Pillow). Não edite o PNG à mão: altere o script e rode `python docs/arquitetura.py`. Regenere sempre que mudar camada, pipeline de request ou ponto de isolamento por `EmpresaId`.
+O diagrama vive em `docs/arquitetura.png` e é **gerado** por `docs/arquitetura.py` (Pillow). Não edite o PNG à mão: altere o script e rode `python docs/arquitetura.py` a partir da raiz. Regenere sempre que mudar camada, pipeline de request ou ponto de isolamento por `EmpresaId`.
 
 O diagrama é a **única exceção à regra do português**: seus rótulos são em inglês, para circular fora do time. Paleta monocromática (tons de cinza + preto), sem cor de destaque — os pontos de isolamento por `EmpresaId` são marcados por contorno preto e selo numerado, não por cor. Mantenha isso ao editar o script.
 
@@ -48,155 +49,35 @@ O diagrama é a **única exceção à regra do português**: seus rótulos são 
 
 O motivo de os dois viverem no mesmo repositório: mudança de um lado quase sempre exige mexer no outro **no mesmo commit**.
 
-| Ponto de contato | Backend | Front |
+| Ponto de contato | Backend (`apps/api`) | Front (`apps/web`) |
 |---|---|---|
-| Envelope de resposta | `ApiResponse<T>` montado no controller (`Sucesso`/`Mensagem`/`Dados`/`Erros`) | `unwrap()` em `src/Web/src/api/http.ts` desempacota `dados` e lança `ApiError` |
-| Tipos dos DTOs | `src/Application/DTOs/**` | `src/Web/src/api/types.ts` — **mantido à mão**, não gerado |
-| Papéis | `Roles` em `src/Domain` + `[Authorize(Roles = ...)]` nos controllers | `pode.*` em `src/Web/src/auth/permissions.ts` — espelho apenas para esconder ações; **o servidor é a autoridade** |
+| Envelope de resposta | `ApiResponse<T>` montado no controller (`Sucesso`/`Mensagem`/`Dados`/`Erros`) | `unwrap()` em `src/api/http.ts` desempacota `dados` e lança `ApiError` |
+| Tipos dos DTOs | `src/Application/DTOs/**` | `src/api/types.ts` — **mantido à mão**, não gerado |
+| Papéis | `Roles` em `src/Domain` + `[Authorize(Roles = ...)]` nos controllers | `pode.*` em `src/auth/permissions.ts` — espelho apenas para esconder ações; **o servidor é a autoridade** |
 | Multi-tenant | `EmpresaId` vem da claim `empresaId` do JWT | transparente — o cliente nunca envia id de empresa |
 | Erro de regra de negócio | `throw new InvalidOperationException("texto ao usuário")` → 422 | mensagem exibida literalmente via `mensagensDeErro()` |
-| URL da API | `https://localhost:7271` / `http://localhost:5062` (`src/Api/Properties/launchSettings.json`) | `VITE_API_URL` em `src/Web/.env.development` |
+| URL da API | `https://localhost:7271` / `http://localhost:5062` (`src/Api/Properties/launchSettings.json`) | `VITE_API_URL` em `.env.development` |
 | CORS | origem liberada: `http://localhost:5173` | `npm run dev` usa porta fixa 5173 por causa disso |
 
-**Ao criar ou alterar um endpoint, o roteiro completo é:** controller + handler + validator + teste → `docs/contexto-api.md` → `src/Web/src/api/<recurso>.ts` e `types.ts` → `docs/contexto-web.md` (mapa de endpoints §6.5 e cross-invalidation §6.4) → tela.
+**Ao criar ou alterar um endpoint, o roteiro completo é:** controller + handler + validator + teste → `docs/contexto-api.md` → `apps/web/src/api/<recurso>.ts` e `types.ts` → `docs/contexto-web.md` (mapa de endpoints §6.5 e cross-invalidation §6.4) → tela.
 
-`npm run gen:api` (em `src/Web/`) regenera só `src/api/schema.d.ts` a partir do OpenAPI e **exige a API rodando** — ele não atualiza `types.ts`.
+`npm run gen:api` (em `apps/web/`) regenera só `src/api/schema.d.ts` a partir do OpenAPI e **exige a API rodando** — ele não atualiza `types.ts`.
 
-## Comandos
+## Subir o sistema
 
-Backend, a partir da raiz do repositório:
+Dois terminais:
 
 ```powershell
-dotnet build Frota360.slnx
-dotnet test
-dotnet test --filter "FullyQualifiedName~ManutencaoHandlersTests"   # uma classe
-dotnet test --filter "DisplayName~Create_DevePersistir"             # um teste
-dotnet run --project src/Api                                        # localhost:5062 → /scalar/v1
-
-dotnet ef migrations add <Nome> --project src/Infrastructure --startup-project src/Api
-dotnet ef database update --project src/Infrastructure --startup-project src/Api
-
-dotnet user-secrets set "Jwt:Key" "<32+ caracteres>" --project src/Api
+cd apps/api
+dotnet run --project src/Api     # http://localhost:5062 → /scalar/v1
 ```
 
-Front-end, a partir de `src/Web/`:
-
 ```powershell
+cd apps/web
 npm install
-npm run dev      # http://localhost:5173 (porta fixa — origem liberada no CORS da API)
-npm run build    # tsc -b (type-check) + vite build
-npm run lint     # oxlint
+npm run dev                      # http://localhost:5173 (porta fixa — origem liberada no CORS)
 ```
 
-Não há suíte de testes no front. Subir o sistema inteiro em desenvolvimento = dois terminais: `dotnet run --project src/Api` e, em `src/Web/`, `npm run dev`.
+Num banco zerado não há usuários: provisione uma empresa pelo backoffice da API (`POST /backoffice/empresa`) e abra o `linkConvite` retornado — ele cai em `/convite?token=...`.
 
-`AddInfrastructure` lança na inicialização se `Jwt:Key` faltar ou tiver menos de 32 caracteres. Em produção: `Jwt__Key`, `Resend__ApiKey`, `Backoffice__ApiKey`, `ConnectionStrings__DefaultConnection` por variável de ambiente.
-
-## Camadas
-
-| Projeto | Pode referenciar | Nunca referencia |
-|---|---|---|
-| **Frota360.Domain** (`src/Domain`) — entidades, enums, `ApiResponse<T>`, `Roles`, interfaces de repositório/serviço | nada (sem pacotes) | EF Core, ASP.NET |
-| **Frota360.Application** (`src/Application`) — `UseCases/` (CQRS), `Services/`, `DTOs/`, validators | Domain | Infrastructure, ASP.NET, `DbContext` |
-| **Frota360.Infrastructure** (`src/Infrastructure`) — `Frota360DbContext`, repositórios, `TokenService`, e-mail, config do JWT | Domain | Application |
-| **Frota360.Api** (`src/Api`) — controllers, `ExceptionMiddleware`, `CurrentUserService` | Application + Infrastructure | — |
-
-Interface de repositório nova vai em `src/Domain/Interfaces/Repositories`, implementação em `src/Infrastructure/Repositories`, registro em `InfrastructureExtensions.AddInfrastructure`.
-
-### Fluxo de um request
-
-```
-Controller (valida com IValidator<T> → 400)
-  → dispatcher.SendAsync(new XCommand(request))
-  → Dispatcher resolve IRequestHandler<XCommand, TResponse> no DI (reflexão)
-  → Handler: lê currentUser.EmpresaId, chama repositório, monta entidade, .ToResponse()
-  → Controller embrulha em ApiResponse<T>
-```
-
-`AddCqrsHandlers` varre a assembly da Application e registra todo `IRequestHandler<,>` — **handler novo não precisa de registro manual**. Um `IDispatcher` sem handler correspondente falha em runtime, não em compilação.
-
-**Onde colocar código novo:** CRUD de domínio (veículo, motorista, rota, manutenção, tipo de manutenção) → CQRS. Autenticação, convite, usuário e onboarding → serviços em `Application/Services` com interface em `Application/Interfaces`, injetados direto no controller (é o critério atual, não legado).
-
-## Convenções
-
-Estrutura de uma fatia vertical, replique exatamente:
-
-```
-UseCases/<Agregado>s/
-  Commands/<Acao><Agregado>/<Acao><Agregado>Command.cs   sealed record CreateVeiculoCommand(CreateVeiculoRequest Data) : ICommand<VeiculoResponse>
-                            <Acao><Agregado>Handler.cs   sealed class ... : ICommandHandler<Command, TResponse>
-  Queries/Get<X>/Get<X>Query.cs                          sealed record GetVeiculoByIdQuery(int Id) : IQuery<VeiculoResponse?>
-  Validator/<Acao><Agregado>Validator.cs                 AbstractValidator<CreateVeiculoRequest>
-  <Agregado>Mappings.cs                                  static ToResponse() por extensão
-```
-
-- Command com payload recebe o DTO inteiro como `Data`; update recebe `(int Id, UpdateXRequest Data)`. Handler começa com `var request = command.Data;`.
-- **DTOs**: `DTOs/<Agregado>/Request/{Create,Update}XRequest.cs` e `DTOs/<Agregado>/Response/XResponse.cs` — classes com propriedades `{ get; set; }`, não records. Response nunca expõe `EmpresaId`.
-- **Primary constructors em tudo**: handlers, repositórios, controllers, serviços, middleware. Nada de campos `_repository` atribuídos em construtor.
-- Handlers são `sealed`, logam início e fim (`logger.LogInformation`), e envolvem o corpo em `try/catch` que loga e faz `throw;`. Em Manutenção e Rota o catch é `catch (Exception ex) when (ex is not InvalidOperationException)`, para não logar como erro o que é violação de regra.
-- **Transição de estado é endpoint próprio**, não PUT: `POST /manutencao/{id}/concluir`, `POST /rota/{id}/encerrar`. O request de update não carrega os campos de estado (`Ativo`, `DataFim`, `Status`) — quem os move é a ação dedicada, que também aplica o efeito colateral (avançar o odômetro do veículo, sempre só para frente).
-- **Mapeamento é manual** via `ToResponse()`. AutoMapper está no csproj mas não é usado em lugar nenhum — não introduza `IMapper`.
-- **Controllers**: `[Authorize]` na classe, `[ApiVersion("1.0")]`, rota `api/v{version:apiVersion}/[controller]`, `[Authorize(Roles = $"{Roles.Admin},{Roles.Supervisor}")]` por ação (Admin é o único que exclui; Operador cria/edita/encerra rota). Cada ação declara `[ProducesResponseType<ApiResponse<T>>(...)]` por status.
-
-### ApiResponse e erros
-
-Toda resposta usa `ApiResponse<T>` (`Sucesso`/`Mensagem`/`Dados`/`Erros`), montado **no controller**:
-
-```csharp
-var validation = await createValidator.ValidateAsync(request);
-if (!validation.IsValid)
-    return BadRequest(ApiResponse<object>.Fail("Dados inválidos.",
-        validation.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}")));
-
-var criado = await dispatcher.SendAsync(new CreateVeiculoCommand(request));
-return CreatedAtAction(nameof(GetById), new { id = criado.Id },
-    ApiResponse<VeiculoResponse>.Ok(criado, "Veículo cadastrado com sucesso."));
-```
-
-Não há filtro global de validação — o controller valida explicitamente. Handler **não** monta `ApiResponse`.
-
-Sinalização de falha, do handler para fora:
-
-| Situação | Handler faz | Resultado HTTP |
-|---|---|---|
-| Registro não encontrado | retorna `null` (ou `false` no delete) | controller devolve `NotFound(ApiResponse<object>.Fail(...))` |
-| Regra de negócio violada | `throw new InvalidOperationException("mensagem ao usuário")` | `ExceptionMiddleware` → **422**, com a mensagem da exceção |
-| Erro inesperado | deixa propagar | 500 com mensagem genérica |
-
-`ExceptionMiddleware` também mapeia `KeyNotFoundException` → 404, `ArgumentNullException` → 400, `UnauthorizedAccessException` → 401. `OnChallenge`/`OnForbidden` do JwtBearer emitem o mesmo envelope em 401/403. Mensagem de `InvalidOperationException` vai direto ao cliente — escreva-a como texto para o usuário final.
-
-## Isolamento por EmpresaId (regra crítica)
-
-Toda entidade de negócio tem `EmpresaId`; o valor vem **sempre** de `ICurrentUserService.EmpresaId` (claim `empresaId` do JWT) e **nunca** do corpo, rota ou query string.
-
-Ao escrever qualquer acesso a dados novo:
-
-1. Injete `ICurrentUserService` no handler e passe `currentUser.EmpresaId` ao repositório.
-2. Assinatura de repositório inclui `empresaId` e filtra por ele: `GetAllAsync(int empresaId)`, `GetByIdAsync(int id, int empresaId)`, `ExisteXAsync(int empresaId, ...)`. Não crie sobrecarga sem `empresaId`.
-3. No create, `EmpresaId = currentUser.EmpresaId` na entidade.
-4. **Todo id de FK vindo do request é resolvido por `GetByIdAsync(id, currentUser.EmpresaId)` antes de gravar** — assim um id de outra empresa simplesmente "não existe". `CreateManutencaoHandler` é o modelo a copiar; `CreateRotaHandler`/`UpdateRotaHandler` seguem o mesmo padrão desde a RN07. A auditoria completa da regra está em `docs/contexto-api.md` (§ Auditoria de isolamento por EmpresaId).
-5. Índice único no `DbContext` é composto com `EmpresaId` (`(EmpresaId, CPF)`, `(EmpresaId, Nome)`). Exceção: `Usuario.Email` é único global.
-
-Não há query filter global no EF — o filtro é responsabilidade de cada método de repositório.
-
-## Testes
-
-`tests/Frota360.Tests/`, espelhando a Application: `UseCases/<Agregado>/<Agregado>HandlersTests.cs`, `<Agregado>MappingsTests.cs`, `<X>ValidatorTests.cs`; `Services/<Servico>Tests.cs`; `Abstractions/DispatcherTests.cs`. O projeto referencia Application e Domain — **não referencia Infrastructure nem a API**, então não há teste de repositório, DbContext ou endpoint.
-
-Padrão: xUnit + NSubstitute, sem banco.
-
-```csharp
-private readonly IVeiculoRepository _repository = Substitute.For<IVeiculoRepository>();
-private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
-
-public XHandlersTests() => _currentUser.EmpresaId.Returns(1);
-
-private CreateVeiculoHandler CreateHandler() =>
-    new(_repository, _currentUser, NullLogger<CreateVeiculoHandler>.Instance);
-```
-
-- Logger sempre `NullLogger<T>.Instance`.
-- Fábricas privadas estáticas para entidades (`NovoVeiculo(...)`, `NovaManutencao(...)`) com defaults e parâmetros nomeados.
-- Nome do teste em português: `Metodo_Cenario_DeveResultado` (ex.: `Create_DevePersistirEscopadoNaEmpresaEMapearResposta`).
-- Todo handler novo precisa de um teste que prove o escopo por empresa — asserção sobre o `empresaId` recebido (`_repository.Received(1).GetByIdAsync(1, 1)`) ou `Arg.Is<T>(x => x.EmpresaId == 1)`.
-- Regra de negócio: `await Assert.ThrowsAsync<InvalidOperationException>(...)`.
+Os demais comandos (build, testes, migrations, lint) estão no `CLAUDE.md` de cada app.

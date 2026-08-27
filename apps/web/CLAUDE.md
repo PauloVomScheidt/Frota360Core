@@ -1,10 +1,10 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the **front-end** of the Frota360 monorepo (`src/Web/`).
+This file provides guidance to Claude Code (claude.ai/code) when working with the **front-end** of the Frota360 monorepo (`apps/web/`).
 
 The repository root has its own [CLAUDE.md](../../CLAUDE.md) covering the .NET backend, the shared conventions, and — most relevant here — the **contract between API and front** (response envelope, DTO types, role matrix, ports/CORS). Read it before any change that crosses the boundary; this file covers the front-end only.
 
-All commands below run from `src/Web/`.
+All commands below run from `apps/web/`.
 
 ## Navegação de código
 Para perguntas estruturais (como X funciona, o que chama Y, o que quebra se eu mudar Z),
@@ -12,7 +12,7 @@ use `codegraph_explore` em vez de Grep/Read. O índice está sempre atualizado.
 
 ## Project
 
-Frota360 Web — the React front-end for the Frota360 API (`src/Api`, same repo), a multi-tenant fleet management system (motoristas/veículos/rotas/manutenções preventivas). All UI copy, comments, and docs in this repo are in **Portuguese**; match that when editing existing files.
+Frota360 Web — the React front-end for the Frota360 API (`apps/api`, same repo), a multi-tenant fleet management system (motoristas/veículos/rotas/manutenções preventivas). All UI copy, comments, and docs in this repo are in **Portuguese**; match that when editing existing files.
 
 The authoritative, detailed reference for screen-by-screen behavior, API conventions, and React Query cache keys is [docs/contexto-web.md](../../docs/contexto-web.md) — the single consolidated context document for the front-end (it also carries the endpoint map in §6.5 and known inconsistencies in §10). Read it before making non-trivial changes to a page. This file covers commands and cross-cutting architecture only, to avoid duplicating that document.
 
@@ -30,7 +30,7 @@ npm run gen:api  # regenerates src/api/schema.d.ts from the API's OpenAPI spec �
 
 There is no test suite in the front-end. There is no single-file lint/typecheck shortcut beyond running the full `lint`/`build` commands (oxlint and `tsc -b` don't take a useful single-file mode here).
 
-Requires the Frota360 API running locally — it lives in this same repo: `dotnet run --project src/Api` from the repository root (default `https://localhost:7271/api/v1` per `.env.development`, overridden by `VITE_API_URL`). On a fresh database there are no users — provision a company via the API's backoffice (`POST /backoffice/empresa`) and open the returned `linkConvite`, which lands on `/convite?token=...`.
+Requires the Frota360 API running locally — it lives in this same repo: `dotnet run --project src/Api` from `apps/api/` (default `https://localhost:7271/api/v1` per `.env.development`, overridden by `VITE_API_URL`). On a fresh database there are no users — provision a company via the API's backoffice (`POST /backoffice/empresa`) and open the returned `linkConvite`, which lands on `/convite?token=...`.
 
 ## Architecture
 

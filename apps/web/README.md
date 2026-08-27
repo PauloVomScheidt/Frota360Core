@@ -1,6 +1,6 @@
 # Frota360 Web
 
-Front-end React da API [Frota360](http://localhost:5062/scalar/v1) — gestão multi-empresa de motoristas, veículos e rotas.
+Front-end React da API [Frota360](../api) (`apps/api`, mesmo repositório) — gestão multi-empresa de motoristas, veículos e rotas.
 
 ## Stack
 
@@ -12,7 +12,7 @@ Front-end React da API [Frota360](http://localhost:5062/scalar/v1) — gestão m
 ## Como rodar
 
 Pré-requisitos: Node 20+ e a API Frota360 rodando — ela vive neste mesmo repositório:
-`dotnet run --project src/Api` a partir da raiz (`http://localhost:5062`).
+`cd apps/api` e `dotnet run --project src/Api` (`http://localhost:5062`).
 
 ```powershell
 npm install

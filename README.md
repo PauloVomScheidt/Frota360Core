@@ -1,363 +1,82 @@
 # Frota360
 
-Monorepo do **Frota360** — gestão de frotas multi-tenant. Reúne a API REST em .NET 10 e o front-end React que a consome. Cada empresa cliente enxerga apenas os seus veículos, motoristas, rotas e manutenções — o isolamento é aplicado em cada acesso a dados, a partir da claim `empresaId` do JWT.
+Monorepo do **Frota360** — gestão de frotas multi-tenant. Cada empresa cliente enxerga apenas os seus veículos, motoristas, rotas e manutenções; o isolamento é aplicado em cada acesso a dados, a partir da claim `empresaId` do JWT.
 
-| Parte | Onde | Stack | Documentação |
-|---|---|---|---|
-| API | [`src/Api`](src/Api) + `src/Application` · `src/Domain` · `src/Infrastructure` | .NET 10, EF Core, JWT | este README · [CLAUDE.md](CLAUDE.md) · [docs/contexto-api.md](docs/contexto-api.md) |
-| Front | [`src/Web`](src/Web) | React 19, Vite, TanStack Query | [src/Web/README.md](src/Web/README.md) · [src/Web/CLAUDE.md](src/Web/CLAUDE.md) · [docs/contexto-web.md](docs/contexto-web.md) |
+| App | Stack | Documentação |
+|---|---|---|
+| [`apps/api`](apps/api) — API REST | .NET 10, EF Core, SQL Server, JWT | [README](apps/api/README.md) · [CLAUDE.md](apps/api/CLAUDE.md) · [contexto-api.md](docs/contexto-api.md) |
+| [`apps/web`](apps/web) — front-end | React 19, Vite, TanStack Query, Tailwind | [README](apps/web/README.md) · [CLAUDE.md](apps/web/CLAUDE.md) · [contexto-web.md](docs/contexto-web.md) |
 
-O restante deste README cobre a **API**.
-
----
-
-## Sumário
-
-- [Estrutura do repositório](#estrutura-do-repositório)
-- [O que a API faz](#o-que-a-api-faz)
-- [Stack](#stack)
-- [Arquitetura](#arquitetura)
-- [Como rodar](#como-rodar)
-- [Configuração](#configuração)
-- [Autenticação e papéis](#autenticação-e-papéis)
-- [Endpoints](#endpoints)
-- [Formato das respostas](#formato-das-respostas)
-- [Regras de negócio principais](#regras-de-negócio-principais)
-- [Testes](#testes)
-- [Docker](#docker)
+Cada app é **autocontido**: tem sua própria solution/`package.json`, seus comandos e seu `CLAUDE.md`. O que é transversal aos dois — a regra do português, a documentação de contexto e o **contrato entre API e front** — está em [CLAUDE.md](CLAUDE.md) na raiz.
 
 ---
 
-## Estrutura do repositório
+## Estrutura
 
 ```
-Frota360.slnx              solution .NET (só os projetos do backend)
-src/
-├── Domain/                Frota360.Domain
-├── Application/           Frota360.Application
-├── Infrastructure/        Frota360.Infrastructure
-├── Api/                   Frota360.Api  ← ponto de entrada da API
-└── Web/                   front-end React + Vite (package.json próprio)
-tests/
-└── Frota360.Tests/        xUnit + NSubstitute
+apps/
+├── api/                   backend .NET 10
+│   ├── Frota360.slnx
+│   ├── Dockerfile         contexto de build = apps/api/
+│   ├── src/{Domain,Application,Infrastructure,Api}
+│   └── tests/Frota360.Tests
+└── web/                   front React + Vite
+    ├── package.json
+    └── src/{api,auth,components,pages,styles,lib}
 docs/
 ├── contexto-api.md        contexto profundo do backend
 ├── contexto-web.md        contexto profundo do front
-└── arquitetura.py         gera docs/arquitetura.png
-Dockerfile                 build da API (contexto = raiz do repo)
+├── arquitetura.py         gera docs/arquitetura.png
+└── arquitetura.png
 ```
 
-Os `.csproj` mantêm o prefixo `Frota360.` (`src/Api/Frota360.Api.csproj`); só os diretórios foram encurtados.
-
-Este repositório substitui os antigos `Frota360`/`Rota360` (API) e `Frota360Web` (front), cujo histórico foi preservado aqui.
-
----
-
-## O que a API faz
-
-| Módulo | Responsabilidade |
-|---|---|
-| **Empresa / Backoffice** | Provisionamento de empresa nova (venda assistida), protegido por API key |
-| **Convite / Usuário** | Convite por e-mail com token, criação de conta, gestão de papéis e ativação |
-| **Auth** | Login, refresh token rotacionado, esqueci/redefinir senha, logout |
-| **Veículo** | Cadastro da frota, com odômetro alimentado pelas rotas e manutenções |
-| **Motorista** | Cadastro de condutores (CPF único por empresa) |
-| **Rota** | Abertura e encerramento de viagens, com ciclo de hodômetro |
-| **Tipo de manutenção** | Catálogo por empresa ("troca de óleo", com intervalo em km) |
-| **Manutenção** | Planejamento por km/data, conclusão com custo e atualização do odômetro |
-
----
-
-## Stack
-
-- **.NET 10** / ASP.NET Core
-- **Entity Framework Core 10** + SQL Server
-- **JWT Bearer** + BCrypt para senhas
-- **FluentValidation** para validação de entrada
-- **Serilog** (console + arquivo diário, retenção de 7 dias)
-- **Scalar** para documentação interativa OpenAPI
-- **Asp.Versioning** (versionamento por URL, header ou query string)
-- **Resend** para envio de e-mail (com fallback para log em desenvolvimento)
-- **xUnit + NSubstitute** nos testes
-
----
-
-## Arquitetura
-
-Clean Architecture em quatro projetos, com CQRS manual na camada de aplicação.
-
-![Frota360 API architecture — the four layers, the CQRS request flow and the five tenant-isolation points](docs/arquitetura.png)
-
-> O diagrama acima ([`docs/arquitetura.png`](docs/arquitetura.png)) mostra, num único desenho, as quatro camadas, o caminho de um request pelo pipeline CQRS e os cinco pontos onde o isolamento por `EmpresaId` é aplicado. Os rótulos estão em inglês, para circular fora do time. Ele é gerado por script — veja [Diagrama de arquitetura](#diagrama-de-arquitetura).
-
-```
-src/Domain           Frota360.Domain — entidades, enums, ApiResponse<T>, Roles, interfaces
-      ^
-src/Application      Frota360.Application — UseCases (Commands/Queries/Handlers), Services, DTOs, Validators
-      ^                                        ^
-src/Infrastructure   Frota360.Infrastructure — DbContext, repositórios, TokenService, e-mail, config do JWT
-      ^
-src/Api              Frota360.Api — Controllers, ExceptionMiddleware, CurrentUserService
-```
-
-| Projeto | Pode referenciar | Nunca referencia |
-|---|---|---|
-| `Frota360.Domain` (`src/Domain`) | nada (sem pacotes) | EF Core, ASP.NET |
-| `Frota360.Application` (`src/Application`) | Domain | Infrastructure, ASP.NET, `DbContext` |
-| `Frota360.Infrastructure` (`src/Infrastructure`) | Domain | Application |
-| `Frota360.Api` (`src/Api`) | Application + Infrastructure | — |
-
-### Diagrama de arquitetura
-
-O PNG em [`docs/arquitetura.png`](docs/arquitetura.png) é gerado por [`docs/arquitetura.py`](docs/arquitetura.py) — o desenho fica versionado junto com a fonte que o produz, então basta rodar o script depois de mudar a arquitetura:
-
-```powershell
-python -m pip install pillow
-python docs/arquitetura.py
-```
-
-O script usa as fontes Segoe UI e Consolas (padrão do Windows).
-
-### Fluxo de um request
-
-```
-Controller (valida com IValidator<T> -> 400 se inválido)
-  -> dispatcher.SendAsync(new XCommand(request))
-  -> Dispatcher resolve IRequestHandler<XCommand, TResponse> no DI (reflexão)
-  -> Handler: lê currentUser.EmpresaId, chama o repositório, monta a entidade, .ToResponse()
-  -> Controller embrulha o resultado em ApiResponse<T>
-```
-
-`AddCqrsHandlers` varre a assembly da Application e registra todo `IRequestHandler<,>` — handler novo não precisa de registro manual.
-
-**CRUD de domínio** (veículo, motorista, rota, manutenção, tipo de manutenção) vive em `UseCases/` no padrão CQRS. **Autenticação, convite, usuário e onboarding** ficam em `Application/Services`, injetados direto no controller.
-
-### Isolamento por EmpresaId
-
-Toda entidade de negócio tem `EmpresaId`, e o valor vem **sempre** de `ICurrentUserService.EmpresaId` — nunca do corpo, rota ou query string:
-
-- Todo método de repositório recebe e filtra por `empresaId` (`GetByIdAsync(int id, int empresaId)`).
-- Todo id de FK vindo do request é resolvido por `GetByIdAsync(id, empresaId)` antes de gravar — um id de outra empresa simplesmente "não existe" (404).
-- Índices únicos são compostos com `EmpresaId` (`(EmpresaId, CPF)`, `(EmpresaId, Nome)`). Exceção: `Usuario.Email` é único global.
-
-Não há query filter global no EF; o filtro é responsabilidade explícita de cada método de repositório.
+Este repositório substitui os antigos `Frota360`/`Rota360` (API) e `Frota360Web` (front) — o histórico de commits dos dois foi preservado aqui.
 
 ---
 
 ## Como rodar
 
-Pré-requisitos: **.NET 10 SDK** e uma instância de **SQL Server** (LocalDB ou SQL Express servem).
+Pré-requisitos: **.NET 10 SDK**, **Node 20+** e uma instância de **SQL Server** (LocalDB ou SQL Express servem).
+
+**Terminal 1 — API:**
 
 ```powershell
-# 1. Restaurar e compilar
+cd apps/api
 dotnet build Frota360.slnx
-
-# 2. Configurar a chave do JWT (obrigatória, mínimo 32 caracteres)
 dotnet user-secrets set "Jwt:Key" "uma-chave-secreta-com-pelo-menos-32-caracteres" --project src/Api
-
-# 3. Aplicar as migrations
 dotnet ef database update --project src/Infrastructure --startup-project src/Api
-
-# 4. Subir a API
-dotnet run --project src/Api
+dotnet run --project src/Api          # http://localhost:5062 → /scalar/v1
 ```
 
-Todos os comandos rodam a partir da **raiz do repositório**.
-
-A API sobe em `http://localhost:5062`. A documentação interativa fica em **`/scalar/v1`**.
-
-### Subir o front junto
+**Terminal 2 — front:**
 
 ```powershell
-cd src/Web
+cd apps/web
 npm install
-npm run dev     # http://localhost:5173 (porta fixa — origem liberada no CORS da API)
+npm run dev                           # http://localhost:5173
 ```
 
-São dois terminais: a API na raiz, o front em `src/Web`. Detalhes em [src/Web/README.md](src/Web/README.md).
+A porta 5173 é fixa: é a origem liberada no CORS da API. A URL da API vem de `VITE_API_URL` (`apps/web/.env.development`).
 
-> `AddInfrastructure` derruba a inicialização se `Jwt:Key` faltar ou tiver menos de 32 caracteres.
+> Num banco zerado não há usuários. Provisione uma empresa pelo backoffice da API (`POST /backoffice/empresa`) e abra o `linkConvite` retornado — ele cai em `/convite?token=...`.
 
-### Nova migration
-
-```powershell
-dotnet ef migrations add <Nome> --project src/Infrastructure --startup-project src/Api
-```
-
-### Primeiro acesso
-
-Não há usuário semeado. O caminho de entrada é o provisionamento pelo backoffice:
-
-1. Configure `Backoffice:ApiKey`.
-2. `POST /api/v1/backoffice/empresa` com o header `X-Backoffice-Key` — cria a empresa, semeia os tipos de manutenção padrão e dispara o convite do primeiro Admin.
-3. `POST /api/v1/convite/aceitar` com o token do e-mail cria o usuário e já devolve o par token + refresh, sem exigir login.
-
-Em desenvolvimento, sem `Resend:ApiKey`, o e-mail cai no `LogEmailService` e o link do convite é impresso no console.
+Detalhes de configuração, endpoints, papéis e regras de negócio: [`apps/api/README.md`](apps/api/README.md). Telas, rotas e scripts do front: [`apps/web/README.md`](apps/web/README.md).
 
 ---
 
-## Configuração
+## Comandos por app
 
-| Chave | Para que serve |
-|---|---|
-| `ConnectionStrings:DefaultConnection` | Conexão com o SQL Server |
-| `Jwt:Key` | Assinatura do token — **32+ caracteres, obrigatória** |
-| `Jwt:Issuer` / `Jwt:Audience` | Emissor e audiência do JWT |
-| `Cors:AllowedOrigins` | Array de origens liberadas |
-| `Frontend:BaseUrl` | Base dos links de convite e reset de senha enviados por e-mail |
-| `Resend:ApiKey` / `Resend:From` | Envio de e-mail. Sem a chave, cai no log |
-| `Backoffice:ApiKey` | Protege o provisionamento. Sem ela, o endpoint responde 401 sempre |
-
-Em **desenvolvimento** use `dotnet user-secrets`. Em **produção**, variáveis de ambiente:
-
-```
-Jwt__Key
-Resend__ApiKey
-Backoffice__ApiKey
-ConnectionStrings__DefaultConnection
-```
-
-### Observabilidade e proteções
-
-- **Serilog**: console + `logs/frota360-{data}.log`, rolagem diária, 7 arquivos retidos.
-- **Rate limit**: 200 req/min por IP globalmente; política `auth` de 5 req/min nos endpoints sensíveis.
-- **Health checks**: `GET /health` e `GET /health/detail` (com o status do DbContext).
-- **CORS**: origens vindas de `Cors:AllowedOrigins`, aplicado antes do rate limiter para que o 429 também leve os headers.
-
----
-
-## Autenticação e papéis
-
-Login com BCrypt devolve um **JWT de 1 hora** (claims `sub`, `email`, `name`, `jti`, `empresaId`, `role`) mais um **refresh token de 7 dias**, rotacionado a cada uso e guardado como hash no banco.
-
-| Papel | Pode |
-|---|---|
-| **Admin** | Tudo. É o **único que exclui** e o único que administra usuários e convites |
-| **Supervisor** | Cria e edita motoristas, veículos, tipos de manutenção e manutenções |
-| **Operador** | Cria, edita e encerra **rotas**; leitura no restante |
-
-Alterar o papel ou desativar um usuário revoga a sessão dele (força novo login, para o token refletir a mudança) e é barrado se deixar a empresa sem nenhum admin ativo.
-
----
-
-## Endpoints
-
-Base: `api/v1/{controller}`. A versão também é aceita via header `api-version` ou query `?version=`.
-
-| Método | Rota | Acesso |
+| | `apps/api` | `apps/web` |
 |---|---|---|
-| POST | `/auth/login`, `/auth/refresh`, `/auth/esqueci-senha`, `/auth/redefinir-senha` | anônimo, 5 req/min |
-| POST | `/auth/logout` | autenticado |
-| POST | `/backoffice/empresa` | header `X-Backoffice-Key` |
-| GET/POST/DELETE | `/convite`, `/convite/{id}` | Admin |
-| POST | `/convite/aceitar` | anônimo |
-| GET | `/usuario` · PUT `/usuario/{id}/role` · `/usuario/{id}/ativo` | Admin |
-| GET | `/veiculo`, `/motorista`, `/rota`, `/tipomanutencao?apenasAtivos=`, `/manutencao?veiculoId=&status=` (+ `/{id}`) | qualquer autenticado |
-| POST/PUT | `/veiculo`, `/motorista`, `/tipomanutencao`, `/manutencao`, `/manutencao/{id}/concluir` | Admin, Supervisor |
-| POST/PUT | `/rota`, `/rota/{id}/encerrar` | qualquer autenticado (inclui Operador) |
-| DELETE | `/{qualquer}/{id}` | **Admin** |
-| GET | `/health`, `/health/detail`, `/scalar/v1` | aberto |
-
-Transição de estado é sempre **endpoint próprio**, nunca PUT: `POST /manutencao/{id}/concluir`, `POST /rota/{id}/encerrar`.
+| Build | `dotnet build Frota360.slnx` | `npm run build` |
+| Testes | `dotnet test` | — (sem suíte) |
+| Lint | — | `npm run lint` |
+| Dev | `dotnet run --project src/Api` | `npm run dev` |
 
 ---
 
-## Formato das respostas
+## Convenções
 
-Toda resposta usa o envelope `ApiResponse<T>`, montado no controller:
+O projeto é escrito **inteiramente em português** — classes, métodos, DTOs, comentários, logs, textos de UI e mensagens de resposta. A única exceção são os rótulos do diagrama de arquitetura, em inglês para circular fora do time.
 
-```json
-{
-  "sucesso": true,
-  "mensagem": "Veículo cadastrado com sucesso.",
-  "dados": { "id": 12, "placa": "ABC1D23" },
-  "erros": null
-}
-```
-
-| Situação | Status | Origem |
-|---|---|---|
-| Validação de entrada falhou | **400** | `IValidator<T>` no controller, com a lista em `erros` |
-| Registro não encontrado (ou de outra empresa) | **404** | handler retorna `null` |
-| Regra de negócio violada | **422** | `InvalidOperationException` → `ExceptionMiddleware` |
-| Sem token / token inválido | **401** | JwtBearer, mesmo envelope |
-| Papel insuficiente | **403** | JwtBearer, mesmo envelope |
-| Excesso de requisições | **429** | rate limiter, mesmo envelope |
-| Erro inesperado | **500** | mensagem genérica |
-
-A mensagem de uma `InvalidOperationException` vai direto ao cliente — é escrita como texto para o usuário final.
-
----
-
-## Regras de negócio principais
-
-### Rota — ciclo de hodômetro
-
-- **Abrir**: `KmInicial` é obrigatório e **não pode ser menor** que o odômetro atual do veículo (422, com o valor atual na mensagem). Se for maior, o veículo é atualizado já na abertura — rodou fora do sistema, o número mais recente vence.
-- **Encerrar** (`POST /rota/{id}/encerrar`, corpo `{ kmFinal, dataFim? }` — `dataFim` omitida vira agora): grava `KmFinal`, `DataFim`, `KmPercorrido = KmFinal - KmInicial`, marca `Ativo = false` e avança o odômetro do veículo — **só para frente, nunca retrocede**. Recusa em 422: rota já encerrada, `KmFinal` < `KmInicial`, `DataFim` < `DataInicio`.
-- `KmPercorrido` é **persistido**, não derivado: é fato histórico da rota e não depende do estado atual do veículo.
-- Encerrar é a **única** transição de estado da rota — `Ativo` e `DataFim` não fazem parte do request de update.
-
-### Manutenção
-
-- Nasce **Pendente**, com `QuilometragemPrevista` e opcionalmente `DataPrevista` — vence no que vier primeiro.
-- **"Atrasada" não existe no banco**: é derivada na leitura, comparando o previsto com o km atual do veículo. O enum persistido só tem `Pendente`, `Realizada` e `Cancelada`.
-- Duplicata (mesmo veículo + tipo + km, ainda pendente) e tipo inativo são bloqueados.
-- **Concluir** grava km, data e custo e aproveita para avançar o odômetro do veículo, também só para frente.
-- Excluir um tipo de manutenção em uso é proibido (422, "inative-o") — apagar levaria o histórico junto.
-
-### Convite e senha
-
-Token aleatório de 64 bytes, com **apenas o hash indo ao banco**, validade de 7 dias; convites pendentes anteriores para o mesmo e-mail são apagados. `esqueci-senha` responde de forma neutra sempre, sem revelar se o e-mail existe (token de 30 min); redefinir a senha derruba o refresh token.
-
----
-
-## Testes
-
-```powershell
-dotnet test
-dotnet test --filter "FullyQualifiedName~ManutencaoHandlersTests"   # uma classe
-dotnet test --filter "DisplayName~Create_DevePersistir"             # um teste
-```
-
-xUnit + NSubstitute, **sem banco**. O projeto de teste referencia apenas Application e Domain — não há teste de repositório, `DbContext` ou endpoint; a cobertura é de handlers, mappings, validators e services.
-
-Nomes em português, no padrão `Metodo_Cenario_DeveResultado`. Todo handler tem ao menos um teste que prova o escopo por empresa.
-
----
-
-## Docker
-
-```powershell
-docker build -t frota360 .
-docker run -p 8080:8080 `
-  -e ConnectionStrings__DefaultConnection="Server=...;Database=Frota360;User Id=...;Password=...;TrustServerCertificate=True;" `
-  -e Jwt__Key="uma-chave-secreta-com-pelo-menos-32-caracteres" `
-  frota360
-```
-
-Build multi-estágio sobre `dotnet/sdk:10.0` → `dotnet/aspnet:10.0`, expondo a porta **8080**. O `Dockerfile` na raiz builda **apenas a API** — o contexto é a raiz do repositório e os `COPY` apontam para `src/`.
-
----
-
-## Convenções de código
-
-O projeto é escrito **inteiramente em português** — classes, métodos, DTOs, comentários, logs e mensagens de resposta.
-
-Estrutura de uma fatia vertical:
-
-```
-UseCases/<Agregado>s/
-  Commands/<Acao><Agregado>/<Acao><Agregado>Command.cs
-                            <Acao><Agregado>Handler.cs
-  Queries/Get<X>/Get<X>Query.cs
-  Validator/<Acao><Agregado>Validator.cs
-  <Agregado>Mappings.cs
-```
-
-- **Primary constructors** em handlers, repositórios, controllers, serviços e middleware.
-- Handlers são `sealed`, logam início e fim, e envolvem o corpo em `try/catch` que loga e relança.
-- **Mapeamento é manual** via extensão `ToResponse()` — não há `IMapper` em uso.
-- DTOs são classes com `{ get; set; }`, não records. Nenhuma Response expõe `EmpresaId`.
-
-Detalhes completos em [CLAUDE.md](CLAUDE.md) e o aprofundamento de domínio em [docs/contexto-api.md](docs/contexto-api.md). Para o front, [src/Web/CLAUDE.md](src/Web/CLAUDE.md) e [docs/contexto-web.md](docs/contexto-web.md).
+Toda alteração estrutural, regra de negócio ou endpoint novo exige atualizar a documentação de contexto correspondente em `docs/` — e **os dois lados** quando a mudança atravessa a fronteira entre API e front.

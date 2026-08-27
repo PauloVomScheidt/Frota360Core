@@ -379,4 +379,4 @@ appsettings.Production.json
 # Configuração local do Claude Code
 .claude/settings.local.json
 
-# Build do front (src/Web tem seu próprio .gitignore com node_modules/dist)
+# O front tem seu próprio .gitignore em apps/web (node_modules, dist)

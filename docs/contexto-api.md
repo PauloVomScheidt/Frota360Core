@@ -10,10 +10,10 @@ Panorama visual em [`docs/arquitetura.png`](docs/arquitetura.png) — as quatro 
 
 | Projeto | Papel |
 |---|---|
-| `Frota360.Domain` (`src/Domain`) | Entidades, enums, `ApiResponse<T>`, `Roles`, interfaces de repositório/serviço. Zero pacotes. |
-| `Frota360.Application` (`src/Application`) | CQRS manual (`UseCases/`), `Services/` (auth/convite/usuário/backoffice), DTOs, validators FluentValidation |
-| `Frota360.Infrastructure` (`src/Infrastructure`) | EF Core + SQL Server, repositórios, JWT, e-mail (Resend), migrations |
-| `Frota360.Api` (`src/Api`) | Controllers, `ExceptionMiddleware`, `CurrentUserService`, Program |
+| `Frota360.Domain` (`apps/api/src/Domain`) | Entidades, enums, `ApiResponse<T>`, `Roles`, interfaces de repositório/serviço. Zero pacotes. |
+| `Frota360.Application` (`apps/api/src/Application`) | CQRS manual (`UseCases/`), `Services/` (auth/convite/usuário/backoffice), DTOs, validators FluentValidation |
+| `Frota360.Infrastructure` (`apps/api/src/Infrastructure`) | EF Core + SQL Server, repositórios, JWT, e-mail (Resend), migrations |
+| `Frota360.Api` (`apps/api/src/Api`) | Controllers, `ExceptionMiddleware`, `CurrentUserService`, Program |
 
 ## Pipeline de um request
 
@@ -25,9 +25,9 @@ Controller: valida IValidator<T> → 400 | dispatcher.SendAsync(Command/Query)
 Controller embrulha em ApiResponse<T>
 ```
 
-O `Dispatcher` (`src/Application/Abstractions/Messaging/Dispatcher.cs`) resolve `IRequestHandler<,>` fechado no contêiner — handlers são varridos por assembly em `ApplicationExtensions.cs:41`, então nunca precisam de registro manual (o preço: handler faltando quebra em runtime, não em compilação).
+O `Dispatcher` (`apps/api/src/Application/Abstractions/Messaging/Dispatcher.cs`) resolve `IRequestHandler<,>` fechado no contêiner — handlers são varridos por assembly em `ApplicationExtensions.cs:41`, então nunca precisam de registro manual (o preço: handler faltando quebra em runtime, não em compilação).
 
-**Erros** (`src/Api/Middlewares/ExceptionMiddleware.cs:33`): `InvalidOperationException` → **422 com a mensagem literal** (é texto para o usuário final), `KeyNotFoundException` → 404, `ArgumentNullException` → 400, resto → 500 genérico. Handler retorna `null`/`false` para "não encontrado" e o controller devolve 404.
+**Erros** (`apps/api/src/Api/Middlewares/ExceptionMiddleware.cs:33`): `InvalidOperationException` → **422 com a mensagem literal** (é texto para o usuário final), `KeyNotFoundException` → 404, `ArgumentNullException` → 400, resto → 500 genérico. Handler retorna `null`/`false` para "não encontrado" e o controller devolve 404.
 
 ## Isolamento multi-tenant
 
