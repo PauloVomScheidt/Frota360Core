@@ -42,10 +42,10 @@ export function LoginPage() {
         className="relative hidden min-w-[320px] flex-col justify-between p-14 md:flex md:w-[44%]"
         style={{ ...brandPanelStyle, color: '#fdfaf6' }}
       >
-        <div className="flex flex-col items-start gap-2.5">
+        <Link to="/" className="flex flex-col items-start gap-2.5 no-underline" aria-label="Frota 360 — início">
           <LogoMark size={56} tom="light" />
           <Wordmark size={22} cor="#fdfaf6" corDestaque="#5c7896" />
-        </div>
+        </Link>
         <div>
           <div
             className="mb-3.5 text-xs uppercase"
@@ -55,9 +55,9 @@ export function LoginPage() {
           </div>
           <h1
             className="max-w-[440px]"
-            style={{ fontSize: 58, color: '#d8bfa0', lineHeight: 1.02, letterSpacing: '-0.02em', margin: 0 }}
+            style={{ fontSize: 58, color: '#fdfaf6', lineHeight: 1.02, letterSpacing: '-0.02em', margin: 0 }}
           >
-            Gestão de <span style={{ color: '#bfa07c' }}>frota industrial</span> em um único painel.
+            Gestão de frota industrial em um único painel.
           </h1>
         </div>
         <span className="text-xs" style={{ color: 'color-mix(in srgb, #fdfaf6 55%, transparent)' }}>

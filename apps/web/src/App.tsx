@@ -8,9 +8,11 @@ import { DashboardPage } from './pages/DashboardPage'
 import { MotoristasPage } from './pages/MotoristasPage'
 import { VeiculosPage } from './pages/VeiculosPage'
 import { RotasPage } from './pages/RotasPage'
+import { ManutencoesPage } from './pages/ManutencoesPage'
+import { TiposManutencaoPage } from './pages/TiposManutencaoPage'
 import { UsuariosPage } from './pages/UsuariosPage'
 import { ConvitesPage } from './pages/ConvitesPage'
-import { RequireAdmin, RequireAuth } from './components/RequireAuth'
+import { RequireAdmin, RequireAuth, RequireGestor } from './components/RequireAuth'
 
 export default function App() {
   return (
@@ -28,6 +30,11 @@ export default function App() {
           <Route path="/motoristas" element={<MotoristasPage />} />
           <Route path="/veiculos" element={<VeiculosPage />} />
           <Route path="/rotas" element={<RotasPage />} />
+          <Route path="/manutencoes" element={<ManutencoesPage />} />
+          {/* O catálogo de tipos é tela de gestão: Admin e Supervisor. */}
+          <Route element={<RequireGestor />}>
+            <Route path="/tipos-manutencao" element={<TiposManutencaoPage />} />
+          </Route>
           <Route element={<RequireAdmin />}>
             <Route path="/usuarios" element={<UsuariosPage />} />
             <Route path="/convites" element={<ConvitesPage />} />

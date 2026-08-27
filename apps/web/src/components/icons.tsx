@@ -145,3 +145,41 @@ export const InstagramIcon = (p: IconProps) => (
     <circle cx={17} cy={7} r={0.7} fill="currentColor" />
   </Icon>
 )
+
+export const PencilIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7.5 18.5 3 20l1.5-4.5 12-12Z" />
+    <path d="M14.5 5.5l4 4" />
+  </Icon>
+)
+
+export const TrashIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 6h18" />
+    <path d="M8 6V4h8v2" />
+    <path d="M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6" />
+    <path d="M10 11v6M14 11v6" />
+  </Icon>
+)
+
+export const CheckIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M20 6L9 17l-5-5" />
+  </Icon>
+)
+
+export const ClipboardIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x={4} y={4} width={16} height={17} />
+    <path d="M8 4V2.5h8V4" />
+    <path d="M8 10h8M8 14h8M8 18h5" />
+  </Icon>
+)
+
+export const AlertIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 3 1.8 20.5h20.4L12 3Z" />
+    <path d="M12 10v4" />
+    <path d="M12 17.2v.1" />
+  </Icon>
+)

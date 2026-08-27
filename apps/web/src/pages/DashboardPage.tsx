@@ -6,7 +6,14 @@ import { rotasApi } from '../api/rotas'
 import { AppLayout, PageHeader } from '../components/AppLayout'
 import { TableStates } from '../components/Table'
 import { formatDate, formatKm } from '../lib/format'
-import { RouteIcon, SearchIcon, TruckIcon, UsersIcon, WrenchIcon } from '../components/icons'
+import {
+  ClipboardIcon,
+  RouteIcon,
+  SearchIcon,
+  TruckIcon,
+  UsersIcon,
+  WrenchIcon,
+} from '../components/icons'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
@@ -27,6 +34,27 @@ export function DashboardPage() {
   const veiculos = veiculosQuery.data ?? []
   const motoristas = motoristasQuery.data ?? []
   const rotas = rotasQuery.data ?? []
+
+  /**
+   * Km rodado no mês corrente: soma de `kmPercorrido` das rotas encerradas dentro do
+   * mês (o recorte é por `dataFim`, o momento em que a quilometragem foi apurada).
+   * `kmPercorrido` é persistido pela API — nunca recalcular a partir de kmInicial/kmFinal.
+   */
+  const kmDoMes = useMemo(() => {
+    const agora = new Date()
+    return (rotasQuery.data ?? []).reduce(
+      (acumulado, rota) => {
+        if (rota.kmPercorrido == null || !rota.dataFim) return acumulado
+        const fim = new Date(rota.dataFim)
+        if (Number.isNaN(fim.getTime())) return acumulado
+        if (fim.getFullYear() !== agora.getFullYear() || fim.getMonth() !== agora.getMonth()) {
+          return acumulado
+        }
+        return { km: acumulado.km + rota.kmPercorrido, rotas: acumulado.rotas + 1 }
+      },
+      { km: 0, rotas: 0 },
+    )
+  }, [rotasQuery.data])
 
   const kpis: Kpi[] = [
     {
@@ -55,6 +83,14 @@ export function DashboardPage() {
       detail: 'quilometragem acumulada',
       icon: <WrenchIcon />,
     },
+    {
+      label: 'Km rodado',
+      value: rotasQuery.isSuccess ? kmDoMes.km.toLocaleString('pt-BR') : '—',
+      detail: rotasQuery.isSuccess
+        ? `no mês · ${kmDoMes.rotas} ${kmDoMes.rotas === 1 ? 'rota encerrada' : 'rotas encerradas'}`
+        : '',
+      icon: <ClipboardIcon />,
+    },
   ]
 
   const veiculosFiltrados = useMemo(() => {
@@ -79,7 +115,7 @@ export function DashboardPage() {
     <AppLayout>
       <PageHeader titulo="Visão geral da frota" subtitulo={atualizadoEm} />
 
-      <div className="mb-8 grid grid-cols-2 lg:grid-cols-4" style={{ border: '1px solid var(--color-divider)' }}>
+      <div className="mb-8 grid grid-cols-2 lg:grid-cols-5" style={{ border: '1px solid var(--color-divider)' }}>
         {kpis.map((kpi) => (
           <div
             key={kpi.label}

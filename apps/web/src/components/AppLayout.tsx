@@ -13,10 +13,12 @@ import {
   ChevronRightIcon,
   GridIcon,
   LogoutIcon,
+  ClipboardIcon,
   MailIcon,
   RouteIcon,
   TruckIcon,
   UsersIcon,
+  WrenchIcon,
 } from './icons'
 
 const SIDEBAR_KEY = 'frota360.sidebarExpanded'
@@ -121,6 +123,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const user = useSession()
   const admin = pode.gerenciarUsuarios(user?.role)
+  const gestor = pode.editarTiposManutencao(user?.role)
 
   const [expanded, setExpanded] = useState(() => lerPreferencia(SIDEBAR_KEY, true))
   const [catDashboard, setCatDashboard] = useState(true)
@@ -145,6 +148,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
     { to: '/motoristas', rotulo: 'Motoristas', icone: <UsersIcon size={17} /> },
     { to: '/veiculos', rotulo: 'Veículos', icone: <TruckIcon size={17} /> },
     { to: '/rotas', rotulo: 'Rotas', icone: <RouteIcon size={17} /> },
+    { to: '/manutencoes', rotulo: 'Manutenções', icone: <WrenchIcon size={17} /> },
+    // O catálogo de tipos só aparece para quem pode mantê-lo (Admin/Supervisor).
+    ...(gestor
+      ? [{ to: '/tipos-manutencao', rotulo: 'Tipos de manutenção', icone: <ClipboardIcon size={17} /> }]
+      : []),
   ]
 
   const itensControle: ItemNav[] = [

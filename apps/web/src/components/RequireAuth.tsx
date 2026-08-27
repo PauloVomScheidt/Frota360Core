@@ -20,3 +20,12 @@ export function RequireAdmin() {
   }
   return <Outlet />
 }
+
+/** Catálogo de tipos de manutenção: sem Admin/Supervisor, volta para a visão geral. */
+export function RequireGestor() {
+  const user = useSession()
+  if (!pode.editarTiposManutencao(user?.role)) {
+    return <Navigate to="/dashboard" replace />
+  }
+  return <Outlet />
+}
