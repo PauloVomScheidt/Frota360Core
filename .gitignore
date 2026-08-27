@@ -366,8 +366,9 @@ FodyWeavers.xsd
 appsettings.json
 appsettings.Development.json
 appsettings.Production.json
-/Frota360/appsettings.json
-/Frota360/appsettings.Development.json
+/apps/api/src/Api/appsettings.json
+/apps/api/src/Api/appsettings.Development.json
+/apps/api/src/Api/appsettings.Production.json
 
 ##
 ## Monorepo Frota360
