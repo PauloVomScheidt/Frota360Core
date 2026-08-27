@@ -1,200 +1,390 @@
 /**
- * Pele da landing pública (v2).
+ * Pele da landing pública (v3).
  *
- * A linguagem visual aqui é oposta à do painel: cantos arredondados, cartões
- * brancos sobre off-white, botões-pílula e sombras difusas. Por isso ela mora
- * num arquivo próprio, escopado em `.lp`, em vez de esticar o design system —
- * que é reto, bege e sem sombra, e continua valendo para todas as telas internas.
+ * Ao contrário da v2, a landing agora fala a MESMA língua do painel: reta,
+ * bege, sem sombra e sem canto arredondado. A página é uma ficha de controle —
+ * réguas de ponta a ponta, rótulos de campo em mono na margem e o número como
+ * protagonista. Todas as cores saem de `design-system.css`; nada é inventado
+ * aqui.
+ *
+ * Ela continua escopada em `.lp` e com folha própria porque tem ESCALA própria
+ * (display gigante, réguas full-bleed, odômetro) — não porque discorda do
+ * sistema. Vermelho e âmbar só aparecem como estado de manutenção, nunca
+ * como enfeite.
  */
 
 .lp {
-  --lp-ground: #faf9f7;
-  --lp-card: #ffffff;
-  --lp-ink: #1b1d21;
-  --lp-ink-80: rgba(27, 29, 33, 0.78);
-  --lp-ink-60: rgba(27, 29, 33, 0.62);
-  --lp-ink-45: rgba(27, 29, 33, 0.45);
-  --lp-line: rgba(27, 29, 33, 0.09);
-  --lp-line-soft: rgba(27, 29, 33, 0.06);
-  --lp-accent: #1f3a5f;
-  --lp-accent-hover: #16304f;
-  --lp-accent-active: #12253b;
-  --lp-wash: #f1f4f8;
-  --lp-wash-strong: #eef2f7;
-  --lp-warn-bg: #fdf1e7;
-  --lp-warn-ink: #9a5417;
-  --lp-neutral-bg: #f1f2f4;
+  /* — cor (toda derivada do design system) — */
+  --papel: #fdfaf6;
+  --papel-fundo: #f2ede4;
+  --tinta: #201e1d;
+  --painel: #1f3a5f;
+  --painel-escuro: #12253b;
+  --vencendo: #7a5312;
+  --vencendo-fundo: #f6ecd8;
+  --alerta: #a03123;
+
+  /* Três níveis de tinta para TEXTO, todos acima de 4.5:1 sobre `--papel`.
+     Os nomes são de intenção, não de opacidade, justamente porque os valores
+     foram calibrados por contraste: hierarquia aqui se faz com tamanho, peso
+     e caixa — nunca apagando o texto até ele sumir. Para régua e contorno use
+     `--regua`/`--regua-fraca`, que não são cor de texto. */
+  --tinta-forte: rgba(32, 30, 29, 0.86);
+  --tinta-media: rgba(32, 30, 29, 0.74);
+  --tinta-fraca: rgba(32, 30, 29, 0.66);
+  --regua: rgba(32, 30, 29, 0.16);
+  --regua-fraca: rgba(32, 30, 29, 0.09);
+
+  /* — escala tipográfica (sem tamanhos soltos no JSX) — */
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
+  /* `cqw`, não `vw`: o odômetro precisa caber na COLUNA dele, que muda de
+     largura em cada breakpoint. O container é `.lp-instrumento`. */
+  --t-odo: clamp(30px, 16cqw, 96px);
+  --t-h1: clamp(33px, 5vw, 60px);
+  --t-h2: clamp(25px, 3.1vw, 37px);
+  --t-h3: 21px;
+  --t-lead: 18px;
+  --t-corpo: 16px;
+  --t-sm: 14px;
+  --t-cap: 12px;
+
+  --medida: 1100px;
+  --gutter: 24px;
 
   min-height: 100vh;
-  padding: 0 24px;
-  /* `clip` e não `hidden`: hidden criaria um contexto de rolagem e o header
-     sticky deixaria de grudar no topo da janela. */
   overflow-x: clip;
-  background: var(--lp-ground);
-  color: var(--lp-ink);
-  font-size: 16px;
+  background: var(--papel);
+  color: var(--tinta);
+  font-size: var(--t-corpo);
   line-height: 1.6;
 }
 
-/* Neutraliza os padrões do design system do painel dentro da landing. */
-.lp h1,
-.lp h2,
-.lp h3 {
+/* Neutraliza os padrões do design system do painel dentro da landing.
+ *
+ * Tudo aqui vai dentro de `:where()` de propósito: `:where()` não soma
+ * especificidade, então este bloco vale (0,1,0) e QUALQUER classe abaixo o
+ * vence. Sem isso, `.lp p { margin: 0 }` (0,1,1) engoliria as margens de
+ * `.lp-lead`, `.lp-hero-sub` e companhia (0,1,0), e `.lp a` mataria o
+ * sublinhado de `.lp-cta-mail`. */
+.lp :where(h1, h2, h3) {
   margin: 0;
-  font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: -0.025em;
-  text-wrap: pretty;
+  font-weight: 800;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
 }
-.lp p { margin: 0; text-wrap: pretty; }
-.lp ul { margin: 0; padding: 0; list-style: none; }
-.lp a { color: inherit; text-decoration: none; }
-.lp table { width: 100%; border-collapse: collapse; }
-.lp :focus-visible { outline: 2px solid var(--lp-accent); outline-offset: 3px; }
+.lp :where(p) { margin: 0; text-wrap: pretty; }
+.lp :where(ul) { margin: 0; padding: 0; list-style: none; }
+.lp :where(a) { color: inherit; text-decoration: none; }
+.lp :where(table) { width: 100%; border-collapse: collapse; }
+.lp :focus-visible { outline: 2px solid var(--painel); outline-offset: 2px; }
 
-.lp-h1 { font-size: clamp(38px, 6vw, 68px); letter-spacing: -0.035em; }
-.lp-h2 { font-size: clamp(28px, 3.6vw, 42px); }
-.lp-h2-sm { font-size: clamp(26px, 3.2vw, 38px); }
-.lp-h3 { font-size: clamp(24px, 2.8vw, 34px); }
+.lp-h1 { font-size: var(--t-h1); }
+.lp-h2 { font-size: var(--t-h2); }
+.lp-h3 { font-size: var(--t-h3); letter-spacing: -0.015em; }
 
-.lp-wrap { max-width: 1060px; margin: 0 auto; }
-.lp-wrap-narrow { max-width: 900px; margin: 0 auto; }
-.lp-section { margin-top: 120px; }
-.lp-section-tight { margin-top: 88px; }
+/* ── ficha: faixas de ponta a ponta ───────────────────────────────────────── */
 
-/* — reveal no scroll — */
-.lp-reveal {
-  opacity: 0;
-  transform: translateY(16px);
-  transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.2, 0.7, 0.3, 1);
+.lp-faixa { border-bottom: 1px solid var(--regua); }
+.lp-faixa-forte { border-bottom: 2px solid var(--tinta); }
+.lp-wrap {
+  max-width: var(--medida);
+  margin: 0 auto;
+  padding: 76px var(--gutter);
 }
-.lp-reveal.is-visible { opacity: 1; transform: none; }
-@media (prefers-reduced-motion: reduce) {
-  .lp-reveal { opacity: 1; transform: none; transition: none; }
+.lp-wrap-estreito { max-width: 820px; }
+
+/* Rótulo de campo: nomeia o domínio da seção, como numa ficha impressa. */
+.lp-campo {
+  font-family: var(--mono);
+  font-size: var(--t-cap);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tinta-fraca);
+  display: block;
+  margin-bottom: 22px;
+}
+.lp-campo-painel { color: var(--painel); }
+
+.lp-lead {
+  font-size: var(--t-lead);
+  color: var(--tinta-forte);
+  max-width: 58ch;
+  margin-top: 20px;
 }
 
-/* — barra flutuante — */
+/* ── barra ────────────────────────────────────────────────────────────────── */
+
 .lp-nav {
   position: sticky;
-  top: 16px;
+  top: 0;
   z-index: 20;
-  max-width: 1120px;
-  margin: 16px auto 0;
+  background: var(--papel);
+  border-bottom: 2px solid var(--tinta);
+}
+.lp-nav-inner {
+  max-width: var(--medida);
+  margin: 0 auto;
+  padding: 14px var(--gutter);
   display: flex;
   align-items: center;
   gap: 28px;
-  padding: 10px 12px 10px 20px;
-  background: rgba(250, 249, 247, 0.82);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-  border: 1px solid var(--lp-line);
-  border-radius: 999px;
-  box-shadow: 0 6px 26px -12px rgba(27, 29, 33, 0.16);
 }
 .lp-brand { display: flex; align-items: center; gap: 9px; margin-right: auto; }
-.lp-nav-links { display: none; gap: 26px; font-size: 14.5px; color: var(--lp-ink-60); }
-.lp-nav-links a:hover { color: var(--lp-ink); }
-.lp-nav-actions { display: flex; align-items: center; gap: 6px; }
-@media (min-width: 1024px) {
+.lp-nav-links {
+  display: none;
+  gap: 26px;
+  font-family: var(--mono);
+  font-size: var(--t-cap);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tinta-media);
+}
+.lp-nav-links a:hover { color: var(--painel); }
+.lp-nav-acoes { display: flex; align-items: center; gap: 8px; }
+@media (min-width: 1000px) {
   .lp-nav-links { display: flex; }
+  .lp-menu { display: none; }
 }
 
-/* — botões — */
+/* Menu de âncoras no celular — <details> nativo, sem JS e acessível. */
+.lp-menu { position: relative; }
+.lp-menu > summary {
+  list-style: none;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: var(--t-cap);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 9px 12px;
+  border: 1px solid var(--regua);
+  color: var(--tinta-forte);
+}
+.lp-menu > summary::-webkit-details-marker { display: none; }
+.lp-menu[open] > summary { background: var(--tinta); color: var(--papel); border-color: var(--tinta); }
+.lp-menu-lista {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  min-width: 210px;
+  display: flex;
+  flex-direction: column;
+  background: var(--papel);
+  border: 2px solid var(--tinta);
+  padding: 6px 0;
+}
+.lp-menu-lista a {
+  padding: 11px 16px;
+  font-size: var(--t-sm);
+  color: var(--tinta-forte);
+}
+.lp-menu-lista a:hover { background: var(--papel-fundo); color: var(--tinta); }
+
+/* ── botões: retos, como no painel ────────────────────────────────────────── */
+
 .lp-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 9px;
   border: 1px solid transparent;
-  border-radius: 999px;
-  font: inherit;
-  font-weight: 600;
+  border-radius: 0;
+  font-family: var(--font-heading, inherit);
+  font-weight: 800;
+  font-size: var(--t-sm);
   line-height: 1.2;
+  padding: 12px 20px;
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s ease, color 0.15s ease;
 }
-.lp-btn-primary { background: var(--lp-accent); color: #fff; }
-.lp-btn-primary:hover { background: var(--lp-accent-hover); color: #fff; }
-.lp-btn-primary:active { background: var(--lp-accent-active); }
-.lp-btn-outline { border-color: rgba(27, 29, 33, 0.14); color: var(--lp-ink); }
-.lp-btn-outline:hover { background: rgba(27, 29, 33, 0.04); }
-.lp-btn-quiet { color: var(--lp-ink-60); }
-.lp-btn-quiet:hover { background: rgba(27, 29, 33, 0.05); color: var(--lp-ink); }
-.lp-btn-onblue {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.3);
-  color: #fff;
-}
-.lp-btn-onblue:hover { background: rgba(255, 255, 255, 0.22); color: #fff; }
-.lp-btn-sm { font-size: 14.5px; padding: 10px 18px; }
-.lp-btn-nav { font-size: 14.5px; padding: 9px 14px; }
-.lp-btn-lg { font-size: 16px; padding: 15px 26px; }
-.lp-btn-md { font-size: 15px; padding: 13px 22px; }
+.lp-btn-primario { background: var(--painel); color: var(--papel); }
+.lp-btn-primario:hover { background: var(--painel-escuro); color: var(--papel); }
+.lp-btn-contorno { border-color: var(--tinta); color: var(--tinta); }
+.lp-btn-contorno:hover { background: var(--tinta); color: var(--papel); }
+.lp-btn-discreto { color: var(--tinta-forte); }
+.lp-btn-discreto:hover { color: var(--painel); }
+.lp-btn-claro { background: var(--papel); color: var(--painel); }
+.lp-btn-claro:hover { background: var(--papel-fundo); color: var(--painel); }
+.lp-btn-g { font-size: var(--t-corpo); padding: 16px 26px; }
+.lp-btn-p { padding: 9px 14px; font-size: 13px; }
 
-/* — hero — */
-.lp-hero {
-  max-width: 880px;
-  margin: 0 auto;
-  padding-top: 104px;
-  text-align: center;
+/* ── hero: o odômetro é a assinatura ──────────────────────────────────────── */
+
+/* Dupla classe de propósito: precisa vencer `.lp-wrap` inclusive dentro do
+   media query de 600px, que vem depois neste arquivo. */
+.lp-wrap.lp-hero { padding-top: 64px; padding-bottom: 64px; }
+/* `center`: o instrumento é a ilustração da coluna de texto, então acompanha o
+   eixo dela — encostado na base ele colava na régua de 2px da faixa. */
+.lp-hero-grade { display: grid; gap: 52px; grid-template-columns: 1fr; align-items: center; }
+@media (min-width: 940px) {
+  .lp-hero-grade { grid-template-columns: 1.05fr 0.95fr; gap: 64px; }
+}
+
+.lp-instrumento {
+  border: 2px solid var(--tinta);
+  background: var(--papel-fundo);
+  container-type: inline-size;
+  min-width: 0;
+}
+.lp-instrumento-topo {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--regua);
+  font-family: var(--mono);
+  font-size: var(--t-cap);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.lp-instrumento-placa { font-weight: 600; color: var(--tinta); }
+.lp-instrumento-modelo { color: var(--tinta-media); letter-spacing: 0.06em; }
+.lp-instrumento-selo { margin-left: auto; color: var(--tinta-fraca); }
+.lp-instrumento-corpo { padding: 26px 18px 24px; }
+
+/* odômetro mecânico: cada dígito é uma fita de 0–9 que desliza */
+.lp-odo {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 2px;
+  font-family: var(--mono);
+  font-size: var(--t-odo);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--tinta);
+}
+/* A janela do tambor precisa de folga em volta do algarismo: o avanço do Plex
+   Mono é 0.6em e a linha tem 1em, então 0.62em × 1em encostava nos dois eixos.
+   `contain: paint` não é enfeite: só `overflow: hidden` não segurava a fita
+   ENQUANTO ela anima — a fita virava camada composta própria e escapava do
+   recorte do pai, derramando algarismos por cima e por baixo da janela (só nos
+   dígitos em movimento; os parados recortavam certo). */
+.lp-odo-digito {
+  position: relative;
+  overflow: hidden;
+  contain: paint;
+  height: 1.3em;
+  width: 0.8em;
+  background: var(--papel);
+  border: 1px solid var(--regua);
+}
+/* A fita tem 10x a altura da janela — uma célula por algarismo. Com `inset: 0`
+   ela ficaria com 1x e cada célula viraria um décimo de linha, estourando o
+   glifo para fora. O translate é em % da própria fita: -10% = uma célula. */
+.lp-odo-fita {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 1000%;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  transform: translateY(calc(var(--digito) * -10%));
+  transition: transform 0.5s cubic-bezier(0.3, 0.9, 0.25, 1);
 }
-.lp-badge {
+.lp-odo-fita span {
+  height: 10%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* o tracking negativo do conjunto deslocaria o algarismo dentro da janela */
+  letter-spacing: 0;
+}
+.lp-odo-unidade {
+  font-family: var(--mono);
+  font-size: var(--t-cap);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tinta-media);
+  align-self: flex-end;
+  padding-bottom: 0.2em;
+  padding-left: 10px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-odo-fita { transition: none; }
+}
+
+/* A folga acima da régua é maior que a de cima do odômetro de propósito: o
+   rótulo "km" pendura na base do grupo e pesa visualmente ali embaixo. */
+.lp-servico {
+  margin-top: 44px;
+  padding-top: 18px;
+  border-top: 1px solid var(--regua);
+  display: grid;
+  gap: 6px;
+}
+.lp-servico-nome { font-family: var(--mono); font-size: var(--t-sm); font-weight: 600; }
+.lp-servico-prev { font-family: var(--mono); font-size: 13px; color: var(--tinta-media); }
+.lp-servico-estado {
+  margin-top: 8px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 14px;
-  border-radius: 999px;
-  background: var(--lp-wash);
-  color: var(--lp-accent);
+  gap: 9px;
+  align-self: start;
+  padding: 8px 14px;
+  font-family: var(--mono);
   font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--papel);
+  border: 1px solid var(--regua);
+  color: var(--tinta-media);
+  transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
-.lp-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--lp-accent); flex: none; }
-.lp-hero-sub { margin-top: 24px; max-width: 56ch; font-size: 19px; color: var(--lp-ink-60); }
-.lp-hero-ctas { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 36px; }
-.lp-fineprint { margin-top: 20px; font-size: 13.5px; color: var(--lp-ink-45); }
-.lp-fineprint a { color: var(--lp-ink-60); }
-.lp-fineprint a:hover { color: var(--lp-ink); }
-
-/* — cartões — */
-.lp-card {
-  background: var(--lp-card);
-  border: 1px solid var(--lp-line);
-  border-radius: 18px;
+.lp-servico-estado.is-vencendo {
+  background: var(--vencendo-fundo);
+  border-color: var(--vencendo);
+  color: var(--vencendo);
 }
-.lp-card-lift { box-shadow: 0 10px 28px -14px rgba(27, 29, 33, 0.16); }
-.lp-card-float { box-shadow: 0 22px 54px -24px rgba(27, 29, 33, 0.24); overflow: hidden; }
-.lp-card-pad { padding: 28px 30px; }
-.lp-card-pad-sm { padding: 22px 24px; }
+.lp-servico-estado.is-atrasada {
+  background: color-mix(in srgb, var(--alerta) 12%, transparent);
+  border-color: var(--alerta);
+  color: var(--alerta);
+}
+.lp-farol { width: 8px; height: 8px; background: currentColor; flex: none; }
 
-.lp-kicker { font-size: 14px; font-weight: 600; color: var(--lp-accent); }
-.lp-lead { margin-top: 18px; font-size: 16.5px; color: var(--lp-ink-60); }
-.lp-num { font-size: 13px; font-weight: 600; color: var(--lp-accent); }
+.lp-hero-sub { margin-top: 22px; font-size: var(--t-lead); color: var(--tinta-forte); max-width: 46ch; }
+.lp-hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+.lp-miudo { margin-top: 18px; font-size: 13px; color: var(--tinta-fraca); }
+.lp-miudo a { color: var(--tinta-forte); text-decoration: underline; text-underline-offset: 3px; }
+.lp-miudo a:hover { color: var(--painel); }
 
-/* — mock do painel — */
+/* ── mock do painel ───────────────────────────────────────────────────────── */
+
 .lp-mock {
-  margin-top: 64px;
-  background: var(--lp-card);
-  border: 1px solid var(--lp-line);
-  border-radius: 20px;
-  box-shadow: 0 30px 70px -24px rgba(27, 29, 33, 0.26);
-  overflow: hidden;
+  border: 2px solid var(--tinta);
+  background: var(--papel);
   display: grid;
   grid-template-columns: 1fr;
 }
+/* Sem `min-width: 0` o filho do grid cresce até o `min-width` da tabela (620px),
+   o `overflow-x` de `.lp-rolagem` nunca entra e o cabeçalho/rodapé do mock são
+   cortados fora da tela no celular. Vale para todo grid com tabela dentro. */
+.lp-mock > *,
+.lp-hero-grade > *,
+.lp-split > *,
+.lp-cta-grade > * {
+  min-width: 0;
+}
 @media (min-width: 900px) {
-  .lp-mock { grid-template-columns: 212px 1fr; }
+  .lp-mock { grid-template-columns: 206px 1fr; }
 }
 .lp-mock-aside {
   display: none;
-  background: var(--lp-ground);
-  border-right: 1px solid var(--lp-line-soft);
-  padding: 20px 14px;
+  background: var(--papel-fundo);
+  border-right: 1px solid var(--regua);
+  padding: 18px 12px;
   flex-direction: column;
-  gap: 22px;
+  gap: 20px;
 }
 @media (min-width: 900px) {
   .lp-mock-aside { display: flex; }
@@ -203,28 +393,28 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 10px;
-  border-radius: 9px;
+  padding: 8px 10px;
   font-size: 13.5px;
-  color: var(--lp-ink-60);
+  color: var(--tinta-media);
 }
-.lp-mock-item.is-active { background: var(--lp-wash-strong); color: var(--lp-accent); font-weight: 600; }
-.lp-mock-square { width: 6px; height: 6px; border-radius: 2px; background: rgba(27, 29, 33, 0.25); flex: none; }
-.lp-mock-item.is-active .lp-mock-square { background: var(--lp-accent); }
+.lp-mock-item.is-ativo { background: var(--painel); color: var(--papel); font-weight: 600; }
+.lp-mock-quad { width: 6px; height: 6px; background: currentColor; flex: none; }
 .lp-mock-user {
   margin-top: auto;
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 10px 8px 0;
-  border-top: 1px solid var(--lp-line-soft);
+  padding-top: 12px;
+  border-top: 1px solid var(--regua);
+  font-size: 12px;
+  line-height: 1.35;
 }
 .lp-avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  background: var(--lp-accent);
-  color: #fff;
+  width: 28px;
+  height: 28px;
+  background: var(--painel);
+  color: var(--papel);
+  font-family: var(--mono);
   font-size: 11px;
   font-weight: 600;
   display: flex;
@@ -232,287 +422,355 @@
   justify-content: center;
   flex: none;
 }
-.lp-mock-head {
+.lp-mock-cab {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  padding: 15px 20px;
-  border-bottom: 1px solid var(--lp-line-soft);
+  padding: 14px 18px;
+  border-bottom: 2px solid var(--tinta);
 }
-.lp-mock-title { font-size: 16px; font-weight: 600; }
-.lp-mock-search {
+.lp-mock-titulo { font-family: var(--font-heading, inherit); font-weight: 800; font-size: var(--t-h3); }
+.lp-mock-busca {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 190px;
-  padding: 7px 14px;
-  border: 1px solid rgba(27, 29, 33, 0.1);
-  border-radius: 999px;
+  min-width: 180px;
+  padding: 7px 12px;
+  border: 1px solid var(--regua);
   font-size: 13px;
-  color: var(--lp-ink-45);
+  color: var(--tinta-fraca);
 }
 .lp-mock-btn {
+  font-family: var(--font-heading, inherit);
   font-size: 13px;
-  font-weight: 600;
-  color: #fff;
-  background: var(--lp-accent);
-  border-radius: 999px;
-  padding: 8px 15px;
+  font-weight: 800;
+  color: var(--papel);
+  background: var(--painel);
+  padding: 8px 14px;
   white-space: nowrap;
 }
-.lp-mock-foot {
+.lp-mock-rodape {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 13px 20px;
-  border-top: 1px solid var(--lp-line-soft);
-  font-size: 12.5px;
-  color: var(--lp-ink-45);
+  padding: 12px 18px;
+  border-top: 1px solid var(--regua);
+  font-family: var(--mono);
+  font-size: var(--t-cap);
+  color: var(--tinta-fraca);
+}
+.lp-direita { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* A busca do mock é cenário (`aria-hidden`) — no celular ela só empurra o
+   cabeçalho para fora da tela, então sai. */
+@media (max-width: 480px) {
+  .lp-mock-busca { display: none; }
+  .lp-direita { margin-left: 0; }
 }
 
-/* — tabelas — */
-.lp-scroll { overflow-x: auto; }
-.lp-table { font-size: 13.5px; min-width: 620px; }
-.lp-table th {
+/* ── tabelas ──────────────────────────────────────────────────────────────── */
+
+.lp-rolagem { overflow-x: auto; }
+.lp-tabela { font-size: var(--t-sm); min-width: 620px; }
+.lp-tabela th {
   text-align: left;
-  font-weight: 500;
-  font-size: 11.5px;
-  color: var(--lp-ink-45);
-  padding: 12px 8px;
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tinta-fraca);
+  padding: 11px 8px;
   white-space: nowrap;
+  border-bottom: 1px solid var(--regua);
 }
-.lp-table td {
+.lp-tabela td {
   padding: 13px 8px;
-  border-top: 1px solid var(--lp-line-soft);
-  color: var(--lp-ink-80);
+  border-bottom: 1px solid var(--regua-fraca);
+  color: var(--tinta-forte);
   vertical-align: top;
 }
-.lp-table th:first-child, .lp-table td:first-child { padding-left: 20px; }
-.lp-table th:last-child, .lp-table td:last-child { padding-right: 20px; }
-.lp-table .num { text-align: right; font-variant-numeric: tabular-nums; }
-.lp-strong { font-weight: 600; color: var(--lp-ink); }
-.lp-sub { font-size: 12px; color: var(--lp-ink-45); margin-top: 2px; }
+.lp-tabela tr:last-child td { border-bottom: 0; }
+.lp-tabela th:first-child, .lp-tabela td:first-child { padding-left: 18px; }
+.lp-tabela th:last-child, .lp-tabela td:last-child { padding-right: 18px; }
+.lp-numero { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.lp-numero-dir { text-align: right; }
+.lp-forte { font-family: var(--mono); font-weight: 600; color: var(--tinta); }
+.lp-sub { font-size: 12px; color: var(--tinta-fraca); margin-top: 3px; }
 
-.lp-tag {
+/* Etiqueta de situação — reta, com régua à esquerda em vez de pílula. */
+.lp-etiq {
   display: inline-block;
-  font-size: 12px;
-  padding: 3px 11px;
-  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-left: 3px solid currentColor;
+  background: var(--papel-fundo);
   white-space: nowrap;
 }
-.lp-tag-accent { background: var(--lp-wash-strong); color: var(--lp-accent); }
-.lp-tag-neutral { background: var(--lp-neutral-bg); color: var(--lp-ink-60); }
-.lp-tag-warn { background: var(--lp-warn-bg); color: var(--lp-warn-ink); }
-.lp-pill-count {
-  font-size: 12.5px;
-  color: var(--lp-ink-45);
-  background: var(--lp-wash);
-  padding: 3px 11px;
-  border-radius: 999px;
-  white-space: nowrap;
+.lp-etiq-painel { color: var(--painel); }
+.lp-etiq-neutro { color: var(--tinta-media); }
+.lp-etiq-vencendo { color: var(--vencendo); background: var(--vencendo-fundo); }
+.lp-etiq-alerta { color: var(--alerta); background: color-mix(in srgb, var(--alerta) 9%, transparent); }
+.lp-contagem {
+  font-family: var(--mono);
+  font-size: var(--t-cap);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tinta-fraca);
 }
 
-/* — grades — */
-.lp-grid { display: grid; gap: 24px; }
-.lp-grid-2 { grid-template-columns: 1fr; }
-.lp-grid-3 { grid-template-columns: 1fr; }
-.lp-grid-4 { grid-template-columns: repeat(2, 1fr); gap: 32px; }
-.lp-split { display: grid; gap: 40px; align-items: center; grid-template-columns: 1fr; }
-@media (min-width: 720px) {
-  .lp-grid-2 { grid-template-columns: repeat(2, 1fr); }
-}
+/* ── grades ───────────────────────────────────────────────────────────────── */
+
+.lp-grade { display: grid; gap: 1px; background: var(--regua); border: 1px solid var(--regua); }
+.lp-grade > * { background: var(--papel); padding: 26px 24px; }
+.lp-grade-2 { grid-template-columns: 1fr; }
+.lp-grade-3 { grid-template-columns: 1fr; }
+@media (min-width: 720px) { .lp-grade-2 { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 900px) { .lp-grade-3 { grid-template-columns: repeat(3, 1fr); } }
+
+.lp-split { display: grid; gap: 40px; grid-template-columns: 1fr; align-items: start; }
 @media (min-width: 900px) {
-  .lp-grid-3 { grid-template-columns: repeat(3, 1fr); }
-  .lp-grid-4 { grid-template-columns: repeat(4, 1fr); }
-  .lp-split { grid-template-columns: 0.85fr 1.15fr; gap: 56px; }
-  .lp-split-rotas { grid-template-columns: 0.8fr 1.2fr; gap: 48px; }
-  .lp-split-manutencao { grid-template-columns: 1.55fr 1fr; gap: 24px; align-items: start; }
+  .lp-split { grid-template-columns: 0.8fr 1.2fr; gap: 56px; }
 }
 
-.lp-stat-valor { font-size: 32px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
-.lp-stat-rotulo { font-size: 14px; color: rgba(27, 29, 33, 0.55); margin-top: 8px; }
+/* ── falhas da planilha ───────────────────────────────────────────────────── */
 
-/* — fundações (chips) — */
-.lp-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 14px; margin-top: 44px; }
-.lp-chip {
-  font-size: 13px;
-  color: var(--lp-ink-60);
-  background: var(--lp-card);
-  border: 1px solid rgba(27, 29, 33, 0.08);
-  padding: 6px 13px;
-  border-radius: 999px;
+.lp-falha-rotulo {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--painel);
 }
+.lp-falha-texto { font-size: 16px; color: var(--tinta-forte); margin-top: 12px; }
 
-/* — comparativo — */
-.lp-compare { min-width: 620px; }
-.lp-compare-row {
+/* ── comparativo ──────────────────────────────────────────────────────────── */
+
+.lp-compara { min-width: 640px; }
+.lp-compara-linha {
   display: grid;
   grid-template-columns: 1.1fr 1fr 1fr;
   gap: 24px;
-  padding: 20px 26px;
-  border-bottom: 1px solid rgba(27, 29, 33, 0.05);
+  padding: 18px 0;
+  border-bottom: 1px solid var(--regua-fraca);
   align-items: start;
 }
-.lp-compare-head { padding: 18px 26px; border-bottom: 1px solid var(--lp-line); gap: 0; }
-.lp-compare-head div { font-size: 13px; color: var(--lp-ink-45); }
-.lp-compare-head .is-app { font-weight: 600; color: var(--lp-accent); }
+.lp-compara-cab {
+  border-bottom: 2px solid var(--tinta);
+  padding-bottom: 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tinta-fraca);
+}
+.lp-compara-cab .is-app { color: var(--painel); }
+.lp-compara-item { font-size: var(--t-sm); font-weight: 600; }
+.lp-compara-antes { font-size: var(--t-sm); color: var(--tinta-fraca); }
+.lp-compara-depois { font-size: var(--t-sm); color: var(--tinta-forte); }
 
-/* — recursos — */
-.lp-feature {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 30px 28px;
-  border: 1px solid var(--lp-line);
-  border-radius: 18px;
-  transition: box-shadow 0.2s ease;
-}
-.lp-feature:hover { box-shadow: 0 14px 34px -14px rgba(27, 29, 33, 0.18); }
-.lp-feature-mark {
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
-  background: var(--lp-wash);
-  color: var(--lp-accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 15px;
-}
-.lp-check-list { display: grid; gap: 10px; margin-top: 6px; }
-.lp-check-list li {
-  display: grid;
-  grid-template-columns: 16px 1fr;
-  gap: 10px;
-  align-items: start;
-  font-size: 14.5px;
-  color: var(--lp-ink-60);
-}
-.lp-check-list svg { margin-top: 4px; color: var(--lp-accent); }
+/* ── recursos ─────────────────────────────────────────────────────────────── */
 
-/* — passos — */
-.lp-step-num {
+.lp-recurso-marca {
   width: 34px;
   height: 34px;
-  border-radius: 999px;
-  background: var(--lp-accent);
-  color: #fff;
+  background: var(--painel);
+  color: var(--papel);
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: var(--t-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  font-weight: 600;
+  margin-bottom: 16px;
 }
-
-/* — rotas / manutenções (cartões de lista) — */
-.lp-list-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 15px 20px;
-  border-bottom: 1px solid var(--lp-line-soft);
-}
-.lp-rota-row {
+.lp-recurso-texto { font-size: 15px; color: var(--tinta-forte); margin-top: 10px; }
+.lp-lista { display: grid; gap: 9px; margin-top: 16px; }
+.lp-lista li {
   display: grid;
-  grid-template-columns: 1.5fr 1fr 0.8fr 0.9fr;
-  gap: 14px;
-  align-items: center;
-  padding: 15px 20px;
-  border-bottom: 1px solid rgba(27, 29, 33, 0.05);
-  min-width: 520px;
+  grid-template-columns: 15px 1fr;
+  gap: 10px;
+  align-items: start;
+  font-size: var(--t-sm);
+  color: var(--tinta-forte);
 }
-.lp-tipo-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 11px 0;
-  border-top: 1px solid var(--lp-line-soft);
-  font-size: 13.5px;
-}
-.lp-tipo-row span:last-child { margin-left: auto; color: rgba(27, 29, 33, 0.5); font-variant-numeric: tabular-nums; }
+.lp-lista svg { margin-top: 4px; color: var(--painel); }
 
-/* — permissões — */
-.lp-matriz { border: 1px solid var(--lp-line); border-radius: 18px; padding: 8px 22px 14px; }
-.lp-matriz table { font-size: 14.5px; min-width: 460px; }
+/* ── passos (única numeração real da página) ──────────────────────────────── */
+
+.lp-passo-num {
+  font-family: var(--mono);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--painel);
+  letter-spacing: -0.04em;
+}
+.lp-passo h3 { margin-top: 14px; }
+.lp-passo p { margin-top: 10px; font-size: 15px; color: var(--tinta-forte); }
+
+/* ── permissões ───────────────────────────────────────────────────────────── */
+
+.lp-matriz { font-size: var(--t-sm); min-width: 460px; }
 .lp-matriz th {
   text-align: left;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--lp-ink-45);
-  padding: 14px 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tinta-fraca);
+  padding: 12px 8px;
+  border-bottom: 2px solid var(--tinta);
 }
-.lp-matriz td { padding: 13px 6px; border-top: 1px solid var(--lp-line); color: var(--lp-ink-80); }
-.lp-matriz td + td { color: var(--lp-accent); }
+/* `relative` para dar bloco contentor ao `.lp-oculto` de dentro: sem isso ele
+   se posiciona pelo bloco inicial, escapa do `.lp-rolagem` e do `overflow-x:
+   clip` do `.lp`, e cria rolagem horizontal na página abaixo de 480px. */
+.lp-matriz td { position: relative; padding: 13px 8px; border-bottom: 1px solid var(--regua-fraca); color: var(--tinta-forte); }
+.lp-matriz td + td { font-family: var(--mono); font-size: 13px; }
+.lp-matriz td + td svg { display: block; }
+.lp-sim { color: var(--painel); }
+/* O X não é enfeite: fica em tinta de texto, não num cinza apagado. */
+.lp-nao { color: var(--tinta-media); }
 
-/* — objeções e faq — */
-.lp-objecao-q { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.35; }
-.lp-faq-item { padding: 24px 0; border-top: 1px solid rgba(27, 29, 33, 0.08); }
-.lp-faq-item h3 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
-.lp-faq-item p { margin-top: 8px; font-size: 15.5px; color: var(--lp-ink-60); max-width: 64ch; }
-
-/* — cta final — */
-.lp-cta {
-  background: var(--lp-accent);
-  border-radius: 24px;
-  padding: 44px 28px;
-  display: grid;
-  gap: 40px;
-  align-items: center;
-  grid-template-columns: 1fr;
+/* Some da tela, continua no leitor de tela — um ✓ sozinho não se lê. */
+.lp-oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
-@media (min-width: 900px) {
-  .lp-cta { padding: 64px 56px; grid-template-columns: 1fr 0.85fr; gap: 56px; }
-}
-.lp-cta h2 { color: #fff; max-width: 20ch; }
-.lp-cta-sub { margin-top: 20px; max-width: 44ch; font-size: 17px; color: rgba(255, 255, 255, 0.7); }
-.lp-cta-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 30px; }
-.lp-cta-mail { font-weight: 600; font-size: 15px; padding: 13px 8px; color: rgba(255, 255, 255, 0.8); }
-.lp-cta-mail:hover { color: #fff; }
+.lp-garantia { display: grid; gap: 4px; padding: 16px 0; border-top: 1px solid var(--regua); }
+.lp-garantia-titulo { font-size: 15px; font-weight: 600; }
+.lp-garantia p { font-size: var(--t-sm); color: var(--tinta-forte); }
 
-.lp-form {
-  background: var(--lp-card);
-  border-radius: 18px;
-  padding: 28px;
+/* ── faq ──────────────────────────────────────────────────────────────────── */
+
+.lp-faq { border-top: 1px solid var(--regua); }
+.lp-faq > summary {
+  list-style: none;
+  cursor: pointer;
   display: flex;
-  flex-direction: column;
-  gap: 14px;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
-.lp-form-title { font-size: 17px; font-weight: 600; }
+.lp-faq > summary::-webkit-details-marker { display: none; }
+.lp-faq > summary:hover { color: var(--painel); }
+/* O "+" gira 45° e vira "×" quando abre — a única micro-interação da página. */
+.lp-faq-sinal {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 18px;
+  line-height: 1;
+  color: var(--tinta-fraca);
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+.lp-faq[open] .lp-faq-sinal { transform: rotate(45deg); color: var(--painel); }
+@media (prefers-reduced-motion: reduce) {
+  .lp-faq-sinal { transition: none; }
+}
+.lp-faq-resposta { padding: 0 0 22px; font-size: 15px; color: var(--tinta-forte); max-width: 64ch; }
+
+/* ── cta final ────────────────────────────────────────────────────────────── */
+
+.lp-cta { background: var(--painel); color: var(--papel); }
+.lp-cta-grade { display: grid; gap: 40px; grid-template-columns: 1fr; align-items: start; }
+@media (min-width: 900px) {
+  .lp-cta-grade { grid-template-columns: 1fr 0.85fr; gap: 56px; }
+}
+.lp-cta h2 { color: var(--papel); max-width: 18ch; }
+.lp-cta-sub { margin-top: 20px; max-width: 42ch; font-size: 17px; color: rgba(253, 250, 246, 0.72); }
+.lp-cta-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 30px; }
+.lp-cta-mail {
+  font-family: var(--mono);
+  font-size: var(--t-sm);
+  color: rgba(253, 250, 246, 0.72);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.lp-cta-mail:hover { color: var(--papel); }
+/* 0.5 dava 4.02:1 sobre o azul — abaixo do mínimo para texto. */
+.lp-cta .lp-campo { color: rgba(253, 250, 246, 0.72); }
+.lp-cta :focus-visible { outline-color: var(--papel); }
+
+.lp-form { background: var(--papel); color: var(--tinta); padding: 26px 24px; }
+.lp-form-titulo {
+  font-family: var(--mono);
+  font-size: var(--t-cap);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tinta-fraca);
+}
+.lp-form-campos { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
 .lp-input {
   font: inherit;
-  font-size: 14.5px;
-  padding: 12px 14px;
-  border: 1px solid rgba(27, 29, 33, 0.14);
-  border-radius: 11px;
-  background: var(--lp-ground);
-  color: var(--lp-ink);
+  font-size: var(--t-sm);
+  padding: 12px 13px;
+  border: 1px solid var(--regua);
+  border-radius: 0;
+  background: var(--papel-fundo);
+  color: var(--tinta);
   width: 100%;
 }
-.lp-input:focus-visible { border-color: var(--lp-accent); outline: none; }
-.lp-form-fields { display: flex; flex-direction: column; gap: 12px; }
-.lp-form-note { font-size: 12.5px; color: var(--lp-ink-45); }
-.lp-form-ok { font-size: 15px; color: var(--lp-ink-80); padding: 18px 0; }
+.lp-input:focus-visible { border-color: var(--painel); outline-offset: 0; }
+.lp-form-nota { font-size: var(--t-cap); color: var(--tinta-fraca); }
+.lp-form-ok { font-size: 15px; color: var(--tinta-forte); margin-top: 18px; }
+.lp-form-ok a { color: var(--painel); text-decoration: underline; text-underline-offset: 3px; }
 
-/* — rodapé — */
-.lp-footer {
-  max-width: 1060px;
+/* ── rodapé ───────────────────────────────────────────────────────────────── */
+
+.lp-rodape {
+  max-width: var(--medida);
   margin: 0 auto;
-  padding: 40px 0 56px;
+  padding: 32px var(--gutter) 48px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 22px;
-  font-size: 13.5px;
-  color: var(--lp-ink-45);
+  font-family: var(--mono);
+  font-size: var(--t-cap);
+  color: var(--tinta-fraca);
 }
-.lp-footer a:hover { color: var(--lp-ink); }
+.lp-rodape a:hover { color: var(--painel); }
 
 @media (max-width: 600px) {
-  .lp { padding: 0 16px; }
-  .lp-hero { padding-top: 72px; }
-  .lp-section { margin-top: 88px; }
-  .lp-card-pad { padding: 24px 22px; }
+  .lp { --gutter: 16px; }
+  .lp-wrap { padding-top: 56px; padding-bottom: 56px; }
+  .lp-grade > * { padding: 22px 18px; }
+}
+
+/* Abaixo disto a barra não comporta marca + Entrar + CTA + Seções na mesma
+   linha. "Entrar" sai da barra e passa a viver dentro do menu. */
+@media (max-width: 560px) {
+  .lp-nav-inner { gap: 12px; padding-left: 12px; padding-right: 12px; }
+  .lp-nav-entrar { display: none; }
+  .lp-nav-acoes { gap: 6px; }
+  .lp-nav-acoes .lp-btn { padding: 9px 11px; }
+}
+.lp-menu-entrar { display: none; }
+@media (max-width: 560px) {
+  .lp-menu-entrar { display: block; border-top: 1px solid var(--regua); margin-top: 6px; padding-top: 6px; }
+}
+
+/* Em telas bem estreitas sobra só o caminhão: o logotipo escrito não cabe ao
+   lado do CTA e do menu. */
+@media (max-width: 400px) {
+  .lp-nav .lp-brand > span { display: none; }
 }

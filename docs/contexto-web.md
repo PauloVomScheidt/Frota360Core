@@ -64,16 +64,35 @@ Os guardas estão em [`apps/web/src/components/RequireAuth.tsx`](apps/web/src/co
 
 ### 3.1 `/` — Landing page
 
-Página de apresentação do produto (v2 do desenho feito no Claude Design). Não consome a API.
+Página de apresentação do produto (v3 — "ficha de controle"). Não consome a API.
 
-**Linguagem visual própria.** Ao contrário do painel — reto, bege, sem sombra —, a landing usa cantos arredondados, cartões brancos sobre off-white, botões-pílula e sombras difusas. Por isso ela tem a própria folha de estilo, [`apps/web/src/styles/landing.css`](apps/web/src/styles/landing.css), escopada em `.lp` e importada só por esta tela; ela neutraliza localmente os padrões do design system (peso de título, margens de `p`, cor de link) sem alterá-los para o resto da aplicação.
+**Mesma linguagem visual do painel.** Até a v2 a landing era deliberadamente o oposto do painel (cantos arredondados, cartões brancos, botões-pílula, sombras difusas). Isso foi revertido: a landing agora é reta, bege e sem sombra como o resto do sistema, e **todas as cores saem de [`design-system.css`](apps/web/src/styles/design-system.css)** — `#fdfaf6` de fundo, `#201e1d` de texto, `#1f3a5f` de acento. Motivo: o mock do painel é o principal argumento da página, e ele mentia sobre o produto quando desenhado noutra língua.
 
-Seções, na ordem: barra flutuante fixa (pílula com blur, âncoras, "Entrar", CTA de WhatsApp) → hero centralizado com selo, dois CTAs e letra miúda → mock do painel (sidebar + tabela de veículos) → chips "Construído sobre" → 4 números → "O problema" (4 cartões) → comparativo planilha × Frota360 → "Recursos" (4 cartões: Motoristas, Veículos, Rotas, Manutenções) → "Como funciona" (3 passos) → bloco de Rotas com mock de lista → **Manutenção preventiva** (mock da lista + catálogo de tipos) → "Permissões" com a matriz → 3 cartões de segurança → objeções da primeira conversa → FAQ (7 perguntas) → CTA azul com formulário de demonstração → rodapé.
+Ela mantém folha própria, [`apps/web/src/styles/landing.css`](apps/web/src/styles/landing.css), escopada em `.lp` e importada só por esta tela — mas agora por causa da **escala** (display grande, faixas de ponta a ponta, odômetro), não por discordar do sistema.
 
-- **Animação**: as seções abaixo do mock aparecem com fade + deslize conforme entram na tela (`IntersectionObserver`). Sem suporte ao observer, tudo é revelado de imediato; `prefers-reduced-motion` desliga a transição.
-- **Formulário de demonstração**: não existe endpoint público na API, então o envio monta um `mailto:` já preenchido com nome, empresa, e-mail e tamanho da frota. Trocar por um endpoint real é uma alteração local em `FormularioDemonstracao`.
+Convenções da folha, que valem ao editar:
+
+- **Escala tipográfica em tokens** (`--t-h1`, `--t-h2`, `--t-corpo`, `--t-cap`…) no bloco `.lp`. Não use tamanho solto no JSX.
+- **Três níveis de tinta para texto**, com nome de intenção e não de opacidade: `--tinta-forte` (.86), `--tinta-media` (.74) e `--tinta-fraca` (.66). Os valores foram **calibrados por contraste** — todos passam de 4,5:1 sobre `--papel`. Os antigos `--tinta-35`/`--tinta-50` reprovavam (2,15:1 e 3,13:1) em 23 pontos da página. Hierarquia aqui se faz com tamanho, peso e caixa; para régua e contorno use `--regua`/`--regua-fraca`, que **não são cor de texto**.
+- **`min-width: 0` nos filhos de todo grid que contenha tabela** (`.lp-mock > *`, `.lp-split > *`…). Sem isso o filho cresce até o `min-width` da tabela, o `overflow-x` de `.lp-rolagem` nunca entra e cabeçalho e rodapé do mock são cortados fora da tela no celular.
+- **O odômetro dimensiona por `cqw`**, não `vw` — ele tem que caber na coluna dele, que muda de largura por breakpoint; `.lp-instrumento` é o `container-type: inline-size`. A fita de algarismos tem `height: 1000%` (dez células de uma linha); com `inset: 0` cada célula vira um décimo de linha e o glifo estoura para fora da janela.
+- **`.lp-odo-digito` precisa de `contain: paint`, não só `overflow: hidden`.** Enquanto a fita anima ela vira camada composta própria e escapa do recorte do pai: os algarismos derramam por cima e por baixo da janela e chegam a encostar nas réguas do instrumento. O sintoma é característico — **só os dígitos em movimento vazam**, os parados recortam certo. Pelo mesmo motivo a fita **não** leva `will-change: transform`, que era justamente o que forçava a promoção da camada.
+- **Mono para número.** Placa, quilometragem, data, rótulo de campo e cabeçalho de tabela usam **IBM Plex Mono** (`--mono`); título e corpo seguem em Archivo. A fonte é carregada em [`index.html`](apps/web/index.html).
+- **Vermelho (`--alerta`) e âmbar (`--vencendo`) são estado de manutenção, nunca enfeite.** Só aparecem em "Atrasada" e "Vencendo".
+- **O reset de `.lp` usa `:where()`** — `:where()` não soma especificidade, então `.lp :where(p) { margin: 0 }` vale (0,1,0) e qualquer classe abaixo o vence. Escrever `.lp p` em vez disso quebra silenciosamente as margens de `.lp-lead`, `.lp-hero-sub` e o sublinhado de `.lp-cta-mail`.
+- `.lp-wrap.lp-hero` usa classe dupla de propósito: precisa vencer `.lp-wrap` inclusive dentro do media query de 600px, que vem depois no arquivo.
+
+Seções, na ordem: barra fixa reta (âncoras, "Entrar", CTA de WhatsApp, menu `<details>` de seções no celular) → **hero com o odômetro** → mock do painel (sidebar + tabela de veículos) → "O que a planilha perde" (4 rótulos de campo) → comparativo planilha × Frota360 → "Recursos" (Motoristas, Veículos, Rotas, Manutenções) → **Manutenção** (mock da lista + catálogo de tipos no rodapé) → "Permissões" (matriz + três garantias de isolamento) → "Implantação" (3 passos) → "Dúvidas" (9 perguntas em `<details>`) → CTA azul com formulário de demonstração → rodapé.
+
+- **O odômetro é o elemento de assinatura.** No hero, a quilometragem do veículo `MJU-5F71` conta de `KM_INICIAL` (51.780) até `KM_FINAL` (51.988) — cada algarismo é uma fita de 0–9 que desliza (`.lp-odo-fita`, `--digito`). Ao chegar perto de `KM_PREVISTO` (52.000) a manutenção abaixo acende como **Vencendo**, dentro da faixa `FAIXA_AVISO` (500 km). É a mecânica real do produto encenada; o selo "Demonstração" no alto do instrumento marca que os números são ilustrativos.
+- **Animação**: só o odômetro e o "+" do FAQ. Os *reveals* por `IntersectionObserver` da v2 foram removidos — eram 13 seções com a mesma transição. `prefers-reduced-motion` já entrega o odômetro no valor final (estado inicial do `useState`, sem salto depois do primeiro render).
+- **Numeração**: só "Implantação" é numerada, porque só ela é uma sequência de verdade. As falhas da planilha são identificadas por **rótulo de campo** (`Quilometragem`, `Responsável`, `Permissão`, `Cadastro`), não por `01/02/03`.
+- **Acessibilidade**: toda área rolável passa pelo componente `Rolagem` (`tabIndex=0` + `role="region"` + `aria-label`), sem o que ninguém alcança as tabelas só pelo teclado. O odômetro é `role="img"` com `aria-label`, e **sem** `aria-live`: o texto muda a cada tique e viraria dezenas de anúncios.
+- **Matriz de permissões**: mostra ✓ (`CheckIcon`) e ✗ (`XIcon`) — mas a palavra "Sim"/"Não" continua no DOM em `.lp-oculto`, porque um ✓ sozinho não se lê em leitor de tela. `.lp-matriz td` é `position: relative` de propósito: sem bloco contentor, o `.lp-oculto` absoluto se posiciona pelo bloco inicial, escapa do `.lp-rolagem` **e** do `overflow-x: clip` do `.lp`, e cria rolagem horizontal na página inteira abaixo de 480px.
+- **Formulário de demonstração**: não existe endpoint público na API, então o envio monta um `mailto:` já preenchido com nome, empresa, e-mail e tamanho da frota. Como não há como saber se o cliente de e-mail abriu, a confirmação **não afirma que abriu** — diz o que era para acontecer e oferece WhatsApp e e-mail como saída. Trocar por um endpoint real é uma alteração local em `FormularioDemonstracao`.
 - Os contatos são as constantes `WHATSAPP` e `EMAIL` no topo de [`LandingPage.tsx`](apps/web/src/pages/LandingPage.tsx) — trocar ali muda todos os links da página.
 - Todos os dados dos mocks (placas, quilometragens, manutenções) são **ilustrativos**; nada vem da API.
+- `index.html` carrega `<meta name="description">` e as tags Open Graph — sem elas o link colado no WhatsApp, que é o CTA principal, aparece sem prévia. Falta ainda uma `og:image`.
 
 ### 3.2 `/login` — Entrar
 
@@ -295,7 +314,9 @@ Na prática: sem permissão de edição, o botão "Novo…" e o ícone de lápis
 
 ## 8. Design system e componentes compartilhados
 
-Tokens e classes em [`apps/web/src/styles/design-system.css`](apps/web/src/styles/design-system.css): fundo `#fdfaf6`, superfície `#f2ede4`, texto `#201e1d`, acento `#1f3a5f` (com rampa 100–900), perigo `#a03123`, tipografia Archivo e **raio 0 em tudo** — o visual é de réguas retas, não de cartões arredondados.
+Tokens e classes em [`apps/web/src/styles/design-system.css`](apps/web/src/styles/design-system.css): fundo `#fdfaf6`, superfície `#f2ede4`, texto `#201e1d`, acento `#1f3a5f` (com rampa 100–900), perigo `#a03123`, tipografia Archivo e **raio 0 em tudo** — o visual é de réguas retas, não de cartões arredondados. **A landing pública segue esse mesmo visual** desde a v3 (§3.1); não há mais duas linguagens no produto.
+
+`index.html` carrega Archivo (400/600/800) e **IBM Plex Mono** (400/600). O mono é usado hoje só pela landing, para placa, quilometragem, data e rótulo de campo — se o painel passar a usá-lo em coluna numérica, promova-o a token do design system.
 
 Classes: `.btn` (`.btn-primary`, `.btn-secondary`, `.btn-icon`, `.btn-danger`), `.field` + `.input` (`.input-underline` no login), `.tag` (`.tag-accent`, `.tag-neutral`, `.tag-danger`, `.tag-warning`), `.nav`, `.table`, `.dialog*`.
 
