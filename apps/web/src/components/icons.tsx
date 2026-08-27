@@ -168,6 +168,12 @@ export const CheckIcon = (p: IconProps) => (
   </Icon>
 )
 
+export const XIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M18 6L6 18M6 6l12 12" />
+  </Icon>
+)
+
 export const ClipboardIcon = (p: IconProps) => (
   <Icon {...p}>
     <rect x={4} y={4} width={16} height={17} />

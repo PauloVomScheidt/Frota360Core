@@ -4,16 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 API REST .NET 10 de gestão de frotas, multi-tenant por empresa. **Escreva tudo em português**: classes, métodos, DTOs, comentários, logs e mensagens de resposta.
 
-A raiz do repositório tem seu próprio [CLAUDE.md](../../CLAUDE.md) com o mapa do monorepo e — o mais relevante aqui — o **contrato entre API e front** (envelope de resposta, tipos dos DTOs, matriz de papéis, portas/CORS). Leia antes de qualquer mudança que atravesse a fronteira; este arquivo cobre só o backend.
+A raiz do repositório tem seu próprio [CLAUDE.md](../../CLAUDE.md), que cobre o que é transversal aos dois apps e vale aqui sem repetição: **navegação de código** (use `codegraph_explore` para perguntas estruturais), **política de documentação** (atualizar contexto/CLAUDE/README após qualquer alteração) e — o mais relevante — o **contrato entre API e front** (envelope de resposta, tipos dos DTOs, matriz de papéis, portas/CORS). Leia antes de qualquer mudança que atravesse a fronteira; este arquivo cobre só o backend.
 
 **Todos os comandos e caminhos abaixo são relativos a `apps/api/`.** O aprofundamento de domínio está em [docs/contexto-api.md](../../docs/contexto-api.md).
-
-## Navegação de código
-Para perguntas estruturais (como X funciona, o que chama Y, o que quebra se eu mudar Z),
-use `codegraph_explore` em vez de Grep/Read. O índice está sempre atualizado.
-
-## Documentation
-Apos todas as alterações realizadas atualizar as documentações de contexto, claude.md e readme para refletir as mudanças. Documentação de contexto é obrigatória para qualquer alteração estrutural, regra de negócio ou endpoint novo.
 
 ## Comandos
 
