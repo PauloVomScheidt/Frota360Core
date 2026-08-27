@@ -11,5 +11,8 @@
         public DateTime DataInicio { get; set; }
         public DateTime? DataFim { get; set; }
         public DateTime DataInclusao { get; set; }
+        public int KmInicial { get; set; }
+        public int? KmFinal { get; set; }
+        public int? KmPercorrido { get; set; }
     }
 }

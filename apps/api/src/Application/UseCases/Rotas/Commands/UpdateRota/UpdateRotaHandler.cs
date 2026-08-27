@@ -7,7 +7,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Rotas.Commands.UpdateRota
 {
-    public sealed class UpdateRotaHandler(IRotaRepository repository, ICurrentUserService currentUser, ILogger<UpdateRotaHandler> logger)
+    public sealed class UpdateRotaHandler(IRotaRepository repository,
+                                          IMotoristaRepository motoristaRepository,
+                                          IVeiculoRepository veiculoRepository,
+                                          ICurrentUserService currentUser,
+                                          ILogger<UpdateRotaHandler> logger)
         : ICommandHandler<UpdateRotaCommand, RotaResponse?>
     {
         public async Task<RotaResponse?> HandleAsync(UpdateRotaCommand command, CancellationToken cancellationToken = default)
@@ -25,13 +29,21 @@ namespace Frota360.Application.UseCases.Rotas.Commands.UpdateRota
                 }
 
                 var request = command.Data;
+
+                // Buscas escopadas pela empresa do usuário: garantem que os ids vindos do corpo
+                // não alcancem motoristas ou veículos de outra empresa.
+                var motorista = await motoristaRepository.GetByIdAsync(request.CodigoMotorista, currentUser.EmpresaId)
+                    ?? throw new InvalidOperationException($"Motorista {request.CodigoMotorista} não encontrado.");
+
+                var veiculo = await veiculoRepository.GetByIdAsync(request.CodigoVeiculo, currentUser.EmpresaId)
+                    ?? throw new InvalidOperationException($"Veículo {request.CodigoVeiculo} não encontrado.");
+
+                // Ativo/DataFim/KmFinal ficam de fora: quem move o estado da rota é o encerrar.
                 rota.Origem = request.Origem;
                 rota.Destino = request.Destino;
-                rota.CodigoMotorista = request.CodigoMotorista;
-                rota.CodigoVeiculo = request.CodigoVeiculo;
-                rota.Ativo = request.Ativo;
+                rota.CodigoMotorista = motorista.Id;
+                rota.CodigoVeiculo = veiculo.Id;
                 rota.DataInicio = request.DataInicio;
-                rota.DataFim = request.DataFim;
 
                 var atualizado = await repository.UpdateAsync(rota);
 
@@ -39,7 +51,7 @@ namespace Frota360.Application.UseCases.Rotas.Commands.UpdateRota
 
                 return atualizado.ToResponse();
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not InvalidOperationException)
             {
                 logger.LogError(ex, "Erro ao atualizar rota Id {Id}", command.Id);
                 throw;

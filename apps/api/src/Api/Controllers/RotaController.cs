@@ -5,6 +5,7 @@ using Frota360.Application.DTOs.Rota.Request;
 using Frota360.Application.DTOs.Rota.Response;
 using Frota360.Application.UseCases.Rotas.Commands.CreateRota;
 using Frota360.Application.UseCases.Rotas.Commands.DeleteRota;
+using Frota360.Application.UseCases.Rotas.Commands.EncerrarRota;
 using Frota360.Application.UseCases.Rotas.Commands.UpdateRota;
 using Frota360.Application.UseCases.Rotas.Queries.GetAllRotas;
 using Frota360.Application.UseCases.Rotas.Queries.GetRotaById;
@@ -20,7 +21,8 @@ namespace Frota360.Api.Controllers
     [Route("api/v{version:apiVersion}/[controller]")]
     public class RotaController(IDispatcher dispatcher,
                                 IValidator<CreateRotaRequest> createValidator,
-                                IValidator<UpdateRotaRequest> updateValidator) : ControllerBase
+                                IValidator<UpdateRotaRequest> updateValidator,
+                                IValidator<EncerrarRotaRequest> encerrarValidator) : ControllerBase
     {
         /// <summary>Retorna todas as rotas.</summary>
         /// <response code="200">Lista retornada com sucesso</response>
@@ -92,6 +94,40 @@ namespace Frota360.Api.Controllers
                 return NotFound(ApiResponse<object>.Fail($"Rota {id} não encontrada."));
 
             return Ok(ApiResponse<RotaResponse>.Ok(atualizado, "Rota atualizada com sucesso."));
+        }
+
+        /// <summary>
+        /// Encerra a rota: grava o hodômetro final, calcula a quilometragem percorrida e
+        /// avança o odômetro do veículo quando o valor informado for maior que o atual.
+        /// Aberto a qualquer autenticado, incluindo Operador, em simetria com POST/PUT de rota —
+        /// é ele quem opera a rota no dia a dia, e o avanço do odômetro é consequência
+        /// controlada da regra, não edição livre do veículo.
+        /// </summary>
+        /// <response code="200">Rota encerrada com sucesso</response>
+        /// <response code="400">Dados inválidos</response>
+        /// <response code="404">Rota não encontrada</response>
+        /// <response code="422">Rota já encerrada, km final menor que o inicial ou data de fim anterior à de início</response>
+        [HttpPost("{id:int}/encerrar")]
+        [ProducesResponseType<ApiResponse<RotaResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status422UnprocessableEntity)]
+        public async Task<IActionResult> Encerrar(int id, [FromBody] EncerrarRotaRequest request)
+        {
+            var validation = await encerrarValidator.ValidateAsync(request);
+
+            if (!validation.IsValid)
+            {
+                var erros = validation.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}");
+                return BadRequest(ApiResponse<object>.Fail("Dados inválidos.", erros));
+            }
+
+            var encerrada = await dispatcher.SendAsync(new EncerrarRotaCommand(id, request));
+
+            if (encerrada is null)
+                return NotFound(ApiResponse<object>.Fail($"Rota {id} não encontrada."));
+
+            return Ok(ApiResponse<RotaResponse>.Ok(encerrada, "Rota encerrada com sucesso."));
         }
 
         /// <summary>Remove uma rota. (Admin)</summary>

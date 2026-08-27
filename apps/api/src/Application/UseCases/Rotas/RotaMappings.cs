@@ -16,7 +16,10 @@ namespace Frota360.Application.UseCases.Rotas
             DataInicio = r.DataInicio,
             Destino = r.Destino,
             Origem = r.Origem,
-            DataInclusao = r.DataInclusao
+            DataInclusao = r.DataInclusao,
+            KmInicial = r.KmInicial,
+            KmFinal = r.KmFinal,
+            KmPercorrido = r.KmPercorrido
         };
     }
 }

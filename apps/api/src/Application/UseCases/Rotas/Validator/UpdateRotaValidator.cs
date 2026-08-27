@@ -1,4 +1,4 @@
-﻿using FluentValidation;
+using FluentValidation;
 using Frota360.Application.DTOs.Rota.Request;
 
 namespace Frota360.Application.UseCases.Rotas.Validator
@@ -24,11 +24,6 @@ namespace Frota360.Application.UseCases.Rotas.Validator
 
             RuleFor(x => x.DataInicio)
                 .NotEmpty().WithMessage("Data de início é obrigatória.");
-
-            RuleFor(x => x.DataFim)
-                .GreaterThan(x => x.DataInicio)
-                .WithMessage("Data de fim deve ser posterior à data de início.")
-                .When(x => x.DataFim.HasValue);
         }
     }
 }

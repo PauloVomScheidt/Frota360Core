@@ -13,6 +13,19 @@
         public DateTime? DataFim { get; set; }
         public DateTime DataInclusao { get; set; }
 
+        /// <summary>Odômetro do veículo na abertura da rota.</summary>
+        public int KmInicial { get; set; }
+
+        // Preenchidos no encerramento
+        public int? KmFinal { get; set; }
+
+        /// <summary>
+        /// Vem de KmFinal - KmInicial, mas é persistido: diferente de "atrasada" na
+        /// manutenção, este é um fato histórico da rota — não muda depois de gravado
+        /// e não depende do estado atual do veículo.
+        /// </summary>
+        public int? KmPercorrido { get; set; }
+
         // Navegação
         public Motorista? Motorista { get; set; }
         public Veiculo? Veiculo { get; set; }
