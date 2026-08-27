@@ -6,7 +6,13 @@
         public int EmpresaId { get; set; }
         public string Origem { get; set; } = string.Empty;
         public string Destino { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Usuário com a role Motorista a quem a rota pertence. O nome do campo é do
+        /// domínio, não da tabela: o motorista é um <see cref="Usuario"/>.
+        /// </summary>
         public int CodigoMotorista { get; set; }
+
         public int CodigoVeiculo { get; set; }
         public bool Ativo { get; set; }
         public DateTime DataInicio { get; set; }
@@ -26,8 +32,9 @@
         /// </summary>
         public int? KmPercorrido { get; set; }
 
-        // Navegação
-        public Motorista? Motorista { get; set; }
+        // Navegação. O motorista é carregado por Include para desnormalizar o nome na
+        // resposta — sem isso, uma rota de quem foi rebaixado perderia a identificação.
+        public Usuario? Motorista { get; set; }
         public Veiculo? Veiculo { get; set; }
     }
 }

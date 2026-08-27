@@ -1,4 +1,4 @@
-using Asp.Versioning;
+﻿using Asp.Versioning;
 using FluentValidation;
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Veiculo.Request;
@@ -14,6 +14,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Frota360.Api.Controllers
 {
+    // Leitura aberta a todos os papéis, motorista incluído: ele abre rota escolhendo o
+    // veículo e consulta a frota em /veiculos. Escrita continua restrita.
     [Authorize]
     [ApiController]
     [ApiVersion("1.0")]

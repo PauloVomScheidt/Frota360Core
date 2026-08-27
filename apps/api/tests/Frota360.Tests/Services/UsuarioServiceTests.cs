@@ -1,4 +1,4 @@
-using Frota360.Application.Interfaces;
+﻿using Frota360.Application.Interfaces;
 using Frota360.Application.Services;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
@@ -63,6 +63,7 @@ namespace Frota360.Tests.Services
             await _repository.Received(1).UpdateAsync(Arg.Is<Usuario>(u =>
                 u.Role == "Supervisor" && u.RefreshTokenHash == null && u.RefreshTokenExpiraEm == null));
         }
+
 
         [Fact]
         public async Task AlterarRole_UsuarioDeOutraEmpresa_DeveRetornarNull()

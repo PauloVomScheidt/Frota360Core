@@ -1,4 +1,4 @@
-using Frota360.Application.Common;
+﻿using Frota360.Application.Common;
 using Frota360.Application.DTOs.Convite.Request;
 using Frota360.Application.Interfaces;
 using Frota360.Application.Services;
@@ -46,6 +46,7 @@ namespace Frota360.Tests.Services
 
         private static string HashDe(string token) =>
             Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+
 
         [Fact]
         public async Task Criar_DevePersistirApenasHash_EEnviarEmailComLink()
@@ -179,6 +180,64 @@ namespace Frota360.Tests.Services
                 new AceitarConviteRequest { Token = "usado", Nome = "X", Senha = "SenhaForte1" });
 
             Assert.Null(resposta);
+        }
+
+
+        // ----- Dados pessoais opcionais informados no aceite -----
+
+        private Convite ConvitePendente(string token = "token-convite") => new()
+        {
+            Id = 5,
+            EmpresaId = 1,
+            Email = "convidada@email.com",
+            Role = "Motorista",
+            TokenHash = HashDe(token),
+            ExpiraEm = DateTime.UtcNow.AddDays(1)
+        };
+
+        [Fact]
+        public async Task Aceitar_ComCpfENascimento_DeveGravarNoUsuario()
+        {
+            _conviteRepository.GetByTokenHashAsync(HashDe("token-convite")).Returns(ConvitePendente());
+            _tokenService.GerarToken(Arg.Any<Usuario>()).Returns("jwt-novo");
+
+            var service = CriarServico();
+
+            await service.AceitarAsync(new AceitarConviteRequest
+            {
+                Token = "token-convite",
+                Nome = "Ana",
+                Senha = "SenhaForte1",
+                CPF = "39053344705",
+                DataNascimento = new DateTime(1990, 1, 1)
+            });
+
+            await _usuarioRepository.Received(1).AddAsync(Arg.Is<Usuario>(u =>
+                u.Role == "Motorista" &&
+                u.CPF == "39053344705" &&
+                u.DataNascimento == new DateTime(1990, 1, 1)));
+        }
+
+        [Fact]
+        public async Task Aceitar_SemOsDadosOpcionais_DeveGravarNulo()
+        {
+            // Em branco vira nulo, e não string vazia: o índice único filtrado de CPF
+            // por empresa depende disso para não colidir entre quem não informou.
+            _conviteRepository.GetByTokenHashAsync(HashDe("token-convite")).Returns(ConvitePendente());
+            _tokenService.GerarToken(Arg.Any<Usuario>()).Returns("jwt-novo");
+
+            var service = CriarServico();
+
+            await service.AceitarAsync(new AceitarConviteRequest
+            {
+                Token = "token-convite",
+                Nome = "Ana",
+                Senha = "SenhaForte1",
+                CPF = "   "
+            });
+
+            await _usuarioRepository.Received(1).AddAsync(Arg.Is<Usuario>(u =>
+                u.CPF == null && u.DataNascimento == null));
         }
 
         [Fact]

@@ -261,7 +261,10 @@ export function ManutencoesPage() {
   const semCadastrosBase = semVeiculos || semTipos
 
   const mostrarAcoes = podeCadastrar || podeExcluir
-  const colunas = mostrarAcoes ? 7 : 6
+  // A API zera o custo para o motorista; exibir a coluna renderizaria uma fileira de
+  // traços. Esconder é mais honesto do que mostrar vazio.
+  const mostrarCusto = !pode.verMinhasRotas(user?.role)
+  const colunas = (mostrarAcoes ? 7 : 6) - (mostrarCusto ? 0 : 1)
 
   return (
     <AppLayout>
@@ -469,7 +472,7 @@ export function ManutencoesPage() {
               <th>Quilometragem prevista</th>
               <th>Situação</th>
               <th>Andamento</th>
-              <th>Custo</th>
+              {mostrarCusto && <th>Custo</th>}
               {mostrarAcoes && <th style={{ textAlign: 'right' }}>Ações</th>}
             </tr>
           </thead>
@@ -537,7 +540,7 @@ export function ManutencoesPage() {
                       '—'
                     )}
                   </td>
-                  <td>{formatMoeda(m.custo)}</td>
+                  {mostrarCusto && <td>{formatMoeda(m.custo)}</td>}
                   {mostrarAcoes && (
                     <td>
                       <div className="flex items-center justify-end gap-1">

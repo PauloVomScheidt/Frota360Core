@@ -1,4 +1,5 @@
-using Frota360.Application.Abstractions.Messaging;
+﻿using Frota360.Application.Abstractions.Messaging;
+using Frota360.Application.Common;
 using Frota360.Application.DTOs.Rota.Response;
 using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Rotas;
@@ -32,6 +33,15 @@ namespace Frota360.Application.UseCases.Rotas.Commands.EncerrarRota
                     return null;
                 }
 
+                // Rota de outro motorista responde 404, não 403: para quem não é dono
+                // dela, a rota simplesmente não existe.
+                if (currentUser.EhMotorista() && rota.CodigoMotorista != currentUser.UsuarioId)
+                {
+                    logger.LogWarning("Motorista {MotoristaId} tentou encerrar a rota {Id}, que não é dele",
+                        currentUser.UsuarioId, command.Id);
+                    return null;
+                }
+
                 if (rota.DataFim is not null)
                     throw new InvalidOperationException("Esta rota já foi encerrada.");
 
@@ -52,7 +62,7 @@ namespace Frota360.Application.UseCases.Rotas.Commands.EncerrarRota
 
                 var encerrada = await repository.UpdateAsync(rota);
 
-                await AtualizarQuilometragemDoVeiculoAsync(encerrada.CodigoVeiculo, request.KmFinal);
+                await AtualizarVeiculoAsync(encerrada, request.KmFinal, dataFim);
 
                 logger.LogInformation("Rota encerrada com sucesso. Id {Id} | Percorrido {Km} km",
                     encerrada.Id, encerrada.KmPercorrido);
@@ -67,22 +77,38 @@ namespace Frota360.Application.UseCases.Rotas.Commands.EncerrarRota
         }
 
         /// <summary>
-        /// Só avança o odômetro, nunca retrocede: uma rota encerrada com atraso não pode
-        /// apagar uma quilometragem mais recente registrada por outro fluxo.
+        /// Encerrar a rota é o momento em que o veículo tem informação nova: quem o levou,
+        /// quando voltou e qual o odômetro. Os três só avançam, nunca retrocedem — uma
+        /// rota encerrada com atraso não pode apagar um registro mais recente.
         /// </summary>
-        private async Task AtualizarQuilometragemDoVeiculoAsync(int veiculoId, int kmFinal)
+        private async Task AtualizarVeiculoAsync(Domain.Entities.Rota rota, int kmFinal, DateTime dataFim)
         {
-            var veiculo = await veiculoRepository.GetByIdAsync(veiculoId, currentUser.EmpresaId);
+            var veiculo = await veiculoRepository.GetByIdAsync(rota.CodigoVeiculo, currentUser.EmpresaId);
 
-            if (veiculo is null || kmFinal <= veiculo.Quilometragem)
+            if (veiculo is null)
                 return;
 
-            var anterior = veiculo.Quilometragem;
-            veiculo.Quilometragem = kmFinal;
-            await veiculoRepository.UpdateAsync(veiculo);
+            var mudou = false;
 
-            logger.LogInformation("Quilometragem do veículo {VeiculoId} atualizada de {Anterior} para {Atual} pelo encerramento da rota",
-                veiculoId, anterior, kmFinal);
+            if (kmFinal > veiculo.Quilometragem)
+            {
+                logger.LogInformation("Quilometragem do veículo {VeiculoId} atualizada de {Anterior} para {Atual} pelo encerramento da rota",
+                    veiculo.Id, veiculo.Quilometragem, kmFinal);
+                veiculo.Quilometragem = kmFinal;
+                mudou = true;
+            }
+
+            // Última viagem: só a rota mais recente manda. Sem esta guarda, encerrar hoje
+            // uma rota de mês passado reescreveria o veículo com dado velho.
+            if (veiculo.DataUltimaViagem is null || dataFim > veiculo.DataUltimaViagem)
+            {
+                veiculo.DataUltimaViagem = dataFim;
+                veiculo.UltimoMotorista = rota.Motorista?.Nome;
+                mudou = true;
+            }
+
+            if (mudou)
+                await veiculoRepository.UpdateAsync(veiculo);
         }
     }
 }

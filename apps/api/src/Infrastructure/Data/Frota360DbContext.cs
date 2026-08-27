@@ -9,7 +9,6 @@ namespace Frota360.Infrastructure.Data
         public DbSet<Convite> Convites { get; set; }
         public DbSet<Veiculo> Veiculos { get; set; }
         public DbSet<Usuario> Usuarios { get; set; }
-        public DbSet<Motorista> Motoristas { get; set; }
         public DbSet<Rota> Rotas { get; set; }
         public DbSet<TipoManutencao> TiposManutencao { get; set; }
         public DbSet<Manutencao> Manutencoes { get; set; }
@@ -82,28 +81,16 @@ namespace Frota360.Infrastructure.Data
                 entity.HasIndex(u => u.ResetSenhaTokenHash);
                 entity.Property(u => u.DataInclusao).HasDefaultValueSql("GETDATE()");
 
+                // Opcionais: quem não informou fica com nulo, e o índice filtrado deixa
+                // esses de fora — só barra dois CPFs iguais na mesma empresa.
+                entity.Property(u => u.CPF).HasMaxLength(11);
+                entity.HasIndex(u => new { u.EmpresaId, u.CPF })
+                      .IsUnique()
+                      .HasFilter("[CPF] IS NOT NULL");
+
                 entity.HasOne<Empresa>()
                       .WithMany()
                       .HasForeignKey(u => u.EmpresaId)
-                      .OnDelete(DeleteBehavior.Restrict);
-            });
-
-            modelBuilder.Entity<Motorista>(entity =>
-            {
-                entity.ToTable("Motorista");
-                entity.HasKey(m => m.Id);
-                entity.Property(m => m.Nome).HasMaxLength(100).IsRequired();
-                entity.Property(m => m.Email).HasMaxLength(150).IsRequired();
-                entity.Property(m => m.CPF).HasMaxLength(11).IsRequired();
-                entity.Property(m => m.DataInclusao).HasDefaultValueSql("GETDATE()");
-
-                // Unicidade por empresa: transportadoras diferentes podem cadastrar o mesmo motorista
-                entity.HasIndex(m => new { m.EmpresaId, m.Email }).IsUnique();
-                entity.HasIndex(m => new { m.EmpresaId, m.CPF }).IsUnique();
-
-                entity.HasOne<Empresa>()
-                      .WithMany()
-                      .HasForeignKey(m => m.EmpresaId)
                       .OnDelete(DeleteBehavior.Restrict);
             });
 
@@ -116,9 +103,12 @@ namespace Frota360.Infrastructure.Data
                 entity.Property(r => r.Ativo).HasDefaultValue(true);
                 entity.Property(r => r.DataInclusao).HasDefaultValueSql("GETDATE()");
 
+                // O motorista é um Usuario. Restrict porque usuário nunca é excluído,
+                // só desativado — o histórico de rotas fica inapagável por acidente.
                 entity.HasOne(r => r.Motorista)
                       .WithMany()
-                      .HasForeignKey(r => r.CodigoMotorista);
+                      .HasForeignKey(r => r.CodigoMotorista)
+                      .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(r => r.Veiculo)
                       .WithMany()

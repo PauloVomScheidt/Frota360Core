@@ -1,4 +1,4 @@
-using Frota360.Application.Interfaces;
+﻿using Frota360.Application.Interfaces;
 using System.Security.Claims;
 
 namespace Frota360.Api.Services

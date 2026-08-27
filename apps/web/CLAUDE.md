@@ -37,28 +37,29 @@ Exige a API do Frota360 rodando localmente; ela vive neste mesmo repo: `dotnet r
 ### Autenticação e permissões (`src/auth/`)
 
 - `useSession.ts` expõe o usuário logado de forma reativa via `useSyncExternalStore`, ouvindo o evento nativo `storage` (outras abas) e um evento customizado `frota360:sessao` (mesma aba, já que o `localStorage` não notifica quem escreveu).
-- `permissions.ts` (`pode.*`) espelha a matriz de papéis da API (Admin / Supervisor / Operador) puramente para esconder ações que dariam 403 — **o servidor é sempre a autoridade de fato**; nunca confie na matriz do cliente para lógica sensível a segurança.
-- Os guards de rota vivem em `src/components/RequireAuth.tsx`: `RequireAuth` (redireciona para `/login` preservando `location.state.from`), `RequireAdmin` e `RequireGestor` (Admin ou Supervisor). Aplicados como `<Route>` wrapper em [src/App.tsx](src/App.tsx).
+- `permissions.ts` (`pode.*`) espelha a matriz de papéis da API (Admin / Supervisor / Operador / Motorista — um motorista é um usuário com essa role, não um cadastro à parte) puramente para esconder ações que dariam 403 — **o servidor é sempre a autoridade de fato**; nunca confie na matriz do cliente para lógica sensível a segurança.
+- Os guards de rota vivem em `src/components/RequireAuth.tsx` e são dois: `RequireAuth` (redireciona para `/login` preservando `location.state.from`) e `RequirePode`, que recebe um predicado de `permissions.ts`. Cada rota declara a própria permissão em [src/App.tsx](src/App.tsx) — `<RequirePode permitido={pode.verVeiculos} />`. Guarda por bloco de papéis não serve mais: o motorista enxerga parte do painel.
+- **Todo redirecionamento por papel usa `rotaInicial(role)`**, nunca `/dashboard` fixo: o motorista só enxerga `/minhas-rotas`, e mandá-lo ao dashboard faria os guards ficarem em pingue-pongue. Vale também para os destinos pós-login e pós-aceite de convite.
 - O papel usado pela UI é cacheado no login/refresh — uma mudança de papel no servidor pode levar até o tempo de vida do token para refletir na interface, mesmo que o servidor já a aplique imediatamente.
 
 ### Busca de dados
 
-TanStack Query 5. As cache keys são arrays simples por recurso (`['motoristas']`, `['veiculos']`, `['rotas']`, `['manutencoes', filtro]`, `['tiposManutencao']`, `['tiposManutencao', 'ativos']`, `['usuarios']`, `['convites']`), invalidadas após cada mutation na página dona do recurso.
+TanStack Query 5. As cache keys são arrays simples por recurso (`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['manutencoes', filtro]`, `['tiposManutencao']`, `['tiposManutencao', 'ativos']`, `['usuarios']`, `['convites']`), invalidadas após cada mutation na página dona do recurso. `['rotas']` e `['rotas','minhas']` vêm de **endpoints diferentes** e não são pai e filho: invalide a chave exata.
 
-Atenção à **cross-invalidation**, quando a mutation de um recurso afeta o que outra lista exibe: excluir um motorista/veículo também invalida `['rotas']`, porque aquela tabela desnormaliza nome/placa; concluir uma manutenção também invalida `['veiculos']`, porque pode avançar o odômetro do veículo. A cadeia mais longa é **rota → veículo → manutenção**: tanto abrir uma rota (quando `kmInicial` supera o odômetro atual) quanto encerrá-la (`POST /rota/{id}/encerrar`) avançam o odômetro do veículo, que é de onde `atrasada`/`kmRestantes` derivam — então essas mutations invalidam `['rotas']`, `['veiculos']` **e** `['manutencoes']`. Ao adicionar uma mutation, consulte o mapa atual em `docs/contexto-web.md` §6.4 antes de assumir que um único `invalidateQueries` basta.
+Atenção à **cross-invalidation**, quando a mutation de um recurso afeta o que outra lista exibe: excluir um veículo também invalida `['rotas']`, porque aquela tabela desnormaliza nome/placa; concluir uma manutenção também invalida `['veiculos']`, porque pode avançar o odômetro do veículo. A cadeia mais longa é **rota → veículo → manutenção**: tanto abrir uma rota (quando `kmInicial` supera o odômetro atual) quanto encerrá-la (`POST /rota/{id}/encerrar`) avançam o odômetro do veículo, que é de onde `atrasada`/`kmRestantes` derivam — então essas mutations invalidam `['rotas']`, `['veiculos']` **e** `['manutencoes']`. Ao adicionar uma mutation, consulte o mapa atual em `docs/contexto-web.md` §6.4 antes de assumir que um único `invalidateQueries` basta.
 
 ### Estrutura de páginas e componentes compartilhados
 
 As páginas autenticadas são filhas de `RequireAuth` e envolvidas por `AppLayout` ([src/components/AppLayout.tsx](src/components/AppLayout.tsx)), que fornece a sidebar retrátil (estado no `localStorage`), o header e os blocos `PageHeader`/`ErrorList`. Páginas públicas/de autenticação usam `AuthScreen`/`AuthHeading` ([src/components/AuthScreen.tsx](src/components/AuthScreen.tsx)).
 
-As páginas de CRUD (`MotoristasPage`, `VeiculosPage`, `RotasPage`, `ManutencoesPage`, `TiposManutencaoPage`) seguem o mesmo formato e reaproveitam `src/components/Table.tsx`:
+As páginas de CRUD (`VeiculosPage`, `RotasPage`, `ManutencoesPage`, `TiposManutencaoPage`) seguem o mesmo formato e reaproveitam `src/components/Table.tsx` (`MotoristasPage` é somente leitura — usa só o `TableStates`):
 
 - `InlineForm` — formulário de criação/edição renderizado acima da tabela (não é modal); a edição reusa o mesmo formulário pré-preenchido, com a página rolando para o topo.
 - `TableStates` — renderização compartilhada das linhas de carregando/erro/vazio.
-- `RowActions` / `ConfirmDialog` — ícones de editar/excluir por linha e confirmação de exclusão.
+- `RowActions` / `ConfirmDialog` — ícones de editar/excluir por linha e confirmação de ação consequente. Os defaults do `ConfirmDialog` são os da exclusão; `textoConfirmar`/`textoPendente`/`variante` cobrem os outros casos (a troca de permissão em `/usuarios` usa `variante="padrao"`, porque derrubar a sessão de alguém não é destrutivo como apagar um registro).
 - `FormDialog` — formulário em modal (usado em "concluir manutenção" e "encerrar rota" — as transições de estado que carregam efeito colateral no odômetro do veículo, deliberadamente mantidas fora do formulário de edição comum).
 
-A visibilidade dos botões de novo/editar/excluir é controlada por `pode.*` de `auth/permissions.ts`, não escondendo a página inteira.
+A visibilidade dos botões de novo/editar/excluir é controlada por `pode.*` de `auth/permissions.ts`, não escondendo a página inteira. É assim que `/veiculos` e `/manutencoes` ficam read-only para o motorista sem código condicional novo.
 
 ### Design system
 
@@ -75,7 +76,9 @@ Não renderiza dado de API: todos os números exibidos são mocks ilustrativos. 
 
 ### Roteamento
 
-`BrowserRouter` único em [src/App.tsx](src/App.tsx); rotas desconhecidas redirecionam para `/`. Rota autenticada nova entra dentro do wrapper `RequireAuth`, adicionalmente aninhada em `RequireAdmin`/`RequireGestor` se for restrita por papel, e precisa ser adicionada também à sidebar em `AppLayout.tsx` e à matriz de permissões em `auth/permissions.ts` caso não seja visível a todos.
+`BrowserRouter` único em [src/App.tsx](src/App.tsx); rotas desconhecidas redirecionam para `/`. Rota autenticada nova entra dentro do wrapper `RequireAuth`, adicionalmente aninhada em `RequireGestao`/`RequireGestor`/`RequireAdmin`/`RequireMotorista` conforme o papel, e precisa ser adicionada também à sidebar em `AppLayout.tsx` e à matriz de permissões em `auth/permissions.ts` caso não seja visível a todos.
+
+Na prática toda tela de gestão da frota vai dentro de `RequireGestao` — a role `Motorista` não deve alcançar nenhuma delas.
 
 ### Configuração de ambiente
 

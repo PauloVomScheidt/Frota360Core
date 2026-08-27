@@ -4,9 +4,11 @@ import { useMutation } from '@tanstack/react-query'
 import { aceitarConvite } from '../api/convites'
 import { mensagensDeErro } from '../api/errors'
 import { validarSenha } from '../auth/senha'
+import { rotaInicial } from '../auth/permissions'
 import { notificarMudancaDeSessao } from '../auth/useSession'
 import { ErrorList } from '../components/AppLayout'
 import { AuthHeading, AuthScreen } from '../components/AuthScreen'
+import { mascaraCpf, somenteDigitos } from '../lib/format'
 
 /**
  * Rota `/convite?token=...` — destino do link enviado pelo admin.
@@ -18,6 +20,9 @@ export function AcceptInvitePage() {
   const navigate = useNavigate()
 
   const [nome, setNome] = useState('')
+  // Opcionais: hoje é o único lugar onde CPF e nascimento entram (não há tela de perfil).
+  const [cpf, setCpf] = useState('')
+  const [dataNascimento, setDataNascimento] = useState('')
   const [senha, setSenha] = useState('')
   const [confirmar, setConfirmar] = useState('')
   const [aceite, setAceite] = useState(false)
@@ -25,9 +30,10 @@ export function AcceptInvitePage() {
 
   const aceitarMutation = useMutation({
     mutationFn: aceitarConvite,
-    onSuccess: () => {
+    onSuccess: (auth) => {
       notificarMudancaDeSessao()
-      navigate('/dashboard', { replace: true })
+      // O papel vem do convite: motorista cai direto em "Minhas rotas".
+      navigate(rotaInicial(auth.role), { replace: true })
     },
   })
 
@@ -40,7 +46,14 @@ export function AcceptInvitePage() {
 
     setErrosLocais(erros)
     if (erros.length === 0) {
-      aceitarMutation.mutate({ token, nome: nome.trim(), senha })
+      // Em branco vira `undefined`: o back grava nulo, e não string vazia.
+      aceitarMutation.mutate({
+        token,
+        nome: nome.trim(),
+        senha,
+        cpf: somenteDigitos(cpf) || undefined,
+        dataNascimento: dataNascimento || undefined,
+      })
     }
   }
 
@@ -87,6 +100,32 @@ export function AcceptInvitePage() {
             style={{ borderRadius: 0 }}
             value={nome}
             onChange={(e) => setNome(e.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="cpf">CPF (opcional)</label>
+          <input
+            id="cpf"
+            className="input"
+            type="text"
+            inputMode="numeric"
+            placeholder="000.000.000-00"
+            autoComplete="off"
+            style={{ borderRadius: 0 }}
+            value={cpf}
+            onChange={(e) => setCpf(mascaraCpf(e.target.value))}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="dataNascimento">Data de nascimento (opcional)</label>
+          <input
+            id="dataNascimento"
+            className="input"
+            type="date"
+            autoComplete="bday"
+            style={{ borderRadius: 0 }}
+            value={dataNascimento}
+            onChange={(e) => setDataNascimento(e.target.value)}
           />
         </div>
         <div className="field">

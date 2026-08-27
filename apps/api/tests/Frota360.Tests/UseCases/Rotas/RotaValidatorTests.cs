@@ -1,12 +1,20 @@
 using Frota360.Application.DTOs.Rota.Request;
+using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Rotas.Validator;
+using Frota360.Domain.Common;
+using NSubstitute;
 
 namespace Frota360.Tests.UseCases.Rotas
 {
     public class RotaValidatorTests
     {
-        private readonly CreateRotaValidator _createValidator = new();
+        // O validador lê a role para saber se o CodigoMotorista é exigível; por padrão
+        // a requisição é de gestão (Role null nunca é "Motorista").
+        private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
+        private readonly CreateRotaValidator _createValidator;
         private readonly EncerrarRotaValidator _encerrarValidator = new();
+
+        public RotaValidatorTests() => _createValidator = new CreateRotaValidator(_currentUser);
 
         private static CreateRotaRequest CreateValido() => new()
         {
@@ -22,6 +30,31 @@ namespace Frota360.Tests.UseCases.Rotas
         public void Create_RequestValido_DevePassar()
         {
             var resultado = _createValidator.Validate(CreateValido());
+            Assert.True(resultado.IsValid);
+        }
+
+        [Fact]
+        public void Create_SemMotorista_DeveFalhar()
+        {
+            var request = CreateValido();
+            request.CodigoMotorista = 0;
+
+            var resultado = _createValidator.Validate(request);
+
+            Assert.False(resultado.IsValid);
+            Assert.Contains(resultado.Errors, e => e.PropertyName == nameof(request.CodigoMotorista));
+        }
+
+        [Fact]
+        public void Create_ComoMotorista_NaoDeveExigirCodigoMotorista()
+        {
+            // Ele não escolhe o motorista da rota — o handler grava o da claim.
+            _currentUser.Role.Returns(Roles.Motorista);
+            var request = CreateValido();
+            request.CodigoMotorista = 0;
+
+            var resultado = _createValidator.Validate(request);
+
             Assert.True(resultado.IsValid);
         }
 

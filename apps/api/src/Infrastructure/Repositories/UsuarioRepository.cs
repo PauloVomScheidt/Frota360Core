@@ -32,6 +32,18 @@ namespace Frota360.Infrastructure.Repositories
         public async Task<bool> ExisteEmailAsync(string email)
             => await context.Usuarios.AnyAsync(u => u.Email == email);
 
+        public async Task<IEnumerable<Usuario>> GetMotoristasByEmpresaAsync(int empresaId)
+            => await context.Usuarios.AsNoTracking()
+                .Where(u => u.EmpresaId == empresaId && u.Role == Domain.Common.Roles.Motorista)
+                .OrderBy(u => u.Nome)
+                .ToListAsync();
+
+        public async Task<Usuario?> GetMotoristaByIdAsync(int id, int empresaId)
+            => await context.Usuarios.AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == id
+                                       && u.EmpresaId == empresaId
+                                       && u.Role == Domain.Common.Roles.Motorista);
+
         public async Task<Usuario> AddAsync(Usuario usuario)
         {
             context.Usuarios.Add(usuario);

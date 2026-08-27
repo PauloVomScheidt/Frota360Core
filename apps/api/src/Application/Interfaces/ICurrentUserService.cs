@@ -1,4 +1,4 @@
-namespace Frota360.Application.Interfaces
+﻿namespace Frota360.Application.Interfaces
 {
     /// <summary>
     /// Dados do usuário autenticado na requisição atual, extraídos das claims do JWT.

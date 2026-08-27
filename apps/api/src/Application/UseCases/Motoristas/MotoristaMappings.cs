@@ -3,17 +3,18 @@ using Frota360.Domain.Entities;
 
 namespace Frota360.Application.UseCases.Motoristas
 {
-    /// <summary>Mapeamento centralizado de <see cref="Motorista"/> para <see cref="MotoristaResponse"/>.</summary>
+    /// <summary>Mapeamento de <see cref="Usuario"/> (role Motorista) para <see cref="MotoristaResponse"/>.</summary>
     public static class MotoristaMappings
     {
-        public static MotoristaResponse ToResponse(this Motorista m) => new()
+        public static MotoristaResponse ToMotoristaResponse(this Usuario u) => new()
         {
-            Id = m.Id,
-            Nome = m.Nome,
-            Email = m.Email,
-            CPF = m.CPF,
-            DataNascimento = m.DataNascimento,
-            DataInclusao = m.DataInclusao
+            Id = u.Id,
+            Nome = u.Nome,
+            Email = u.Email,
+            CPF = u.CPF,
+            DataNascimento = u.DataNascimento,
+            Ativo = u.Ativo,
+            DataInclusao = u.DataInclusao
         };
     }
 }

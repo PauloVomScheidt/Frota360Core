@@ -14,7 +14,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Frota360.Api.Controllers
 {
-    [Authorize]
+    // Catálogo só serve às telas de manutenção, que o motorista não acessa.
+    [Authorize(Roles = Roles.Gestao)]
     [ApiController]
     [ApiVersion("1.0")]
     [Route("api/v{version:apiVersion}/[controller]")]

@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { login } from '../api/auth'
 import { mensagensDeErro } from '../api/errors'
+import { rotaInicial } from '../auth/permissions'
 import { notificarMudancaDeSessao } from '../auth/useSession'
 import { ErrorList } from '../components/AppLayout'
 import { EyeIcon, EyeOffIcon } from '../components/icons'
@@ -17,7 +18,7 @@ const brandPanelStyle: CSSProperties = {
 export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const destino = (location.state as { from?: string } | null)?.from ?? '/dashboard'
+  const origem = (location.state as { from?: string } | null)?.from
 
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
@@ -25,9 +26,11 @@ export function LoginPage() {
 
   const loginMutation = useMutation({
     mutationFn: login,
-    onSuccess: () => {
+    onSuccess: (auth) => {
       notificarMudancaDeSessao()
-      navigate(destino, { replace: true })
+      // Sem uma tela de origem, o destino depende do papel: o motorista vai para as
+      // rotas dele, e não para um painel de gestão que o guard devolveria.
+      navigate(origem ?? rotaInicial(auth.role), { replace: true })
     },
   })
 

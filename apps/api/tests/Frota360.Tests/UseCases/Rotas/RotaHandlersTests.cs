@@ -1,10 +1,12 @@
-using Frota360.Application.DTOs.Rota.Request;
+﻿using Frota360.Application.DTOs.Rota.Request;
 using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Rotas.Commands.CreateRota;
 using Frota360.Application.UseCases.Rotas.Commands.DeleteRota;
 using Frota360.Application.UseCases.Rotas.Commands.EncerrarRota;
 using Frota360.Application.UseCases.Rotas.Commands.UpdateRota;
 using Frota360.Application.UseCases.Rotas.Queries.GetAllRotas;
+using Frota360.Application.UseCases.Rotas.Queries.GetMinhasRotas;
+using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,7 +17,7 @@ namespace Frota360.Tests.UseCases.Rotas
     public class RotaHandlersTests
     {
         private readonly IRotaRepository _repository = Substitute.For<IRotaRepository>();
-        private readonly IMotoristaRepository _motoristaRepository = Substitute.For<IMotoristaRepository>();
+        private readonly IUsuarioRepository _usuarioRepository = Substitute.For<IUsuarioRepository>();
         private readonly IVeiculoRepository _veiculoRepository = Substitute.For<IVeiculoRepository>();
         private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
 
@@ -25,10 +27,10 @@ namespace Frota360.Tests.UseCases.Rotas
         }
 
         private CreateRotaHandler CriarCreateHandler() =>
-            new(_repository, _motoristaRepository, _veiculoRepository, _currentUser, NullLogger<CreateRotaHandler>.Instance);
+            new(_repository, _usuarioRepository, _veiculoRepository, _currentUser, NullLogger<CreateRotaHandler>.Instance);
 
         private UpdateRotaHandler CriarUpdateHandler() =>
-            new(_repository, _motoristaRepository, _veiculoRepository, _currentUser, NullLogger<UpdateRotaHandler>.Instance);
+            new(_repository, _usuarioRepository, _veiculoRepository, _currentUser, NullLogger<UpdateRotaHandler>.Instance);
 
         private EncerrarRotaHandler CriarEncerrarHandler() =>
             new(_repository, _veiculoRepository, _currentUser, NullLogger<EncerrarRotaHandler>.Instance);
@@ -36,29 +38,33 @@ namespace Frota360.Tests.UseCases.Rotas
         private static Rota NovaRota(int id = 1,
                                      int kmInicial = 50_000,
                                      DateTime? dataFim = null,
-                                     int codigoVeiculo = 1) => new()
+                                     int codigoVeiculo = 1,
+                                     int codigoMotorista = 1) => new()
         {
             Id = id,
             EmpresaId = 1,
             Origem = "Curitiba",
             Destino = "São Paulo",
-            CodigoMotorista = 1,
+            CodigoMotorista = codigoMotorista,
             CodigoVeiculo = codigoVeiculo,
             Ativo = dataFim is null,
             DataInicio = new DateTime(2024, 1, 1),
             DataFim = dataFim,
             KmInicial = kmInicial,
-            DataInclusao = new DateTime(2024, 1, 1)
+            DataInclusao = new DateTime(2024, 1, 1),
+            // O repositório carrega por Include; aqui o fake faz o mesmo.
+            Motorista = NovoMotorista(codigoMotorista)
         };
 
-        private static Motorista NovoMotorista(int id = 1) => new()
+        /// <summary>O motorista é um usuário com a role Motorista — não há entidade própria.</summary>
+        private static Usuario NovoMotorista(int id = 1) => new()
         {
             Id = id,
             EmpresaId = 1,
             Nome = "João da Silva",
             Email = "joao@empresa.com",
-            CPF = "12345678901",
-            DataNascimento = new DateTime(1990, 5, 20),
+            Role = Roles.Motorista,
+            Ativo = true,
             DataInclusao = new DateTime(2024, 1, 1)
         };
 
@@ -97,7 +103,7 @@ namespace Frota360.Tests.UseCases.Rotas
         [Fact]
         public async Task Create_DevePersistirEMapearResposta()
         {
-            _motoristaRepository.GetByIdAsync(2, 1).Returns(NovoMotorista(2));
+            _usuarioRepository.GetMotoristaByIdAsync(2, 1).Returns(NovoMotorista(2));
             _veiculoRepository.GetByIdAsync(3, 1).Returns(NovoVeiculo(3));
             _repository.AddAsync(Arg.Any<Rota>())
                 .Returns(ci =>
@@ -124,7 +130,7 @@ namespace Frota360.Tests.UseCases.Rotas
         [Fact]
         public async Task Create_DeveResolverFksEscopadasNaEmpresa()
         {
-            _motoristaRepository.GetByIdAsync(2, 1).Returns(NovoMotorista(2));
+            _usuarioRepository.GetMotoristaByIdAsync(2, 1).Returns(NovoMotorista(2));
             _veiculoRepository.GetByIdAsync(3, 1).Returns(NovoVeiculo(3));
             _repository.AddAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
 
@@ -132,7 +138,7 @@ namespace Frota360.Tests.UseCases.Rotas
 
             await handler.HandleAsync(new CreateRotaCommand(NovaCreateRequest()));
 
-            await _motoristaRepository.Received(1).GetByIdAsync(2, 1);
+            await _usuarioRepository.Received(1).GetMotoristaByIdAsync(2, 1);
             await _veiculoRepository.Received(1).GetByIdAsync(3, 1);
             await _repository.Received(1).AddAsync(Arg.Is<Rota>(r => r.CodigoMotorista == 2 && r.CodigoVeiculo == 3));
         }
@@ -140,7 +146,7 @@ namespace Frota360.Tests.UseCases.Rotas
         [Fact]
         public async Task Create_QuandoMotoristaNaoExiste_DeveLancarInvalidOperationException()
         {
-            _motoristaRepository.GetByIdAsync(2, 1).Returns((Motorista?)null);
+            _usuarioRepository.GetMotoristaByIdAsync(2, 1).Returns((Usuario?)null);
             _veiculoRepository.GetByIdAsync(3, 1).Returns(NovoVeiculo(3));
 
             var handler = CriarCreateHandler();
@@ -154,7 +160,7 @@ namespace Frota360.Tests.UseCases.Rotas
         [Fact]
         public async Task Create_QuandoVeiculoNaoExiste_DeveLancarInvalidOperationException()
         {
-            _motoristaRepository.GetByIdAsync(2, 1).Returns(NovoMotorista(2));
+            _usuarioRepository.GetMotoristaByIdAsync(2, 1).Returns(NovoMotorista(2));
             _veiculoRepository.GetByIdAsync(3, 1).Returns((Veiculo?)null);
 
             var handler = CriarCreateHandler();
@@ -168,7 +174,7 @@ namespace Frota360.Tests.UseCases.Rotas
         [Fact]
         public async Task Create_QuandoMotoristaNaoExiste_NaoDevePersistir()
         {
-            _motoristaRepository.GetByIdAsync(2, 1).Returns((Motorista?)null);
+            _usuarioRepository.GetMotoristaByIdAsync(2, 1).Returns((Usuario?)null);
 
             var handler = CriarCreateHandler();
 
@@ -181,7 +187,7 @@ namespace Frota360.Tests.UseCases.Rotas
         [Fact]
         public async Task Create_QuandoKmInicialAbaixoDoOdometro_DeveRecusar()
         {
-            _motoristaRepository.GetByIdAsync(2, 1).Returns(NovoMotorista(2));
+            _usuarioRepository.GetMotoristaByIdAsync(2, 1).Returns(NovoMotorista(2));
             _veiculoRepository.GetByIdAsync(3, 1).Returns(NovoVeiculo(3, quilometragem: 61_000));
 
             var handler = CriarCreateHandler();
@@ -197,7 +203,7 @@ namespace Frota360.Tests.UseCases.Rotas
         public async Task Create_QuandoKmInicialAcimaDoOdometro_DeveAvancarOdometro()
         {
             var veiculo = NovoVeiculo(3, quilometragem: 50_000);
-            _motoristaRepository.GetByIdAsync(2, 1).Returns(NovoMotorista(2));
+            _usuarioRepository.GetMotoristaByIdAsync(2, 1).Returns(NovoMotorista(2));
             _veiculoRepository.GetByIdAsync(3, 1).Returns(veiculo);
             _repository.AddAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
 
@@ -213,7 +219,7 @@ namespace Frota360.Tests.UseCases.Rotas
         public async Task Create_QuandoKmInicialIgualAoOdometro_NaoDeveTocarNoVeiculo()
         {
             var veiculo = NovoVeiculo(3, quilometragem: 50_000);
-            _motoristaRepository.GetByIdAsync(2, 1).Returns(NovoMotorista(2));
+            _usuarioRepository.GetMotoristaByIdAsync(2, 1).Returns(NovoMotorista(2));
             _veiculoRepository.GetByIdAsync(3, 1).Returns(veiculo);
             _repository.AddAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
 
@@ -231,7 +237,7 @@ namespace Frota360.Tests.UseCases.Rotas
         public async Task Update_QuandoExiste_DeveAtualizarERetornarResposta()
         {
             _repository.GetByIdAsync(7, 1).Returns(NovaRota(7));
-            _motoristaRepository.GetByIdAsync(1, 1).Returns(NovoMotorista(1));
+            _usuarioRepository.GetMotoristaByIdAsync(1, 1).Returns(NovoMotorista(1));
             _veiculoRepository.GetByIdAsync(1, 1).Returns(NovoVeiculo(1));
             _repository.UpdateAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
 
@@ -249,7 +255,7 @@ namespace Frota360.Tests.UseCases.Rotas
         {
             var rota = NovaRota(7, kmInicial: 50_000);
             _repository.GetByIdAsync(7, 1).Returns(rota);
-            _motoristaRepository.GetByIdAsync(1, 1).Returns(NovoMotorista(1));
+            _usuarioRepository.GetMotoristaByIdAsync(1, 1).Returns(NovoMotorista(1));
             _veiculoRepository.GetByIdAsync(1, 1).Returns(NovoVeiculo(1));
             _repository.UpdateAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
 
@@ -268,7 +274,7 @@ namespace Frota360.Tests.UseCases.Rotas
         public async Task Update_DeveResolverFksEscopadasNaEmpresa()
         {
             _repository.GetByIdAsync(7, 1).Returns(NovaRota(7));
-            _motoristaRepository.GetByIdAsync(1, 1).Returns(NovoMotorista(1));
+            _usuarioRepository.GetMotoristaByIdAsync(1, 1).Returns(NovoMotorista(1));
             _veiculoRepository.GetByIdAsync(1, 1).Returns(NovoVeiculo(1));
             _repository.UpdateAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
 
@@ -277,7 +283,7 @@ namespace Frota360.Tests.UseCases.Rotas
             await handler.HandleAsync(new UpdateRotaCommand(7, NovaUpdateRequest()));
 
             await _repository.Received(1).GetByIdAsync(7, 1);
-            await _motoristaRepository.Received(1).GetByIdAsync(1, 1);
+            await _usuarioRepository.Received(1).GetMotoristaByIdAsync(1, 1);
             await _veiculoRepository.Received(1).GetByIdAsync(1, 1);
         }
 
@@ -285,7 +291,7 @@ namespace Frota360.Tests.UseCases.Rotas
         public async Task Update_QuandoMotoristaNaoExiste_DeveLancarInvalidOperationException()
         {
             _repository.GetByIdAsync(7, 1).Returns(NovaRota(7));
-            _motoristaRepository.GetByIdAsync(1, 1).Returns((Motorista?)null);
+            _usuarioRepository.GetMotoristaByIdAsync(1, 1).Returns((Usuario?)null);
             _veiculoRepository.GetByIdAsync(1, 1).Returns(NovoVeiculo(1));
 
             var handler = CriarUpdateHandler();
@@ -301,7 +307,7 @@ namespace Frota360.Tests.UseCases.Rotas
         public async Task Update_QuandoVeiculoNaoExiste_DeveLancarInvalidOperationException()
         {
             _repository.GetByIdAsync(7, 1).Returns(NovaRota(7));
-            _motoristaRepository.GetByIdAsync(1, 1).Returns(NovoMotorista(1));
+            _usuarioRepository.GetMotoristaByIdAsync(1, 1).Returns(NovoMotorista(1));
             _veiculoRepository.GetByIdAsync(1, 1).Returns((Veiculo?)null);
 
             var handler = CriarUpdateHandler();
@@ -326,7 +332,7 @@ namespace Frota360.Tests.UseCases.Rotas
             Assert.Null(resposta);
             await _repository.DidNotReceive().UpdateAsync(Arg.Any<Rota>());
             // A rota inexistente sai antes de qualquer resolução de FK.
-            await _motoristaRepository.DidNotReceive().GetByIdAsync(Arg.Any<int>(), Arg.Any<int>());
+            await _usuarioRepository.DidNotReceive().GetMotoristaByIdAsync(Arg.Any<int>(), Arg.Any<int>());
             await _veiculoRepository.DidNotReceive().GetByIdAsync(Arg.Any<int>(), Arg.Any<int>());
         }
 
@@ -434,7 +440,9 @@ namespace Frota360.Tests.UseCases.Rotas
             // A rota registra o próprio percurso, mas o odômetro do veículo não retrocede.
             Assert.Equal(430, resposta!.KmPercorrido);
             Assert.Equal(70_000, veiculo.Quilometragem);
-            await _veiculoRepository.DidNotReceive().UpdateAsync(Arg.Any<Veiculo>());
+            // O veículo ainda é salvo: o encerramento também grava a ficha da última
+            // viagem, que independe de o odômetro ter avançado ou não.
+            Assert.Equal("João da Silva", veiculo.UltimoMotorista);
         }
 
         [Fact]
@@ -503,6 +511,160 @@ namespace Frota360.Tests.UseCases.Rotas
             var resposta = (await handler.HandleAsync(new GetAllRotasQuery())).ToList();
 
             Assert.Equal(3, resposta.Count);
+        }
+
+        // ------------------------------------------------- Nome e ficha do veículo
+
+        [Fact]
+        public async Task Create_DeveDesnormalizarONomeDoMotorista()
+        {
+            _usuarioRepository.GetMotoristaByIdAsync(2, 1).Returns(NovoMotorista(2));
+            _veiculoRepository.GetByIdAsync(3, 1).Returns(NovoVeiculo(3));
+            _repository.AddAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
+
+            var resposta = await CriarCreateHandler().HandleAsync(new CreateRotaCommand(NovaCreateRequest()));
+
+            Assert.Equal("João da Silva", resposta.NomeMotorista);
+        }
+
+        [Fact]
+        public async Task GetAll_DeveDesnormalizarONomeDoMotorista()
+        {
+            // É o que mantém a rota identificável depois que a pessoa é rebaixada e some
+            // da lista de motoristas.
+            _repository.GetAllAsync(1).Returns(new[] { NovaRota(1) });
+
+            var handler = new GetAllRotasHandler(_repository, _currentUser, NullLogger<GetAllRotasHandler>.Instance);
+
+            var resposta = (await handler.HandleAsync(new GetAllRotasQuery())).Single();
+
+            Assert.Equal("João da Silva", resposta.NomeMotorista);
+        }
+
+        [Fact]
+        public async Task Encerrar_DeveRegistrarUltimoMotoristaEDataNoVeiculo()
+        {
+            var veiculo = NovoVeiculo(1, quilometragem: 50_000);
+            _repository.GetByIdAsync(5, 1).Returns(NovaRota(5, kmInicial: 50_000));
+            _repository.UpdateAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
+            _veiculoRepository.GetByIdAsync(1, 1).Returns(veiculo);
+
+            await CriarEncerrarHandler().HandleAsync(new EncerrarRotaCommand(5,
+                new EncerrarRotaRequest { KmFinal = 50_430, DataFim = new DateTime(2024, 1, 2) }));
+
+            Assert.Equal("João da Silva", veiculo.UltimoMotorista);
+            Assert.Equal(new DateTime(2024, 1, 2), veiculo.DataUltimaViagem);
+            await _veiculoRepository.Received(1).UpdateAsync(veiculo);
+        }
+
+        [Fact]
+        public async Task Encerrar_ComViagemMaisAntigaQueARegistrada_NaoDeveRetroagirAFichaDoVeiculo()
+        {
+            // Mesma política do odômetro: encerrar hoje uma rota de mês passado não pode
+            // reescrever o veículo com dado velho.
+            var veiculo = NovoVeiculo(1, quilometragem: 50_000);
+            veiculo.UltimoMotorista = "Maria";
+            veiculo.DataUltimaViagem = new DateTime(2024, 6, 1);
+            _repository.GetByIdAsync(5, 1).Returns(NovaRota(5, kmInicial: 50_000));
+            _repository.UpdateAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
+            _veiculoRepository.GetByIdAsync(1, 1).Returns(veiculo);
+
+            await CriarEncerrarHandler().HandleAsync(new EncerrarRotaCommand(5,
+                new EncerrarRotaRequest { KmFinal = 50_430, DataFim = new DateTime(2024, 1, 2) }));
+
+            Assert.Equal("Maria", veiculo.UltimoMotorista);
+            Assert.Equal(new DateTime(2024, 6, 1), veiculo.DataUltimaViagem);
+            // O odômetro ainda avança: ele não depende da data, e 50.430 > 50.000.
+            Assert.Equal(50_430, veiculo.Quilometragem);
+        }
+
+        // -------------------------------------------------------------- Motorista
+        //
+        // Segundo eixo de isolamento: além da empresa, a role Motorista só alcança as
+        // rotas do próprio login — e o id vem sempre do token, nunca do cliente.
+
+        /// <summary>Coloca a requisição no papel do motorista com o id informado.</summary>
+        private void ComoMotorista(int usuarioId)
+        {
+            _currentUser.Role.Returns(Roles.Motorista);
+            _currentUser.UsuarioId.Returns(usuarioId);
+        }
+
+        private GetMinhasRotasHandler CriarMinhasRotasHandler() =>
+            new(_repository, _currentUser, NullLogger<GetMinhasRotasHandler>.Instance);
+
+        [Fact]
+        public async Task GetMinhasRotas_DeveConsultarEscopadoNaEmpresaENoMotoristaDaClaim()
+        {
+            ComoMotorista(2);
+            _repository.GetAllByMotoristaAsync(1, 2).Returns(new[] { NovaRota(1, codigoMotorista: 2), NovaRota(2, codigoMotorista: 2) });
+
+            var resposta = (await CriarMinhasRotasHandler().HandleAsync(new GetMinhasRotasQuery())).ToList();
+
+            Assert.Equal(2, resposta.Count);
+            await _repository.Received(1).GetAllByMotoristaAsync(1, 2);
+            await _repository.DidNotReceive().GetAllAsync(Arg.Any<int>());
+        }
+
+
+        [Fact]
+        public async Task Create_ComoMotorista_DeveIgnorarOCodigoMotoristaDoCorpo()
+        {
+            // O corpo pede a rota no nome do motorista 2; a claim diz 9. Vence a claim.
+            ComoMotorista(9);
+            _usuarioRepository.GetMotoristaByIdAsync(9, 1).Returns(NovoMotorista(9));
+            _veiculoRepository.GetByIdAsync(3, 1).Returns(NovoVeiculo(3));
+            _repository.AddAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
+
+            await CriarCreateHandler().HandleAsync(new CreateRotaCommand(NovaCreateRequest()));
+
+            await _usuarioRepository.Received(1).GetMotoristaByIdAsync(9, 1);
+            await _usuarioRepository.DidNotReceive().GetMotoristaByIdAsync(2, Arg.Any<int>());
+            await _repository.Received(1).AddAsync(Arg.Is<Rota>(r => r.CodigoMotorista == 9));
+        }
+
+
+        [Fact]
+        public async Task Create_ComUsuarioQueNaoEhMotorista_DeveRecusar()
+        {
+            // O repositório filtra por role: um Supervisor "não existe" como motorista.
+            _usuarioRepository.GetMotoristaByIdAsync(2, 1).Returns((Usuario?)null);
+
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => CriarCreateHandler().HandleAsync(new CreateRotaCommand(NovaCreateRequest())));
+
+            Assert.Equal("Motorista 2 não encontrado.", ex.Message);
+            await _repository.DidNotReceive().AddAsync(Arg.Any<Rota>());
+        }
+
+        [Fact]
+        public async Task Encerrar_ComoMotorista_DeveEncerrarAPropriaRota()
+        {
+            ComoMotorista(9);
+            _repository.GetByIdAsync(5, 1).Returns(NovaRota(5, kmInicial: 50_000, codigoMotorista: 9));
+            _repository.UpdateAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
+            _veiculoRepository.GetByIdAsync(1, 1).Returns(NovoVeiculo(1));
+
+            var resposta = await CriarEncerrarHandler().HandleAsync(
+                new EncerrarRotaCommand(5, new EncerrarRotaRequest { KmFinal = 50_400 }));
+
+            Assert.NotNull(resposta);
+            Assert.Equal(400, resposta!.KmPercorrido);
+        }
+
+        [Fact]
+        public async Task Encerrar_ComoMotorista_RotaDeOutro_DeveRetornarNull()
+        {
+            // 404 e não 403: para quem não é dono dela, a rota não existe.
+            ComoMotorista(9);
+            _repository.GetByIdAsync(5, 1).Returns(NovaRota(5, kmInicial: 50_000, codigoMotorista: 4));
+
+            var resposta = await CriarEncerrarHandler().HandleAsync(
+                new EncerrarRotaCommand(5, new EncerrarRotaRequest { KmFinal = 50_400 }));
+
+            Assert.Null(resposta);
+            await _repository.DidNotReceive().UpdateAsync(Arg.Any<Rota>());
+            await _veiculoRepository.DidNotReceive().UpdateAsync(Arg.Any<Veiculo>());
         }
     }
 }

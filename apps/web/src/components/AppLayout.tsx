@@ -124,6 +124,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const user = useSession()
   const admin = pode.gerenciarUsuarios(user?.role)
   const gestor = pode.editarTiposManutencao(user?.role)
+  const motorista = pode.verMinhasRotas(user?.role)
 
   const [expanded, setExpanded] = useState(() => lerPreferencia(SIDEBAR_KEY, true))
   const [catDashboard, setCatDashboard] = useState(true)
@@ -143,17 +144,25 @@ export function AppLayout({ children }: { children: ReactNode }) {
     navigate('/login', { replace: true })
   }
 
-  const itensDashboard: ItemNav[] = [
-    { to: '/dashboard', rotulo: 'Visão geral', icone: <GridIcon size={17} /> },
-    { to: '/motoristas', rotulo: 'Motoristas', icone: <UsersIcon size={17} /> },
-    { to: '/veiculos', rotulo: 'Veículos', icone: <TruckIcon size={17} /> },
-    { to: '/rotas', rotulo: 'Rotas', icone: <RouteIcon size={17} /> },
-    { to: '/manutencoes', rotulo: 'Manutenções', icone: <WrenchIcon size={17} /> },
-    // O catálogo de tipos só aparece para quem pode mantê-lo (Admin/Supervisor).
-    ...(gestor
-      ? [{ to: '/tipos-manutencao', rotulo: 'Tipos de manutenção', icone: <ClipboardIcon size={17} /> }]
-      : []),
-  ]
+  // O motorista opera uma tela e consulta duas: veículos e manutenções entram em
+  // modo leitura, porque saber o estado do caminhão faz parte do trabalho dele.
+  const itensDashboard: ItemNav[] = motorista
+    ? [
+        { to: '/minhas-rotas', rotulo: 'Minhas rotas', icone: <RouteIcon size={17} /> },
+        { to: '/veiculos', rotulo: 'Veículos', icone: <TruckIcon size={17} /> },
+        { to: '/manutencoes', rotulo: 'Manutenções', icone: <WrenchIcon size={17} /> },
+      ]
+    : [
+        { to: '/dashboard', rotulo: 'Visão geral', icone: <GridIcon size={17} /> },
+        { to: '/motoristas', rotulo: 'Motoristas', icone: <UsersIcon size={17} /> },
+        { to: '/veiculos', rotulo: 'Veículos', icone: <TruckIcon size={17} /> },
+        { to: '/rotas', rotulo: 'Rotas', icone: <RouteIcon size={17} /> },
+        { to: '/manutencoes', rotulo: 'Manutenções', icone: <WrenchIcon size={17} /> },
+        // O catálogo de tipos só aparece para quem pode mantê-lo (Admin/Supervisor).
+        ...(gestor
+          ? [{ to: '/tipos-manutencao', rotulo: 'Tipos de manutenção', icone: <ClipboardIcon size={17} /> }]
+          : []),
+      ]
 
   const itensControle: ItemNav[] = [
     { to: '/usuarios', rotulo: 'Usuários', icone: <UsersIcon size={17} /> },
@@ -198,7 +207,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
         <nav className="flex-1 overflow-y-auto py-3">
           <SidebarCategoria
-            titulo="Dashboard"
+            titulo={motorista ? 'Operação' : 'Dashboard'}
             itens={itensDashboard}
             expanded={expanded}
             aberta={catDashboard}

@@ -1,4 +1,4 @@
-namespace Frota360.Application.DTOs.Convite.Request
+﻿namespace Frota360.Application.DTOs.Convite.Request
 {
     public class CriarConviteRequest
     {

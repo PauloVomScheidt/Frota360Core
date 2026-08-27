@@ -1,4 +1,4 @@
-using Frota360.Application.DTOs.Usuario.Response;
+﻿using Frota360.Application.DTOs.Usuario.Response;
 using Frota360.Application.Interfaces;
 using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
@@ -86,6 +86,8 @@ namespace Frota360.Application.Services
             Nome = u.Nome,
             Email = u.Email,
             Role = u.Role,
+            CPF = u.CPF,
+            DataNascimento = u.DataNascimento,
             Ativo = u.Ativo,
             DataInclusao = u.DataInclusao
         };
