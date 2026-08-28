@@ -22,6 +22,10 @@ namespace Frota360.Infrastructure.Repositories
                 .OrderByDescending(r => r.DataInicio)
                 .ToListAsync();
 
+        public async Task<bool> ExisteComVeiculoAsync(int empresaId, int veiculoId)
+            => await context.Rotas.AsNoTracking()
+                .AnyAsync(r => r.EmpresaId == empresaId && r.CodigoVeiculo == veiculoId);
+
         // Rastreado (sem AsNoTracking): serve tanto para leitura quanto para update.
         public async Task<Rota?> GetByIdAsync(int id, int empresaId)
             => await context.Rotas

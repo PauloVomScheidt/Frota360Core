@@ -31,11 +31,15 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.UpdateVeiculo
 
                 var request = command.Data;
 
+                // RN09 — normaliza antes de comparar: sem isso, reenviar a mesma placa em
+                // caixa diferente entraria no diff como se fosse alteração.
+                var placa = request.Placa.Trim().ToUpperInvariant();
+
                 // O diff é montado antes de a entidade ser mutada — depois disso o "antes" se perde.
                 var alteracoes = new AlteracoesBuilder()
                     .Comparar("Nome", veiculo.NomeVeiculo, request.NomeVeiculo)
                     .Comparar("Marca", veiculo.MarcaVeiculo, request.MarcaVeiculo)
-                    .Comparar("Placa", veiculo.Placa, request.Placa)
+                    .Comparar("Placa", veiculo.Placa, placa)
                     .Comparar("Quilometragem", veiculo.Quilometragem, request.Quilometragem)
                     .Comparar("Último motorista", veiculo.UltimoMotorista, request.UltimoMotorista)
                     .Comparar("Data da última viagem", veiculo.DataUltimaViagem, request.DataUltimaViagem)
@@ -43,7 +47,7 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.UpdateVeiculo
 
                 veiculo.NomeVeiculo = request.NomeVeiculo;
                 veiculo.MarcaVeiculo = request.MarcaVeiculo;
-                veiculo.Placa = request.Placa;
+                veiculo.Placa = placa;
                 veiculo.Quilometragem = request.Quilometragem;
                 veiculo.UltimoMotorista = request.UltimoMotorista;
                 veiculo.DataUltimaViagem = request.DataUltimaViagem;

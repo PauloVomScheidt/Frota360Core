@@ -28,7 +28,9 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.CreateVeiculo
                     EmpresaId = currentUser.EmpresaId,
                     NomeVeiculo = request.NomeVeiculo,
                     MarcaVeiculo = request.MarcaVeiculo,
-                    Placa = request.Placa,
+                    // RN09 — a placa é gravada sempre em maiúsculas; o validator aceita as duas
+                    // caixas para que um cliente da API não leve 422 por causa disso.
+                    Placa = request.Placa.Trim().ToUpperInvariant(),
                     Quilometragem = request.Quilometragem,
                     UltimoMotorista = request.UltimoMotorista,
                     DataUltimaViagem = request.DataUltimaViagem,

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo
 {
     public sealed class DeleteVeiculoHandler(IVeiculoRepository repository,
+                                             IRotaRepository rotaRepository,
                                              ICurrentUserService currentUser,
                                              IAuditoriaService auditoria,
                                              ILogger<DeleteVeiculoHandler> logger)
@@ -26,6 +27,12 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo
                     return false;
                 }
 
+                // RN08 — veículo com rota associada não some: a rota guarda o histórico de
+                // quilometragem da frota e ficaria apontando para um registro inexistente.
+                if (await rotaRepository.ExisteComVeiculoAsync(currentUser.EmpresaId, veiculo.Id))
+                    throw new InvalidOperationException(
+                        "Não é possível excluir um veículo com rotas associadas. Encerre ou remova as rotas antes.");
+
                 await repository.DeleteAsync(veiculo);
 
                 logger.LogInformation("Veículo removido com sucesso. Id {Id}", command.Id);
@@ -37,7 +44,7 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo
 
                 return true;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not InvalidOperationException)
             {
                 logger.LogError(ex, "Erro ao remover veículo Id {Id}", command.Id);
                 throw;

@@ -98,6 +98,17 @@ export interface AlterarRoleRequest {
   role: Role
 }
 
+/**
+ * Edição do próprio cadastro (`PUT /usuario/perfil`) — o direito de correção da LGPD.
+ * Não carrega id: o alvo sai do token. E-mail e papel não são editáveis por aqui.
+ */
+export interface AtualizarPerfilRequest {
+  nome: string
+  /** Opcionais. O CPF vai só com os 11 dígitos; em branco, omita para gravar nulo. */
+  cpf?: string
+  dataNascimento?: string
+}
+
 export interface AlterarAtivoRequest {
   ativo: boolean
 }

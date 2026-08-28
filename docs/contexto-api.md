@@ -78,7 +78,7 @@ Rota agora resolve motorista e veículo por `GetByIdAsync(id, currentUser.Empres
 ### 2. Convite → conta
 Admin cria convite (token aleatório de 64 bytes, **só o hash SHA vai ao banco**, validade 7 dias, convites pendentes anteriores do mesmo e-mail são apagados) → e-mail com link `{Frontend}/convite?token=` → `POST /convite/aceitar` (anônimo) cria o `Usuario` já com role do convite e devolve token+refresh direto, sem exigir login.
 
-**Convite de motorista não tem nada de especial:** é e-mail + `Role = Motorista`, como qualquer outra role. O aceite (`POST /convite/aceitar`) aceita ainda `CPF` e `DataNascimento` **opcionais**, que a própria pessoa informa — hoje é o único ponto de entrada desses dados (não há tela de perfil). Em branco viram nulo, e não string vazia: o índice único filtrado `(EmpresaId, CPF)` depende disso para não colidir entre quem não informou.
+**Convite de motorista não tem nada de especial:** é e-mail + `Role = Motorista`, como qualquer outra role. O aceite (`POST /convite/aceitar`) aceita ainda `CPF` e `DataNascimento` **opcionais**, que a própria pessoa informa. Em branco viram nulo, e não string vazia: o índice único filtrado `(EmpresaId, CPF)` depende disso para não colidir entre quem não informou. Depois do aceite, esses mesmos campos se corrigem em `PUT /usuario/perfil` (§4.2).
 
 ### 3. Auth
 Login BCrypt → JWT de 1h (claims `sub`, `email`, `name`, `jti`, `empresaId`, `role`) + refresh token de 7 dias rotacionado a cada uso (hash no banco). `esqueci-senha` responde neutro sempre (não revela se o e-mail existe), token de 30 min; redefinir senha **derruba o refresh token**. Todos esses endpoints têm rate limit de 5/min por IP.
@@ -96,6 +96,26 @@ Alterar role ou desativar. Ambos revogam a sessão (forçam novo login para o to
 | `Motorista` | Opera **só as próprias rotas** (`GET /rota/minhas`, `POST /rota`, `POST /rota/{id}/encerrar`) e **lê** veículos e manutenções (`GET /veiculo`, `GET /manutencao`) — precisa saber o estado do caminhão que vai pegar. O `Custo` da manutenção é omitido para ele. Convite, promoção e rebaixamento são iguais aos das demais roles. |
 
 `Roles.Gestao` (`Admin,Supervisor,Operador`) é a constante usada nos `[Authorize]` que barram o motorista: controllers de motorista, manutenção e tipo de manutenção inteiros, e os endpoints de gestão de rota. `VeiculoController` fica de fora de propósito — leitura aberta, escrita restrita como antes.
+
+### 4.2 Perfil — o próprio cadastro (qualquer autenticado)
+
+`GET /usuario/perfil` e `PUT /usuario/perfil` são as **duas únicas ações do `UsuarioController` que não são Admin** — por isso o `[Authorize(Roles = Admin)]` saiu da classe e foi para cada ação administrativa: atributos de classe e de ação combinam por **E**, e na classe ele barraria o motorista aqui também.
+
+O `PUT` edita **nome, CPF e data de nascimento** do dono do token. Três decisões, todas defensáveis no §6.5 do RFC:
+
+- **O alvo vem do claim `sub`, nunca do corpo.** Não existe `PUT /usuario/{id}` administrativo: o direito de correção (LGPD, Art. 18, III) é do titular, e um Admin editando dado pessoal alheio abriria uma superfície que precisaria de justificativa própria. É autoatendimento ou nada.
+- **O e-mail fica de fora.** É a chave de login e mexeria em convite, refresh token e no índice único global de `Usuario.Email`. Trocar e-mail seria outro caso de uso, com reverificação.
+- **CPF em branco grava `null`.** Colisão com outro usuário da mesma empresa vira 422 antes de o índice único estourar (`IUsuarioRepository.ExisteCpfNaEmpresaAsync`).
+
+O `GET` existe porque `GET /usuario` é Admin-only: sem ele um Motorista não teria **nenhum** caminho para ler os próprios dados, e a tela de correção abriria em branco — a "correção" viraria sobrescrita cega.
+
+A sessão **não** é revogada (diferente da troca de papel): mudar o próprio nome não amplia nem reduz acesso. O efeito colateral é que o claim `name` do token — e portanto o nome desnormalizado nas linhas de auditoria seguintes — só reflete o novo valor no próximo refresh.
+
+### 4.3 Veículo — placa e exclusão
+
+- **Placa (RN09).** Formato Mercosul (`ABC1D23`) ou antigo (`ABC1234`), nos dois validators. A comparação é **case-insensitive** e o handler grava sempre em maiúsculas (`Trim().ToUpperInvariant()`): a RN09 é regra de formato, não de caixa — recusar `abc1d23` com 422 puniria um cliente da API por algo que só o front normalizava. No update, a normalização acontece **antes** do `AlteracoesBuilder`, senão reenviar a mesma placa em caixa diferente entraria no diff como alteração fantasma.
+- **Exclusão (RN08).** Veículo com rota associada não é excluído: 422 com *"Não é possível excluir um veículo com rotas associadas. Encerre ou remova as rotas antes."* — `DeleteVeiculoHandler` consulta `IRotaRepository.ExisteComVeiculoAsync`, mesmo desenho de `DeleteTipoManutencaoHandler`. A rota guarda o histórico de quilometragem da frota e ficaria apontando para um registro inexistente.
+- **A metade "motorista" da RN08 não se aplica ao modelo atual**: não há DELETE de motorista, e a FK `Restrict` de `Rota.CodigoMotorista` → `Usuario` já garante o mesmo efeito pelo banco. Usuário é desativado, nunca excluído.
 
 ### 5. Manutenção — a parte mais interessante do domínio
 - Nasce **Pendente** com `QuilometragemPrevista` e opcionalmente `DataPrevista`; vence no que vier primeiro.
@@ -134,7 +154,7 @@ Tabela `LogAuditoria`, **append-only**: só insert e select. Não existe endpoin
 
 **Escopo.** Administração (usuário, convite) **e** domínio (veículo, rota, manutenção, tipo de manutenção). **Login/logout ficam de fora** de propósito: seria o maior volume da tabela e o menor valor — continuam só no Serilog.
 
-**Como é capturado.** Explicitamente, no handler/serviço, via `IAuditoriaService.RegistrarAsync` chamado ao final do caminho feliz — 15 pontos, listados abaixo. Não é um interceptor do EF: o objetivo é registrar a **intenção de negócio** ("Encerrou a rota"), que um `UPDATE Rota` não expressa, e evitar o ruído de `RefreshTokenHash` mudando a cada login.
+**Como é capturado.** Explicitamente, no handler/serviço, via `IAuditoriaService.RegistrarAsync` chamado ao final do caminho feliz — 20 pontos, listados abaixo. Não é um interceptor do EF: o objetivo é registrar a **intenção de negócio** ("Encerrou a rota"), que um `UPDATE Rota` não expressa, e evitar o ruído de `RefreshTokenHash` mudando a cada login.
 
 **Modelo.** `Entidade` + `Acao` (`EntidadesAuditadas` / `AcoesAuditoria`, em `Domain/Common`) são dois eixos de filtro com poucos valores distintos, no lugar de uma constante por evento. `Descricao` é uma frase pronta em português, montada no servidor. `Alteracoes` é o diff em JSON (`[{campo, de, para}]`), nulo em criação e exclusão.
 
@@ -145,7 +165,7 @@ Nome, e-mail e papel de quem agiu ficam **desnormalizados** na linha — o log �
 1. **Auditoria não derruba negócio.** `AuditoriaService` roda depois de o repositório já ter feito `SaveChangesAsync`, portanto fora daquela transação, e engole a exceção em log de erro. Perder uma linha de trilha é ruim; devolver 500 numa edição que já foi persistida é pior.
 2. **Nada de segredo no diff.** Ele é montado à mão, campo a campo, por `AlteracoesBuilder` — chamado **antes** de a entidade ser mutada, já que os handlers a alteram in-place. Hash de senha, refresh token, token de reset e de convite nunca entram.
 
-**Os 15 pontos de registro:**
+**Os 20 pontos de registro:**
 
 | Origem | Entidade · Ação | Diff |
 |---|---|---|
@@ -157,6 +177,7 @@ Nome, e-mail e papel de quem agiu ficam **desnormalizados** na linha — o log �
 | `Create/Update/DeleteManutencaoHandler` | Manutencao · Criou/Atualizou/Excluiu | ✅ no update |
 | `ConcluirManutencaoHandler` | Manutencao · Concluiu | ✅ status, km, custo, odômetro |
 | `Create/Update/DeleteTipoManutencaoHandler` | TipoManutencao · Criou/Atualizou/Excluiu | ✅ no update |
+| `UsuarioService.AtualizarPerfilAsync` | Usuario · Atualizou | ✅ nome, CPF e nascimento — o ator é também o objeto |
 | `UsuarioService.AlterarRoleAsync` | Usuario · AlterouPermissao | ✅ papel anterior → novo |
 | `UsuarioService.DefinirAtivoAsync` | Usuario · Ativou/Desativou | — |
 | `ConviteService.CriarParaEmpresaAsync` / `CancelarAsync` | Convite · Criou/Cancelou | — |
@@ -169,7 +190,9 @@ Dois casos fogem do padrão:
 
 **Consulta.** `GET /auditoria` (Admin), via query CQRS `GetLogsAuditoriaQuery`, filtrando por entidade, ação, usuário e período. Três índices, um por consulta real: `(EmpresaId, DataHora)` para a listagem, `(EmpresaId, Entidade, EntidadeId)` para o histórico de um registro e `(EmpresaId, UsuarioId, DataHora)` para o de uma pessoa.
 
-Retenção é **infinita** por ora — o `Id` é `long` e os índices suportam o crescimento; uma rotina de purga cabe depois sem mexer no schema.
+**Retenção: 12 meses**, contados a partir de `DataHora`. O prazo é um ciclo de auditoria anual — tempo suficiente para investigar qualquer incidente do exercício e curto o bastante para satisfazer o princípio da necessidade da LGPD (Art. 6º, III), que pesa aqui porque a linha guarda dado pessoal: nome, e-mail, papel **e IP de origem** do ator.
+
+**A purga ainda não está implementada** — hoje nada apaga linha nenhuma. É trabalho futuro consciente, não esquecimento: a rotina cabe sem mexer no schema (`Id` é `long`, os três índices suportam o crescimento) e sem tocar no caráter append-only, porque expurgo por prazo é operação de manutenção, não endpoint. Até ela existir, a política está declarada e a limitação, registrada.
 
 ### Paginação — `ResultadoPaginado<T>`
 
@@ -189,6 +212,7 @@ Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou 
 | GET/POST/DELETE | `/convite`, `/convite/{id}` | Admin |
 | POST | `/convite/aceitar` | anônimo |
 | GET | `/usuario` · PUT `/usuario/{id}/role` · `/{id}/ativo` | Admin |
+| GET/PUT | `/usuario/perfil` — o próprio cadastro (nome, CPF, nascimento); alvo pelo `sub` do token | **qualquer autenticado** (inclui Motorista) |
 | GET | `/auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` — **único endpoint paginado**; somente leitura | Admin |
 | GET | `/veiculo` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**) |
 | GET | `/manutencao?veiculoId=&status=` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**, sem `custo`) |
@@ -198,7 +222,7 @@ Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou 
 | POST/PUT | `/veiculo`, `/tipomanutencao`, `/manutencao`, `/manutencao/{id}/concluir` | Admin, Supervisor |
 | PUT | `/rota/{id}` | Admin, Supervisor, Operador |
 | POST | `/rota`, `/rota/{id}/encerrar` | qualquer autenticado — o Motorista só alcança as próprias rotas |
-| DELETE | `/{qualquer}/{id}` (não há DELETE de motorista) | **Admin** (único que exclui) |
+| DELETE | `/{qualquer}/{id}` (não há DELETE de motorista) — `/veiculo/{id}` responde 422 se houver rota associada (RN08) | **Admin** (único que exclui) |
 | GET | `/health`, `/health/detail`, `/scalar/v1` | aberto |
 
 ## Infra e config
@@ -208,3 +232,5 @@ Serilog (console + arquivo diário, 7 dias), rate limit global 200/min por IP + 
 ## Testes
 
 xUnit + NSubstitute, sem banco. O projeto não referencia Infrastructure nem a API, então não há teste de repositório, DbContext ou endpoint — a cobertura é de handlers, mappings, validators e services.
+
+Vale notar o recorte que isso impõe às regras novas: `VeiculoValidatorTests` cobre o **formato** da placa (RN09) e `VeiculoHandlersTests` cobre a **normalização** e a recusa da RN08, mas o índice único filtrado `(EmpresaId, CPF)` e a FK `Restrict` — as garantias que moram no banco — não têm teste automatizado; a checagem em `UsuarioService`/`DeleteVeiculoHandler` é o que se testa, e ela existe justamente para transformar a violação em 422 com mensagem antes de o banco estourar.
