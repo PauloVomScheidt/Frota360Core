@@ -1,4 +1,4 @@
-namespace Frota360.Application.DTOs.Convite.Response
+﻿namespace Frota360.Application.DTOs.Convite.Response
 {
     public class ConviteResponse
     {

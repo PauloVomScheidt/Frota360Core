@@ -9,11 +9,24 @@ namespace Frota360.Infrastructure.Repositories
     {
         public async Task<IEnumerable<Rota>> GetAllAsync(int empresaId)
             => await context.Rotas.AsNoTracking()
+                .Include(r => r.Motorista)
                 .Where(r => r.EmpresaId == empresaId)
                 .ToListAsync();
 
+        public async Task<IEnumerable<Rota>> GetAllByMotoristaAsync(int empresaId, int motoristaId)
+            => await context.Rotas.AsNoTracking()
+                .Include(r => r.Motorista)
+                .Where(r => r.EmpresaId == empresaId && r.CodigoMotorista == motoristaId)
+                // A tela do motorista mostra a rota ativa primeiro e o histórico do mais
+                // recente para o mais antigo.
+                .OrderByDescending(r => r.DataInicio)
+                .ToListAsync();
+
+        // Rastreado (sem AsNoTracking): serve tanto para leitura quanto para update.
         public async Task<Rota?> GetByIdAsync(int id, int empresaId)
-            => await context.Rotas.FirstOrDefaultAsync(r => r.Id == id && r.EmpresaId == empresaId);
+            => await context.Rotas
+                .Include(r => r.Motorista)
+                .FirstOrDefaultAsync(r => r.Id == id && r.EmpresaId == empresaId);
 
         public async Task<Rota> AddAsync(Rota rota)
         {

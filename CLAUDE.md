@@ -61,7 +61,8 @@ O motivo de os dois viverem no mesmo repositório: mudança de um lado quase sem
 |---|---|---|
 | Envelope de resposta | `ApiResponse<T>` montado no controller (`Sucesso`/`Mensagem`/`Dados`/`Erros`) | `unwrap()` em `src/api/http.ts` desempacota `dados` e lança `ApiError` |
 | Tipos dos DTOs | `src/Application/DTOs/**` | `src/api/types.ts` — **mantido à mão**, não gerado |
-| Papéis | `Roles` em `src/Domain` + `[Authorize(Roles = ...)]` nos controllers | `pode.*` em `src/auth/permissions.ts` — espelho apenas para esconder ações; **o servidor é a autoridade** |
+| Papéis | `Roles` em `src/Domain` (`Admin`, `Supervisor`, `Operador`, `Motorista`, + a constante `Roles.Gestao`) + `[Authorize(Roles = ...)]` nos controllers | `pode.*` em `src/auth/permissions.ts` — espelho apenas para esconder ações; **o servidor é a autoridade** |
+| Motorista | **é o próprio `Usuario`** com `Role = Motorista` (não há entidade `Motorista`); `Rota.CodigoMotorista` referencia `Usuario`, e o escopo de `/rota/minhas` sai do `sub` do token. Lê veículos e manutenções (sem `Custo`) | as entradas `pode.ver*` são **por tela** e o guarda `RequirePode` as aplica na rota; `rotaInicial(role)` é o destino de todo redirecionamento |
 | Multi-tenant | `EmpresaId` vem da claim `empresaId` do JWT | transparente — o cliente nunca envia id de empresa |
 | Erro de regra de negócio | `throw new InvalidOperationException("texto ao usuário")` → 422 | mensagem exibida literalmente via `mensagensDeErro()` |
 | URL da API | `https://localhost:7271` / `http://localhost:5062` (`src/Api/Properties/launchSettings.json`) | `VITE_API_URL` em `.env.development` — hoje aponta para `https://localhost:7271/api/v1` |

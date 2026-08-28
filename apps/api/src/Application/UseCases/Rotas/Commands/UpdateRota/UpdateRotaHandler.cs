@@ -1,4 +1,4 @@
-using Frota360.Application.Abstractions.Messaging;
+﻿using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Rota.Response;
 using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Rotas;
@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Frota360.Application.UseCases.Rotas.Commands.UpdateRota
 {
     public sealed class UpdateRotaHandler(IRotaRepository repository,
-                                          IMotoristaRepository motoristaRepository,
+                                          IUsuarioRepository usuarioRepository,
                                           IVeiculoRepository veiculoRepository,
                                           ICurrentUserService currentUser,
                                           ILogger<UpdateRotaHandler> logger)
@@ -31,8 +31,9 @@ namespace Frota360.Application.UseCases.Rotas.Commands.UpdateRota
                 var request = command.Data;
 
                 // Buscas escopadas pela empresa do usuário: garantem que os ids vindos do corpo
-                // não alcancem motoristas ou veículos de outra empresa.
-                var motorista = await motoristaRepository.GetByIdAsync(request.CodigoMotorista, currentUser.EmpresaId)
+                // não alcancem usuários ou veículos de outra empresa. Quem não tem a role
+                // Motorista também "não existe" aqui — rota só é atribuível a motorista.
+                var motorista = await usuarioRepository.GetMotoristaByIdAsync(request.CodigoMotorista, currentUser.EmpresaId)
                     ?? throw new InvalidOperationException($"Motorista {request.CodigoMotorista} não encontrado.");
 
                 var veiculo = await veiculoRepository.GetByIdAsync(request.CodigoVeiculo, currentUser.EmpresaId)
@@ -49,7 +50,11 @@ namespace Frota360.Application.UseCases.Rotas.Commands.UpdateRota
 
                 logger.LogInformation("Rota atualizada com sucesso. Id {Id}", atualizado.Id);
 
-                return atualizado.ToResponse();
+                var resposta = atualizado.ToResponse();
+                // A navegação carregada ainda aponta para o motorista anterior quando a
+                // rota troca de dono; o nome certo é o do que acabou de ser resolvido.
+                resposta.NomeMotorista = motorista.Nome;
+                return resposta;
             }
             catch (Exception ex) when (ex is not InvalidOperationException)
             {

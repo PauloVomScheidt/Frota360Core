@@ -1,4 +1,4 @@
-using Frota360.Application.Common;
+﻿using Frota360.Application.Common;
 using Frota360.Application.DTOs.Convite.Request;
 using Frota360.Application.DTOs.Convite.Response;
 using Frota360.Application.DTOs.Usuario.Response;
@@ -63,6 +63,7 @@ namespace Frota360.Application.Services
             };
         }
 
+
         public async Task<AuthResponse?> AceitarAsync(AceitarConviteRequest request)
         {
             var convite = await conviteRepository.GetByTokenHashAsync(TokenHelper.Hash(request.Token));
@@ -85,6 +86,9 @@ namespace Frota360.Application.Services
                 Email = convite.Email,
                 SenhaHash = BCrypt.Net.BCrypt.HashPassword(request.Senha),
                 Role = convite.Role,
+                // Dados pessoais são opcionais: quem não informou fica com nulo.
+                CPF = string.IsNullOrWhiteSpace(request.CPF) ? null : request.CPF,
+                DataNascimento = request.DataNascimento,
                 Ativo = true,
                 RefreshTokenHash = TokenHelper.Hash(refreshToken),
                 RefreshTokenExpiraEm = DateTime.UtcNow.Add(RefreshTokenValidade),

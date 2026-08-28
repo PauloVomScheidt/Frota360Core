@@ -130,11 +130,19 @@ export function RowActions({
   )
 }
 
-/** Confirmação de exclusão. Exclusão é irreversível — nunca dispara direto do botão da linha. */
+/**
+ * Confirmação de ação consequente — exclusão (irreversível) ou mudança de permissão
+ * (derruba a sessão de outra pessoa). Nunca dispara direto do controle da linha.
+ *
+ * Os defaults são os da exclusão, que é o uso majoritário; `variante` existe porque
+ * vermelho em "promover a Supervisor" alarmaria sem motivo.
+ */
 export function ConfirmDialog({
   titulo,
   mensagem,
   textoConfirmar = 'Excluir',
+  textoPendente = 'Excluindo…',
+  variante = 'perigo',
   pending,
   erros,
   onConfirmar,
@@ -143,6 +151,8 @@ export function ConfirmDialog({
   titulo: string
   mensagem: string
   textoConfirmar?: string
+  textoPendente?: string
+  variante?: 'perigo' | 'padrao'
   pending: boolean
   erros: string[]
   onConfirmar: () => void
@@ -178,12 +188,12 @@ export function ConfirmDialog({
           </button>
           <button
             type="button"
-            className="btn btn-danger"
+            className={variante === 'perigo' ? 'btn btn-danger' : 'btn btn-primary'}
             style={{ borderRadius: 0, padding: '10px 18px' }}
             onClick={onConfirmar}
             disabled={pending}
           >
-            {pending ? 'Excluindo…' : textoConfirmar}
+            {pending ? textoPendente : textoConfirmar}
           </button>
         </div>
       </div>

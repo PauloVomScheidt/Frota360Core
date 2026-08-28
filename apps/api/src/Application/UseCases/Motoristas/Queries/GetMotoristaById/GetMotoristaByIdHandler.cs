@@ -6,22 +6,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Motoristas.Queries.GetMotoristaById
 {
-    public sealed class GetMotoristaByIdHandler(IMotoristaRepository repository, ICurrentUserService currentUser, ILogger<GetMotoristaByIdHandler> logger)
+    public sealed class GetMotoristaByIdHandler(IUsuarioRepository repository, ICurrentUserService currentUser, ILogger<GetMotoristaByIdHandler> logger)
         : IQueryHandler<GetMotoristaByIdQuery, MotoristaResponse?>
     {
         public async Task<MotoristaResponse?> HandleAsync(GetMotoristaByIdQuery query, CancellationToken cancellationToken = default)
         {
-            logger.LogInformation("Buscando motorista Id {Id}", query.Id);
+            logger.LogInformation("Buscando o motorista Id {Id}", query.Id);
 
-            var motorista = await repository.GetByIdAsync(query.Id, currentUser.EmpresaId);
+            var motorista = await repository.GetMotoristaByIdAsync(query.Id, currentUser.EmpresaId);
 
-            if (motorista is null)
-            {
-                logger.LogWarning("Motorista não encontrado. Id {Id}", query.Id);
-                return null;
-            }
-
-            return motorista.ToResponse();
+            return motorista?.ToMotoristaResponse();
         }
     }
 }

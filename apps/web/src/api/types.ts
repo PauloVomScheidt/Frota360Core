@@ -12,7 +12,11 @@ export interface ApiResponse<T> {
 
 // ---------- Auth ----------
 
-export type Role = 'Admin' | 'Supervisor' | 'Operador'
+/**
+ * `Motorista` funciona como as demais — convite, promoção e rebaixamento iguais.
+ * O que muda é a visibilidade: ele enxerga só `/minhas-rotas`.
+ */
+export type Role = 'Admin' | 'Supervisor' | 'Operador' | 'Motorista'
 
 export interface LoginRequest {
   email: string
@@ -47,6 +51,9 @@ export interface AceitarConviteRequest {
   token: string
   nome: string
   senha: string
+  /** Opcionais. O CPF vai só com os 11 dígitos — a máscara é da interface. */
+  cpf?: string
+  dataNascimento?: string
 }
 
 export interface ConviteResponse {
@@ -67,6 +74,9 @@ export interface UsuarioResponse {
   nome: string
   email: string
   role: Role
+  /** Opcionais: informados pela própria pessoa no aceite do convite. */
+  cpf?: string | null
+  dataNascimento?: string | null
   ativo: boolean
   dataInclusao: string
 }
@@ -81,15 +91,20 @@ export interface AlterarAtivoRequest {
 
 // ---------- Motorista ----------
 
-export interface MotoristaRequest {
+/**
+ * Um motorista é um usuário com a role `Motorista` — não existe entidade própria.
+ * O `id` é o do usuário, e é ele que a rota grava em `codigoMotorista`.
+ *
+ * Somente leitura: conceder e remover o acesso acontece em `/convites` e `/usuarios`.
+ */
+export interface MotoristaResponse {
+  id: number
   nome: string
   email: string
-  cpf: string
-  dataNascimento: string
-}
-
-export interface MotoristaResponse extends MotoristaRequest {
-  id: number
+  /** Opcionais: só existem se a pessoa os informou ao aceitar o convite. */
+  cpf?: string | null
+  dataNascimento?: string | null
+  ativo: boolean
   dataInclusao: string
 }
 
@@ -125,6 +140,12 @@ export interface RotaRequest {
 }
 
 /**
+ * `nomeMotorista` vem desnormalizado da API, como `veiculoNome` na manutenção — é o
+ * que mantém a rota identificável depois que a pessoa muda de perfil e some da lista
+ * de motoristas. Nulo só se o usuário tiver sido removido do banco à força.
+ */
+
+/**
  * O POST exige o hodômetro de abertura; o PUT não toca nele (a rota preserva o que
  * gravou na criação). Não pode ser menor que a quilometragem atual do veículo — e
  * quando é maior, a API avança o odômetro já na abertura.
@@ -132,6 +153,13 @@ export interface RotaRequest {
 export interface CriarRotaRequest extends RotaRequest {
   kmInicial: number
 }
+
+/**
+ * O mesmo POST, visto pela tela do motorista: sem `codigoMotorista`, porque a API
+ * grava o id do próprio usuário logado e ignora o do corpo. Omitir deixa explícito
+ * que a escolha não é do cliente — e o validador da API dispensa o campo nessa role.
+ */
+export type AbrirMinhaRotaRequest = Omit<CriarRotaRequest, 'codigoMotorista'>
 
 /** `dataFim` opcional — a API assume "agora" quando omitida. */
 export interface EncerrarRotaRequest {
@@ -141,6 +169,7 @@ export interface EncerrarRotaRequest {
 
 export interface RotaResponse extends RotaRequest {
   id: number
+  nomeMotorista?: string | null
   ativo: boolean
   dataFim?: string | null
   kmInicial: number
@@ -224,6 +253,7 @@ export interface ManutencaoResponse {
   atrasada: boolean
   quilometragemRealizada?: number | null
   dataRealizacao?: string | null
+  /** Sempre `null` para a role `Motorista` — a API omite o financeiro para ele. */
   custo?: number | null
   dataInclusao: string
 }

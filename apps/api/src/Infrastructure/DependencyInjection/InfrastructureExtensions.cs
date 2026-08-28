@@ -33,7 +33,6 @@ namespace Frota360.Infrastructure.DependencyInjection
 
             services.AddScoped<IVeiculoRepository, VeiculoRepository>();
             services.AddScoped<IUsuarioRepository, UsuarioRepository>();
-            services.AddScoped<IMotoristaRepository, MotoristaRepository>();
             services.AddScoped<IRotaRepository, RotaRepository>();
             services.AddScoped<IConviteRepository, ConviteRepository>();
             services.AddScoped<IEmpresaRepository, EmpresaRepository>();

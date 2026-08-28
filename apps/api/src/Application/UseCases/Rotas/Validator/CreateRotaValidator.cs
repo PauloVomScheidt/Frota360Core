@@ -1,11 +1,13 @@
 using FluentValidation;
+using Frota360.Application.Common;
 using Frota360.Application.DTOs.Rota.Request;
+using Frota360.Application.Interfaces;
 
 namespace Frota360.Application.UseCases.Rotas.Validator
 {
     public class CreateRotaValidator : AbstractValidator<CreateRotaRequest>
     {
-        public CreateRotaValidator()
+        public CreateRotaValidator(ICurrentUserService currentUser)
         {
             RuleFor(x => x.Origem)
                 .NotEmpty().WithMessage("Origem é obrigatória.")
@@ -16,8 +18,11 @@ namespace Frota360.Application.UseCases.Rotas.Validator
                 .MaximumLength(150).WithMessage("Destino deve ter no máximo 150 caracteres.")
                 .NotEqual(x => x.Origem).WithMessage("Destino não pode ser igual à origem.");
 
+            // O motorista não escolhe o motorista da rota: o handler grava o da claim e
+            // ignora o corpo, então exigir o campo dele seria pedir um dado que não usamos.
             RuleFor(x => x.CodigoMotorista)
-                .GreaterThan(0).WithMessage("Motorista é obrigatório.");
+                .GreaterThan(0).WithMessage("Motorista é obrigatório.")
+                .Unless(_ => currentUser.EhMotorista());
 
             RuleFor(x => x.CodigoVeiculo)
                 .GreaterThan(0).WithMessage("Veículo é obrigatório.");

@@ -1,4 +1,5 @@
-using Frota360.Application.Abstractions.Messaging;
+﻿using Frota360.Application.Abstractions.Messaging;
+using Frota360.Application.Common;
 using Frota360.Application.DTOs.Manutencao.Response;
 using Frota360.Application.Interfaces;
 using Frota360.Domain.Interfaces.Repositories;
@@ -17,7 +18,7 @@ namespace Frota360.Application.UseCases.Manutencoes.Queries.GetAllManutencoes
 
             logger.LogInformation("Foram encontradas {QuantidadeManutencoes} manutenções", manutencoes.Count());
 
-            return manutencoes.Select(m => m.ToResponse());
+            return manutencoes.Select(m => m.ToResponse().SemCustoParaMotorista(currentUser));
         }
     }
 }

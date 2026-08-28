@@ -11,6 +11,7 @@ import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
 import { ConfirmDialog, FormDialog, InlineForm, RowActions, TableStates } from '../components/Table'
 import { CheckIcon } from '../components/icons'
 import { formatDate, formatKm, hojeInputDate, paraInputDate } from '../lib/format'
+import { statusDaRota } from '../lib/rota'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
@@ -26,16 +27,6 @@ const FORM_VAZIO = {
 const ENCERRAMENTO_VAZIO = {
   kmFinal: '',
   dataFim: '',
-}
-
-/**
- * A API não tem campo de status: derivamos de `ativo` + `dataFim`, que é o que
- * existe hoje (a RotaResponse é flat — ver §16 do CONTEXTO).
- */
-function statusDaRota(rota: RotaResponse): { rotulo: string; classe: string } {
-  if (rota.ativo) return { rotulo: 'Ativa', classe: 'tag tag-accent' }
-  if (rota.dataFim) return { rotulo: 'Encerrada', classe: 'tag tag-neutral' }
-  return { rotulo: 'Inativa', classe: 'tag tag-neutral' }
 }
 
 export function RotasPage() {
@@ -66,13 +57,9 @@ export function RotasPage() {
   const veiculos = veiculosQuery.data ?? []
   const rotas = rotasQuery.data ?? []
 
-  // A resposta traz só os códigos das FKs — o cruzamento com nome/placa é aqui.
-  // Memoizados sobre `*.data` (e não sobre os arrays com fallback `?? []`, que mudam
-  // de identidade a cada render); o mapa de veículos também alimenta a sugestão de km.
-  const nomePorMotorista = useMemo(
-    () => new Map((motoristasQuery.data ?? []).map((m) => [m.id, m.nome])),
-    [motoristasQuery.data],
-  )
+  // O nome do motorista vem desnormalizado na resposta; só a placa precisa de
+  // cruzamento. Memoizado sobre `*.data` (e não sobre o array com fallback `?? []`,
+  // que muda de identidade a cada render); o mapa também alimenta a sugestão de km.
   const veiculoPorId = useMemo(
     () => new Map((veiculosQuery.data ?? []).map((v) => [v.id, v])),
     [veiculosQuery.data],
@@ -416,7 +403,9 @@ export function RotasPage() {
                   <td className="font-semibold">
                     {rota.origem} → {rota.destino}
                   </td>
-                  <td>{nomePorMotorista.get(rota.codigoMotorista) ?? `#${rota.codigoMotorista}`}</td>
+                  {/* Desnormalizado: um motorista rebaixado sai da lista, mas a rota
+                      dele continua identificada. */}
+                  <td>{rota.nomeMotorista ?? `#${rota.codigoMotorista}`}</td>
                   <td>{veiculoPorId.get(rota.codigoVeiculo)?.placa ?? `#${rota.codigoVeiculo}`}</td>
                   <td>{formatDate(rota.dataInicio)}</td>
                   <td>{formatDate(rota.dataFim)}</td>

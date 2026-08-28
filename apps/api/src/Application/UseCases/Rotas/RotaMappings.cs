@@ -1,4 +1,4 @@
-using Frota360.Application.DTOs.Rota.Response;
+﻿using Frota360.Application.DTOs.Rota.Response;
 using Frota360.Domain.Entities;
 
 namespace Frota360.Application.UseCases.Rotas
@@ -11,6 +11,7 @@ namespace Frota360.Application.UseCases.Rotas
             Id = r.Id,
             Ativo = r.Ativo,
             CodigoMotorista = r.CodigoMotorista,
+            NomeMotorista = r.Motorista?.Nome,
             CodigoVeiculo = r.CodigoVeiculo,
             DataFim = r.DataFim,
             DataInicio = r.DataInicio,

@@ -1,4 +1,5 @@
-using Frota360.Application.Abstractions.Messaging;
+﻿using Frota360.Application.Abstractions.Messaging;
+using Frota360.Application.Common;
 using Frota360.Application.DTOs.Manutencao.Response;
 using Frota360.Application.Interfaces;
 using Frota360.Domain.Interfaces.Repositories;
@@ -21,7 +22,7 @@ namespace Frota360.Application.UseCases.Manutencoes.Queries.GetManutencaoById
                 return null;
             }
 
-            return manutencao.ToResponse();
+            return manutencao.ToResponse().SemCustoParaMotorista(currentUser);
         }
     }
 }

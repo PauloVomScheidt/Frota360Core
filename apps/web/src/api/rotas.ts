@@ -1,5 +1,6 @@
 import { http, unwrap } from './http'
 import type {
+  AbrirMinhaRotaRequest,
   ApiResponse,
   CriarRotaRequest,
   EncerrarRotaRequest,
@@ -12,6 +13,15 @@ export const rotasApi = {
     const { data } = await http.get<ApiResponse<RotaResponse[]>>('/rota')
     return unwrap(data)
   },
+  /**
+   * Rotas do motorista logado (role `Motorista`). Não recebe id: o motorista vem da
+   * claim do JWT, então não há como pedir as rotas de outra pessoa. Para as demais
+   * roles a API responde 403 — elas usam `getAll`.
+   */
+  async getMinhas(): Promise<RotaResponse[]> {
+    const { data } = await http.get<ApiResponse<RotaResponse[]>>('/rota/minhas')
+    return unwrap(data)
+  },
   async getById(id: number): Promise<RotaResponse> {
     const { data } = await http.get<ApiResponse<RotaResponse>>(`/rota/${id}`)
     return unwrap(data)
@@ -19,8 +29,20 @@ export const rotasApi = {
   /**
    * Efeito colateral: `kmInicial` acima da quilometragem atual do veículo avança o
    * odômetro já na abertura (o veículo rodou fora do sistema). Invalidar `['veiculos']`.
+   *
+   * Para a role `Motorista` a API ignora o `codigoMotorista` do corpo e usa o da claim —
+   * ele só abre rota para si mesmo.
    */
   async create(body: CriarRotaRequest): Promise<RotaResponse> {
+    const { data } = await http.post<ApiResponse<RotaResponse>>('/rota', body)
+    return unwrap(data)
+  },
+  /**
+   * Mesmo endpoint do `create`, para a role `Motorista`: o corpo não leva
+   * `codigoMotorista` porque a API usa o da claim. Invalidar `['rotas','minhas']` e
+   * `['veiculos']`.
+   */
+  async abrirMinha(body: AbrirMinhaRotaRequest): Promise<RotaResponse> {
     const { data } = await http.post<ApiResponse<RotaResponse>>('/rota', body)
     return unwrap(data)
   },

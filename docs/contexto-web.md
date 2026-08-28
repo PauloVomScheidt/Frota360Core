@@ -3,7 +3,7 @@
 > Documento **único** de referência do front-end (React + Vite): arquitetura, rotas, endpoints consumidos, o que cada tela faz e as armadilhas conhecidas.
 > Complementa [`contexto-api.md`](contexto-api.md): lá está o contrato do servidor, aqui está o que a aplicação faz com ele.
 > **Caminhos**: relativos à raiz do monorepo — o código do front vive em `apps/web/`, e os comandos `npm` rodam de lá.
-> Última atualização: 2026-08-26 — consolidação do antigo `contexto_web.md` neste documento (endpoints em §6.5, inconsistências em §10).
+> Última atualização: 2026-08-27 — role `Motorista` e a tela `/minhas-rotas` (§5.9). O motorista é um usuário com essa role: `/motoristas` virou somente leitura (§5.2), ele lê `/veiculos` e `/manutencoes` (§5.3, §5.5) e as permissões de tela passaram a ser individuais (§2, §7).
 
 ---
 
@@ -34,6 +34,10 @@ O `empresaId` **nunca** é enviado pelo cliente — vem do JWT. A multi-tenancy 
 
 Em base nova não existe usuário: é preciso provisionar uma empresa pelo backoffice da API (`POST /backoffice/empresa`) e abrir o `linkConvite` devolvido, que cai em `/convite?token=…`.
 
+O app tem **duas faces**: o painel de gestão da frota (Admin, Supervisor, Operador) e a tela do motorista (`/minhas-rotas`), que é tudo o que a role `Motorista` enxerga. Um usuário nunca vê as duas.
+
+Não existe cadastro de motorista separado: **um motorista é um usuário com a role `Motorista`**, convidado, promovido e rebaixado exatamente como Supervisor e Operador.
+
 ---
 
 ## 2. Mapa de rotas
@@ -47,16 +51,25 @@ Definido em [`apps/web/src/App.tsx`](apps/web/src/App.tsx). Qualquer rota descon
 | `/esqueci-senha` | `ForgotPasswordPage` | Público |
 | `/redefinir-senha?token=…` | `ResetPasswordPage` | Público (link do e-mail) |
 | `/convite?token=…` | `AcceptInvitePage` | Público (link do e-mail) |
-| `/dashboard` | `DashboardPage` | Autenticado |
-| `/motoristas` | `MotoristasPage` | Autenticado |
-| `/veiculos` | `VeiculosPage` | Autenticado |
-| `/rotas` | `RotasPage` | Autenticado |
-| `/manutencoes` | `ManutencoesPage` | Autenticado |
+| `/dashboard` | `DashboardPage` | Gestão (Admin / Supervisor / Operador) |
+| `/motoristas` | `MotoristasPage` | Gestão |
+| `/veiculos` | `VeiculosPage` | Todos (Motorista: leitura) |
+| `/rotas` | `RotasPage` | Gestão |
+| `/manutencoes` | `ManutencoesPage` | Todos (Motorista: leitura, sem custo) |
+| `/minhas-rotas` | `MinhasRotasPage` | **Motorista** |
 | `/tipos-manutencao` | `TiposManutencaoPage` | **Admin / Supervisor** |
 | `/usuarios` | `UsuariosPage` | **Admin** |
 | `/convites` | `ConvitesPage` | **Admin** |
 
-Os guardas estão em [`apps/web/src/components/RequireAuth.tsx`](apps/web/src/components/RequireAuth.tsx): `RequireAuth` redireciona para `/login` quando não há token (guardando a origem em `location.state.from`); `RequireAdmin` devolve para `/dashboard` quem não é Admin; `RequireGestor` faz o mesmo com quem não é Admin nem Supervisor (catálogo de tipos). O servidor continua sendo a autoridade — os guardas só evitam telas que resultariam em 401/403.
+"Gestão" significa **todos os papéis menos `Motorista`**. Ele tem `/minhas-rotas` como home e mais duas telas em leitura: veículos e manutenções — saber o estado do caminhão faz parte do trabalho.
+
+Os guardas estão em [`apps/web/src/components/RequireAuth.tsx`](apps/web/src/components/RequireAuth.tsx) e são **dois**: `RequireAuth`, que redireciona para `/login` quando não há token (guardando a origem em `location.state.from`), e `RequirePode`, que recebe um predicado de `auth/permissions.ts`.
+
+Cada rota declara a própria permissão (`<RequirePode permitido={pode.verVeiculos} />`). Um guarda por bloco de papéis deixou de fazer sentido quando o motorista passou a enxergar parte do painel: quem manda é a tela, não o papel.
+
+**Todo redirecionamento de guarda usa `rotaInicial(role)`** de `auth/permissions.ts` (`/minhas-rotas` para motorista, `/dashboard` para o resto), nunca `/dashboard` fixo — para o motorista o dashboard é justamente uma tela bloqueada, e o par de guardas entraria em pingue-pongue. Os destinos pós-login (`LoginPage`) e pós-aceite de convite (`AcceptInvitePage`) usam a mesma função, a partir do `role` que vem no `AuthResponse`.
+
+O servidor continua sendo a autoridade — os guardas só evitam telas que resultariam em 401/403.
 
 ---
 
@@ -118,6 +131,8 @@ Três estados:
 
 ### 3.5 `/convite?token=…`
 
+Além de nome e senha, o formulário tem **CPF e data de nascimento opcionais** — hoje é o único ponto de entrada desses dados, já que não existe tela de perfil (§9). Em branco viram `undefined` no corpo, para o back gravar nulo em vez de string vazia. O CPF usa `mascaraCpf` na digitação e vai só com os 11 dígitos.
+
 Destino do link enviado pelo admin. Sem token, mostra "Convite inválido".
 
 Formulário: nome, senha, confirmação e checkbox de termos (obrigatório, validado só no cliente). `POST /convite/aceitar` já devolve a sessão autenticada — o usuário cai direto em `/dashboard`, sem passar pelo login. Empresa e permissão vêm do convite, não do formulário.
@@ -129,6 +144,7 @@ Formulário: nome, senha, confirmação e checkbox de termos (obrigatório, vali
 Todas as telas autenticadas são embrulhadas por `AppLayout` ([`apps/web/src/components/AppLayout.tsx`](apps/web/src/components/AppLayout.tsx)):
 
 - **Sidebar** recolhível (preferência guardada no `localStorage`), com as categorias "Dashboard" (Visão geral, Motoristas, Veículos, Rotas, Manutenções e — só para Admin/Supervisor — Tipos de manutenção) e "Controle" (Usuários, Convites) — esta só aparece para Admin.
+- Para a role **Motorista** a sidebar inteira vira um item só, "Minhas rotas", sob a categoria "Operação". Ele não tem painel de frota: esconder os itens acompanha o guarda `RequireGestao`, não o substitui.
 - **Header** com o avatar de iniciais, nome e papel do usuário, e o botão de sair (`POST /auth/logout` → limpa tokens, limpa o cache do React Query, vai para `/login`).
 - `PageHeader` padroniza título, subtítulo e o botão de ação da página.
 
@@ -150,20 +166,21 @@ Todos os cálculos são feitos no cliente — a API não tem endpoint de agrega�
 
 ### 5.2 `/motoristas`
 
-| Ação | Quem |
-|---|---|
-| Ver a lista | Todos |
-| Cadastrar / editar | Admin, Supervisor |
-| Excluir | Admin |
+**Somente leitura.** A tela é a projeção dos usuários com a role `Motorista` (`GET /motorista`) — não há formulário, edição nem exclusão, porque não existe cadastro separado a manter.
 
-- Formulário inline (abre pelo botão do cabeçalho): nome, e-mail, CPF com máscara progressiva e data de nascimento. O CPF é enviado só com os 11 dígitos — a máscara é visual.
-- **Editar** reabre o mesmo formulário pré-preenchido; o id decide entre `POST` e `PUT`, e a página rola ao topo porque o formulário fica acima da tabela.
-- **Excluir** passa por um diálogo de confirmação; erros da API (ex.: 422 por vínculo com rotas) aparecem dentro do diálogo.
-- Regras lembradas na própria tela: 18 anos ou mais, e-mail e CPF únicos por empresa.
+| Ação | Onde acontece |
+|---|---|
+| Ver a lista | aqui (Gestão) |
+| Conceder acesso | `/convites` — role `Motorista`, como qualquer outra |
+| Trocar perfil / desativar | `/usuarios` |
+
+- Colunas: nome, e-mail, CPF, nascimento, **status** (Ativo/Inativo, que é o do usuário) e desde quando.
+- **CPF e nascimento são opcionais** e mostram `—` quando vazios: a pessoa os informa ao aceitar o convite, e não há outro ponto de entrada hoje (§9).
+- Cadastrar aqui recriaria a duplicação que o modelo eliminou — uma pessoa existindo como `Motorista` **e** como `Usuario`, com um vínculo frágil entre os dois.
 
 ### 5.3 `/veiculos`
 
-Mesma estrutura de motoristas (mesmas permissões).
+Cadastro completo para a gestão; **leitura para o motorista**, que chega aqui pela sidebar para conferir odômetro, placa e quem levou o veículo por último. Os botões somem sozinhos: são controlados por `pode.editarCadastros`/`pode.excluir`, ambos falsos para ele.
 
 - Campos do formulário: nome, marca, placa (maiúsculas automáticas) e quilometragem.
 - **Detalhe importante**: `ultimoMotorista` e `dataUltimaViagem` não estão no formulário — são preenchidos pela operação de rotas. Como o `PUT` substitui o registro inteiro, a edição reenvia esses dois campos intactos, vindos do registro carregado. Alterar isso sem cuidado apaga o histórico do veículo.
@@ -172,8 +189,10 @@ Mesma estrutura de motoristas (mesmas permissões).
 
 | Ação | Quem |
 |---|---|
-| Ver / criar / editar / encerrar | Qualquer usuário autenticado |
+| Ver / criar / editar / encerrar | Gestão (Admin / Supervisor / Operador) |
 | Excluir | Admin |
+
+Esta é a tela de **toda a frota**. O motorista não a alcança — ele tem `/minhas-rotas` (§5.9).
 
 A rota tem um ciclo de vida: nasce **ativa** com o hodômetro de abertura e é **encerrada** por uma ação própria, que apura a quilometragem percorrida e avança o odômetro do veículo.
 
@@ -185,10 +204,13 @@ A rota tem um ciclo de vida: nasce **ativa** com o hodômetro de abertura e é *
 - Os 422 do encerramento (rota já encerrada, km final menor que o inicial, data de fim anterior à de início) caem no `ErrorList` do próprio diálogo.
 - A `RotaResponse` é flat (só traz as FKs), então a tela cruza `codigoMotorista`/`codigoVeiculo` com as listas de motoristas e veículos para exibir nome e placa; sem correspondência, mostra `#id`. O mapa de veículos serve também à sugestão de km.
 - A coluna **Quilometragem** mostra `kmPercorrido` (que vem persistido da API — não é recalculado aqui) e, abaixo, o intervalo `kmInicial → kmFinal`; nas rotas ativas, só o km de abertura.
-- O status é **derivado**, não vem da API: `ativo` → "Ativa"; senão com `dataFim` → "Encerrada"; senão → "Inativa".
-- Excluir motorista ou veículo invalida também o cache de rotas, porque a lista exibe o nome e a placa deles.
+- O status é **derivado**, não vem da API: `ativo` → "Ativa"; senão com `dataFim` → "Encerrada"; senão → "Inativa". A função vive em `src/lib/rota.ts` (`statusDaRota`), compartilhada com `/minhas-rotas` para que as duas telas nomeiem o mesmo estado do mesmo jeito.
+- Excluir um veículo invalida também o cache de rotas, porque a lista exibe a placa dele. O **nome do motorista não precisa de cruzamento**: vem desnormalizado em `rota.nomeMotorista`, o que mantém a rota identificável mesmo depois que a pessoa é rebaixada e some da lista de motoristas.
 
 ### 5.5 `/manutencoes`
+
+**Leitura para o motorista**, com a coluna **Custo escondida** — a API já devolve `custo: null` para essa role, então exibir a coluna renderizaria uma fileira de traços. Agendar, replanejar e concluir seguem restritos a Admin/Supervisor.
+
 
 | Ação | Quem |
 |---|---|
@@ -221,18 +243,42 @@ Catálogo da empresa que alimenta o seletor de agendamento.
 
 Gestão da equipe, tudo editado direto na linha:
 
-- **Permissão**: `select` que dispara `PUT /usuario/{id}/role`.
-- **Status**: botão Ativar/Desativar → `PUT /usuario/{id}/ativo`.
+- **Permissão**: `select` com as quatro roles do sistema — **`Motorista` inclusive**. Promover e rebaixar um motorista funciona igual a qualquer outro papel; é aqui que se tira o acesso de alguém que deixou de dirigir.
+- **A troca passa por confirmação** (`ConfirmDialog`), não vai direto no `onChange`: o `PUT /usuario/{id}/role` derruba a sessão de outra pessoa, e esbarrar no select era fácil demais. O diálogo diz o que muda de fato — `de X para Y`, que a sessão cai, e o que a pessoa ganha ou perde quando o papel envolvido é `Motorista`. Cancelar não precisa desfazer nada: o select é controlado por `usuario.role` e volta sozinho ao valor atual.
+- Os erros das duas ações confirmadas aparecem **dentro do diálogo**, junto do que os provocou — é onde cai o 422 do "último admin ativo", tanto ao rebaixar quanto ao desativar. O `ErrorList` do topo sobrou para o único caminho sem diálogo: reativar.
+- **Status**: botão Ativar/Desativar → `PUT /usuario/{id}/ativo`. **Desativar passa pela mesma confirmação** — tira o acesso e derruba a sessão; o diálogo lembra que nada é apagado e, no caso de um motorista, que rotas em andamento continuam abertas para a gestão encerrar. **Ativar vai direto**: devolve acesso e não revoga nada.
+- As duas confirmações compartilham um estado só (`Confirmacao`, união discriminada), então nunca há dois diálogos disputando a atenção.
 - A própria conta do usuário logado aparece marcada com "(você)" e tem os dois controles desabilitados.
-- Erros aparecem no topo da tabela — é onde cai o 422 do "último admin ativo".
 - A tela avisa que alterar permissão ou desativar **encerra a sessão** do alvo (a API revoga o refresh token).
 
 ### 5.8 `/convites` (Admin)
 
 - Formulário sempre visível: e-mail + permissão. A descrição do papel selecionado é mostrada abaixo, junto do aviso de que reenviar invalida o convite pendente anterior.
+- **`Motorista` é só mais uma opção do select de permissão** — o formulário não muda, não pede nada a mais, e o convite segue o mesmo caminho das outras roles.
 - Após criar, o **link em claro** retornado pela API aparece num painel destacado com botão "Copiar link" — em dev o e-mail só vai para o log da API, então esse é o caminho prático.
 - Tabela com status **derivado no cliente**: `utilizadoEm` → "Utilizado"; `expiraEm` no passado → "Expirado"; senão "Pendente".
 - Convites não utilizados podem ser cancelados; os utilizados mostram a data do aceite no lugar do botão.
+
+### 5.9 `/minhas-rotas` (Motorista)
+
+A tela do motorista, e a única que ele enxerga. O recorte é **do servidor** (`GET /rota/minhas` usa o `sub` do token): não há filtro no cliente, e nem poderia haver — filtro de cliente não é isolamento.
+
+| Ação | Quem |
+|---|---|
+| Ver as próprias rotas / abrir / encerrar | Motorista |
+| Editar / excluir | ninguém aqui — é da gestão, em `/rotas` |
+
+Layout pensado para uso rápido, não para auditoria:
+
+1. **Rota em andamento** em destaque no topo (contorno grosso): origem → destino, veículo, data de abertura, km de saída, e um botão único **Encerrar rota**.
+2. **Abrir rota** no cabeçalho, desabilitado enquanto houver rota ativa (com o motivo no `title`) ou se não houver veículo cadastrado. O formulário **não tem seletor de motorista**: o `POST /rota` sai sem `codigoMotorista` (`AbrirMinhaRotaRequest`), porque a API grava o id do usuário logado e ignora o corpo. A sugestão de quilometragem pelo veículo escolhido é a mesma de `/rotas`; `dataInicio` já vem com hoje.
+3. **Histórico** — tabela das rotas encerradas, com km percorrido e o intervalo de odômetro.
+
+**Aviso de manutenção.** Ao escolher o veículo no formulário de abrir rota, as pendências daquele veículo aparecem logo abaixo do seletor — contorno vermelho quando há alguma atrasada. Vem de `GET /manutencao?status=Pendente` numa consulta só para a frota (a lista é curta e o cruzamento é local, em vez de uma consulta por veículo selecionado). **Não bloqueia a abertura**: informa no momento em que a informação decide algo, e quem decide é o motorista.
+
+Cache: chave própria **`['rotas', 'minhas']`** — o conteúdo é um recorte de `['rotas']`, e as duas telas nunca convivem na mesma sessão. Abrir invalida `['rotas','minhas']` e `['veiculos']`; encerrar invalida as mesmas duas. Não invalida `['manutencoes']`: o motorista não tem acesso a esse endpoint, então a chave nunca está povoada na sessão dele (a cadeia rota → veículo → manutenção continua valendo do lado da gestão — §6.4).
+
+Os 422 do encerramento caem no `ErrorList` do próprio `FormDialog`, igual a `/rotas`.
 
 ---
 
@@ -257,13 +303,16 @@ Gestão da equipe, tudo editado direto na linha:
 
 ### 6.4 Chaves do React Query
 
-`['motoristas']`, `['veiculos']`, `['rotas']`, `['usuarios']`, `['convites']`, `['manutencoes', filtro]`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`apps/web/src/lib/queryClient.ts`](apps/web/src/lib/queryClient.ts)).
+`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['usuarios']`, `['convites']`, `['manutencoes', filtro]`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`apps/web/src/lib/queryClient.ts`](apps/web/src/lib/queryClient.ts)).
+
+⚠️ `['rotas']` e `['rotas','minhas']` são **listas diferentes**, não pai e filho: a segunda vem de outro endpoint e traz só as rotas do motorista logado. Invalidar pelo prefixo `['rotas']` alcançaria as duas, o que é inofensivo apenas porque nenhuma sessão usa as duas telas. Ao mexer nisso, invalide a chave exata.
 
 Cruzamentos que não são óbvios, conferidos no código:
 
-- **Excluir motorista** invalida `['rotas']` ([MotoristasPage.tsx:56](apps/web/src/pages/MotoristasPage.tsx#L56)) e **excluir veículo**, idem ([VeiculosPage.tsx:56](apps/web/src/pages/VeiculosPage.tsx#L56)) — a tabela de rotas exibe o nome e a placa deles.
+- **Excluir veículo** invalida `['rotas']` ([VeiculosPage.tsx:56](apps/web/src/pages/VeiculosPage.tsx#L56)) — a tabela de rotas exibe a placa dele. Motorista não tem exclusão: é um usuário, e usuário só é desativado.
 - **Concluir uma manutenção** invalida também `['veiculos']` ([ManutencoesPage.tsx:165](apps/web/src/pages/ManutencoesPage.tsx#L165)) — o odômetro pode ter avançado.
 - **Abrir** ([RotasPage.tsx:118-119](apps/web/src/pages/RotasPage.tsx#L118-L119)) e **encerrar** ([RotasPage.tsx:139-140](apps/web/src/pages/RotasPage.tsx#L139-L140)) uma rota invalidam `['rotas']`, `['veiculos']` e `['manutencoes']`. É a cadeia mais longa do app: rota → veículo → manutenção. Os dois momentos mexem no odômetro (a abertura quando `kmInicial` é maior que o atual; o encerramento quando `kmFinal` é), e é do odômetro que `atrasada` e `kmRestantes` dependem. Sem invalidar a ponta da cadeia, o alerta de atraso só apareceria no próximo `staleTime`.
+- Em `/minhas-rotas`, **abrir** e **encerrar** invalidam `['rotas','minhas']`, `['veiculos']` **e** `['manutencoes']` — a mesma cadeia da tela de gestão, agora que o motorista também lê manutenções e a tela mostra a pendência do veículo escolhido.
 - Qualquer mutação no catálogo invalida o prefixo `['tiposManutencao']`, que cobre de uma vez o catálogo completo e a lista de ativos usada no agendamento.
 
 ### 6.5 Endpoints consumidos
@@ -278,14 +327,17 @@ Cruzamentos que não são óbvios, conferidos no código:
 | **convite** | `POST /convite` (Admin) | ConvitesPage — a resposta traz `linkConvite` em claro |
 | | `GET /convite` (Admin) | ConvitesPage |
 | | `DELETE /convite/{id}` (Admin) | cancelar pendente (utilizado → 422) |
-| | `POST /convite/aceitar` (anônimo) | AcceptInvitePage — **já devolve sessão autenticada** |
+| | `POST /convite/aceitar` (anônimo) | AcceptInvitePage — **já devolve sessão autenticada**; leva `cpf`/`dataNascimento` opcionais |
 | **usuario** | `GET /usuario` (Admin) | UsuariosPage |
 | | `PUT /usuario/{id}/role` | muda permissão — revoga a sessão do alvo |
 | | `PUT /usuario/{id}/ativo` | ativa/desativa — idem; último admin ativo → 422 |
-| **motorista** | `GET/POST /motorista`, `GET/PUT/DELETE /motorista/{id}` | MotoristasPage |
+| **motorista** | `GET /motorista`, `GET /motorista/{id}` | MotoristasPage, RotasPage (select) — **somente leitura**: são os usuários com a role Motorista |
+| **manutencao** | `GET /manutencao?status=Pendente` | MinhasRotasPage — alimenta o aviso de pendência do veículo escolhido |
 | **veiculo** | `GET/POST /veiculo`, `GET/PUT/DELETE /veiculo/{id}` | VeiculosPage, Dashboard |
 | **rota** | `GET/POST /rota`, `GET/PUT/DELETE /rota/{id}` | RotasPage, Dashboard — o POST leva `kmInicial` e **pode avançar o odômetro do veículo**; o PUT não mexe em `kmInicial`, `ativo` nem `dataFim` |
-| | `POST /rota/{id}/encerrar` | encerramento — apura `kmPercorrido` e **pode avançar o odômetro do veículo** |
+| | `GET /rota/minhas` (Motorista) | MinhasRotasPage — sem parâmetro: o motorista vem da claim |
+| | `POST /rota` sem `codigoMotorista` | MinhasRotasPage (`abrirMinha`) — a API grava o id do usuário logado |
+| | `POST /rota/{id}/encerrar` | encerramento — apura `kmPercorrido` e **pode avançar o odômetro do veículo**; para o motorista, rota alheia → 404 |
 | **tipomanutencao** | `GET /tipomanutencao?apenasAtivos=` | catálogo (sem filtro) / select de agendamento (`true`) |
 | | `POST`, `PUT /{id}`, `DELETE /{id}` | TiposManutencaoPage |
 | **manutencao** | `GET /manutencao?veiculoId=&status=` | ManutencoesPage (os filtros vão para o servidor) |
@@ -299,16 +351,20 @@ Cruzamentos que não são óbvios, conferidos no código:
 
 [`apps/web/src/auth/permissions.ts`](apps/web/src/auth/permissions.ts) espelha a matriz do §5 do `CONTEXTO.md`. A UI só esconde o que resultaria em 403 — quem decide é a API.
 
-| Ação | Admin | Supervisor | Operador |
-|---|---|---|---|
-| Ver tudo da empresa | ✅ | ✅ | ✅ |
-| Criar/editar rotas | ✅ | ✅ | ✅ |
-| Criar/editar motoristas e veículos | ✅ | ✅ | — |
-| Criar/editar/concluir manutenções e tipos | ✅ | ✅ | — |
-| Excluir qualquer registro | ✅ | — | — |
-| Usuários e convites | ✅ | — | — |
+| Ação | Admin | Supervisor | Operador | Motorista |
+|---|---|---|---|---|
+| Ver visão geral, motoristas e rotas da frota | ✅ | ✅ | ✅ | — |
+| Ver veículos e manutenções | ✅ | ✅ | ✅ | ✅ (leitura, sem custo) |
+| Criar/editar rotas da frota | ✅ | ✅ | ✅ | — |
+| Ver/abrir/encerrar **as próprias** rotas | — | — | — | ✅ |
+| Criar/editar veículos | ✅ | ✅ | — | — |
+| Criar/editar/concluir manutenções e tipos | ✅ | ✅ | — | — |
+| Excluir qualquer registro | ✅ | — | — | — |
+| Usuários e convites | ✅ | — | — | — |
 
 Na prática: sem permissão de edição, o botão "Novo…" e o ícone de lápis somem; sem permissão de exclusão, some a lixeira; sem nenhuma das duas, a coluna "Ações" inteira desaparece.
+
+O `Motorista` combina os dois mecanismos: nas telas que ele alcança (veículos, manutenções) valem os `pode.*` de sempre, e as que ele não alcança são barradas por `RequirePode` na rota. As entradas `ver*` de `permissions.ts` são **por tela** justamente por isso — um booleano único de "é gestão" seria mentira. `rotaInicial(role)` é o destino de todo redirecionamento.
 
 ---
 
@@ -327,11 +383,12 @@ Componentes reutilizados pelas telas:
 | `AppLayout`, `PageHeader`, `ErrorList` | `components/AppLayout.tsx` | Casca das telas internas, cabeçalho e lista de erros |
 | `AuthScreen`, `AuthHeading` | `components/AuthScreen.tsx` | Casca das telas de autenticação |
 | `InlineForm`, `TableStates` | `components/Table.tsx` | Formulário acima da tabela e as linhas de carregando/erro/vazio |
-| `RowActions`, `ConfirmDialog` | `components/Table.tsx` | Ícones de editar/excluir na linha e confirmação de exclusão |
+| `RowActions`, `ConfirmDialog` | `components/Table.tsx` | Ícones de editar/excluir na linha e confirmação de ação consequente (exclusão ou troca de permissão — `variante="padrao"` tira o vermelho quando não é destrutiva) |
 | `FormDialog` | `components/Table.tsx` | Diálogo com campos (concluir uma manutenção, encerrar uma rota) |
 | `LogoMark`, `Wordmark` | `components/Logo.tsx` | Marca (versões clara e escura) |
 | `icons.tsx` | — | Ícones SVG traçados, 24×24, `currentColor` |
 | `lib/format.ts` | — | Datas, CPF, quilometragem, moeda, iniciais, `paraInputDate` e `hojeInputDate` para `<input type="date">` |
+| `lib/rota.ts` | `/rotas`, `/minhas-rotas` | `statusDaRota` — o status derivado de `ativo` + `dataFim`, igual nas duas telas |
 
 ---
 
@@ -347,6 +404,8 @@ Componentes reutilizados pelas telas:
 - **Atualizar só a quilometragem do veículo**: não há `PATCH` dedicado. O odômetro sobe pelo `PUT /veiculo/{id}` completo, pela conclusão de uma manutenção e — desde a RN10 — pela abertura e pelo encerramento de rotas, que é o caminho do dia a dia e o que finalmente alimenta os alertas de atraso.
 - **Reabrir uma rota encerrada**: a API não expõe o caminho inverso do encerramento, e o `PUT` não mexe mais em `ativo`/`dataFim`. Corrigir um encerramento errado passa por excluir a rota (Admin) e recriá-la.
 - O dashboard ainda não mostra nada de manutenção (nenhum KPI de atrasadas).
+- **Editar CPF/nascimento depois do aceite**: não há tela de perfil nem endpoint. Quem não preencheu ao criar a conta fica sem, e o Admin não tem como corrigir.
+- **Tela do motorista em celular**: `/minhas-rotas` usa o mesmo `AppLayout` do painel, com sidebar — funciona, mas não é um layout mobile de verdade, que é o contexto natural de uso. É a próxima coisa a fazer pelo motorista.
 
 ---
 
