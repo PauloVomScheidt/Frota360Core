@@ -31,7 +31,7 @@ O `Dockerfile` builda só a API e tem **`apps/api/` como contexto** — os `COPY
 
 | Projeto | Pode referenciar | Nunca referencia |
 |---|---|---|
-| **Frota360.Domain** (`src/Domain`) — entidades, enums, `ApiResponse<T>`, `Roles`, interfaces de repositório/serviço | nada (sem pacotes) | EF Core, ASP.NET |
+| **Frota360.Domain** (`src/Domain`) — entidades, enums, `ApiResponse<T>`, `ResultadoPaginado<T>`, `Roles`, `AcoesAuditoria`/`EntidadesAuditadas`, interfaces de repositório/serviço | nada (sem pacotes) | EF Core, ASP.NET |
 | **Frota360.Application** (`src/Application`) — `UseCases/` (CQRS), `Services/`, `DTOs/`, validators | Domain | Infrastructure, ASP.NET, `DbContext` |
 | **Frota360.Infrastructure** (`src/Infrastructure`) — `Frota360DbContext`, repositórios, `TokenService`, e-mail, config do JWT | Domain | Application |
 | **Frota360.Api** (`src/Api`) — controllers, `ExceptionMiddleware`, `CurrentUserService` | Application + Infrastructure | — |
@@ -72,6 +72,7 @@ UseCases/<Agregado>s/
 - **Primary constructors em tudo**: handlers, repositórios, controllers, serviços, middleware. Nada de campos `_repository` atribuídos em construtor.
 - Handlers são `sealed`, logam início e fim (`logger.LogInformation`), e envolvem o corpo em `try/catch` que loga e faz `throw;`. Em Manutenção e Rota o catch é `catch (Exception ex) when (ex is not InvalidOperationException)`, para não logar como erro o que é violação de regra.
 - **Transição de estado é endpoint próprio**, não PUT: `POST /manutencao/{id}/concluir`, `POST /rota/{id}/encerrar`. O request de update não carrega os campos de estado (`Ativo`, `DataFim`, `Status`) — quem os move é a ação dedicada, que também aplica o efeito colateral (avançar o odômetro do veículo, sempre só para frente).
+- **Todo handler de escrita registra auditoria.** Injete `IAuditoriaService` e chame `RegistrarAsync(EntidadesAuditadas.X, AcoesAuditoria.Y, id, "frase em português", alteracoes)` ao final do caminho feliz, depois de a persistência ter sucedido — nunca quando o handler devolve `null`/`false` ("não encontrado" não é evento de trilha). O diff sai de `AlteracoesBuilder`, montado **antes** de a entidade ser mutada (ela é alterada in-place; depois o "antes" se perde). **Nunca** coloque hash de senha, refresh token, token de reset ou de convite em `Descricao` ou no diff. Detalhes e a lista dos 20 pontos em [docs/contexto-api.md](../../docs/contexto-api.md) (§9 Auditoria).
 - **Mapeamento é manual** via `ToResponse()`. AutoMapper está no csproj mas não é usado em lugar nenhum — não introduza `IMapper`.
 - **Controllers**: `[Authorize]` na classe, `[ApiVersion("1.0")]`, rota `api/v{version:apiVersion}/[controller]`, `[Authorize(Roles = $"{Roles.Admin},{Roles.Supervisor}")]` por ação (Admin é o único que exclui; Operador cria/edita/encerra rota). Cada ação declara `[ProducesResponseType<ApiResponse<T>>(...)]` por status. Use `Roles.Gestao` (`Admin,Supervisor,Operador`) para barrar a role `Motorista` — atributos de classe e de ação são combinados por **E**, então não coloque `Roles.Gestao` na classe de um controller que também tenha ação aberta ao motorista.
 
@@ -138,4 +139,5 @@ private CreateVeiculoHandler CreateHandler() =>
 - Fábricas privadas estáticas para entidades (`NovoVeiculo(...)`, `NovaManutencao(...)`) com defaults e parâmetros nomeados.
 - Nome do teste em português: `Metodo_Cenario_DeveResultado` (ex.: `Create_DevePersistirEscopadoNaEmpresaEMapearResposta`).
 - Todo handler novo precisa de um teste que prove o escopo por empresa — asserção sobre o `empresaId` recebido (`_repository.Received(1).GetByIdAsync(1, 1)`) ou `Arg.Is<T>(x => x.EmpresaId == 1)`.
+- Handler de escrita carrega `IAuditoriaService` no construtor: as fixtures têm um `_auditoria = Substitute.For<IAuditoriaService>()` ao lado do `_currentUser`. Um teste por fixture basta para provar o registro (`_auditoria.Received(1).RegistrarAsync(EntidadesAuditadas.X, AcoesAuditoria.Y, ...)`), não um por método.
 - Regra de negócio: `await Assert.ThrowsAsync<InvalidOperationException>(...)`.

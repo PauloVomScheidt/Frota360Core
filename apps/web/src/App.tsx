@@ -13,6 +13,8 @@ import { ManutencoesPage } from './pages/ManutencoesPage'
 import { TiposManutencaoPage } from './pages/TiposManutencaoPage'
 import { UsuariosPage } from './pages/UsuariosPage'
 import { ConvitesPage } from './pages/ConvitesPage'
+import { AuditoriaPage } from './pages/AuditoriaPage'
+import { PerfilPage } from './pages/PerfilPage'
 import { RequireAuth, RequirePode } from './components/RequireAuth'
 import { pode } from './auth/permissions'
 
@@ -30,6 +32,10 @@ export default function App() {
         {/* Cada tela declara a própria permissão: o motorista vê parte do painel
             (veículos e manutenções, só leitura), então não há um bloco único. */}
         <Route element={<RequireAuth />}>
+          {/* Única tela sem `RequirePode`: editar o próprio cadastro é direito de qualquer
+              autenticado, o Motorista inclusive — é justamente ele quem tem CPF. */}
+          <Route path="/perfil" element={<PerfilPage />} />
+
           <Route element={<RequirePode permitido={pode.verDashboard} />}>
             <Route path="/dashboard" element={<DashboardPage />} />
           </Route>
@@ -54,6 +60,9 @@ export default function App() {
           <Route element={<RequirePode permitido={pode.gerenciarUsuarios} />}>
             <Route path="/usuarios" element={<UsuariosPage />} />
             <Route path="/convites" element={<ConvitesPage />} />
+          </Route>
+          <Route element={<RequirePode permitido={pode.verAuditoria} />}>
+            <Route path="/auditoria" element={<AuditoriaPage />} />
           </Route>
         </Route>
 

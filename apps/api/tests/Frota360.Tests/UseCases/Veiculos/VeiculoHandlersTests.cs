@@ -1,9 +1,11 @@
+using Frota360.Application.Common;
 using Frota360.Application.DTOs.Veiculo.Request;
 using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Veiculos.Commands.CreateVeiculo;
 using Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo;
 using Frota360.Application.UseCases.Veiculos.Commands.UpdateVeiculo;
 using Frota360.Application.UseCases.Veiculos.Queries.GetAllVeiculos;
+using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -14,7 +16,12 @@ namespace Frota360.Tests.UseCases.Veiculos
     public class VeiculoHandlersTests
     {
         private readonly IVeiculoRepository _repository = Substitute.For<IVeiculoRepository>();
+        private readonly IRotaRepository _rotaRepository = Substitute.For<IRotaRepository>();
         private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
+        private readonly IAuditoriaService _auditoria = Substitute.For<IAuditoriaService>();
+
+        private DeleteVeiculoHandler CriarDeleteHandler() =>
+            new(_repository, _rotaRepository, _currentUser, _auditoria, NullLogger<DeleteVeiculoHandler>.Instance);
 
         public VeiculoHandlersTests()
         {
@@ -42,7 +49,7 @@ namespace Frota360.Tests.UseCases.Veiculos
                     return v;
                 });
 
-            var handler = new CreateVeiculoHandler(_repository, _currentUser, NullLogger<CreateVeiculoHandler>.Instance);
+            var handler = new CreateVeiculoHandler(_repository, _currentUser, _auditoria, NullLogger<CreateVeiculoHandler>.Instance);
             var request = new CreateVeiculoRequest
             {
                 NomeVeiculo = "Saveiro",
@@ -65,7 +72,7 @@ namespace Frota360.Tests.UseCases.Veiculos
             _repository.GetByIdAsync(7, 1).Returns(NovoVeiculo(7));
             _repository.UpdateAsync(Arg.Any<Veiculo>()).Returns(ci => ci.Arg<Veiculo>());
 
-            var handler = new UpdateVeiculoHandler(_repository, _currentUser, NullLogger<UpdateVeiculoHandler>.Instance);
+            var handler = new UpdateVeiculoHandler(_repository, _currentUser, _auditoria, NullLogger<UpdateVeiculoHandler>.Instance);
             var request = new UpdateVeiculoRequest
             {
                 NomeVeiculo = "Strada Volcano",
@@ -87,7 +94,7 @@ namespace Frota360.Tests.UseCases.Veiculos
         {
             _repository.GetByIdAsync(99, 1).Returns((Veiculo?)null);
 
-            var handler = new UpdateVeiculoHandler(_repository, _currentUser, NullLogger<UpdateVeiculoHandler>.Instance);
+            var handler = new UpdateVeiculoHandler(_repository, _currentUser, _auditoria, NullLogger<UpdateVeiculoHandler>.Instance);
 
             var resposta = await handler.HandleAsync(
                 new UpdateVeiculoCommand(99, new UpdateVeiculoRequest()));
@@ -96,13 +103,33 @@ namespace Frota360.Tests.UseCases.Veiculos
             await _repository.DidNotReceive().UpdateAsync(Arg.Any<Veiculo>());
         }
 
+        /// <summary>RN09 — a placa é persistida sempre em maiúsculas, venha como vier.</summary>
+        [Fact]
+        public async Task Create_DeveNormalizarAPlacaParaMaiusculas()
+        {
+            _repository.AddAsync(Arg.Any<Veiculo>()).Returns(ci => ci.Arg<Veiculo>());
+
+            var handler = new CreateVeiculoHandler(_repository, _currentUser, _auditoria, NullLogger<CreateVeiculoHandler>.Instance);
+
+            var resposta = await handler.HandleAsync(new CreateVeiculoCommand(new CreateVeiculoRequest
+            {
+                NomeVeiculo = "Saveiro",
+                MarcaVeiculo = "VW",
+                Placa = " abc1d23 ",
+                Quilometragem = 0
+            }));
+
+            Assert.Equal("ABC1D23", resposta.Placa);
+        }
+
         [Fact]
         public async Task Delete_QuandoExiste_DeveRemoverERetornarTrue()
         {
             var existente = NovoVeiculo(4);
             _repository.GetByIdAsync(4, 1).Returns(existente);
+            _rotaRepository.ExisteComVeiculoAsync(1, 4).Returns(false);
 
-            var handler = new DeleteVeiculoHandler(_repository, _currentUser, NullLogger<DeleteVeiculoHandler>.Instance);
+            var handler = CriarDeleteHandler();
 
             var resultado = await handler.HandleAsync(new DeleteVeiculoCommand(4));
 
@@ -110,12 +137,33 @@ namespace Frota360.Tests.UseCases.Veiculos
             await _repository.Received(1).DeleteAsync(existente);
         }
 
+        /// <summary>
+        /// RN08 — o veículo com rota associada não pode sumir: a rota guarda o histórico de
+        /// quilometragem e ficaria apontando para um registro inexistente.
+        /// </summary>
+        [Fact]
+        public async Task Delete_ComRotasAssociadas_DeveLancarENaoRemover()
+        {
+            _repository.GetByIdAsync(4, 1).Returns(NovoVeiculo(4));
+            _rotaRepository.ExisteComVeiculoAsync(1, 4).Returns(true);
+
+            var handler = CriarDeleteHandler();
+
+            var erro = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                handler.HandleAsync(new DeleteVeiculoCommand(4)));
+
+            Assert.Equal(
+                "Não é possível excluir um veículo com rotas associadas. Encerre ou remova as rotas antes.",
+                erro.Message);
+            await _repository.DidNotReceive().DeleteAsync(Arg.Any<Veiculo>());
+        }
+
         [Fact]
         public async Task Delete_QuandoNaoExiste_DeveRetornarFalse()
         {
             _repository.GetByIdAsync(123, 1).Returns((Veiculo?)null);
 
-            var handler = new DeleteVeiculoHandler(_repository, _currentUser, NullLogger<DeleteVeiculoHandler>.Instance);
+            var handler = CriarDeleteHandler();
 
             var resultado = await handler.HandleAsync(new DeleteVeiculoCommand(123));
 
@@ -133,6 +181,31 @@ namespace Frota360.Tests.UseCases.Veiculos
             var resposta = (await handler.HandleAsync(new GetAllVeiculosQuery())).ToList();
 
             Assert.Equal(2, resposta.Count);
+        }
+
+        [Fact]
+        public async Task Update_DeveRegistrarAuditoriaComODiffDosCamposAlterados()
+        {
+            _repository.GetByIdAsync(7, 1).Returns(NovoVeiculo(7));
+            _repository.UpdateAsync(Arg.Any<Veiculo>()).Returns(ci => ci.Arg<Veiculo>());
+
+            var handler = new UpdateVeiculoHandler(_repository, _currentUser, _auditoria, NullLogger<UpdateVeiculoHandler>.Instance);
+
+            await handler.HandleAsync(new UpdateVeiculoCommand(7, new UpdateVeiculoRequest
+            {
+                NomeVeiculo = "Strada",
+                MarcaVeiculo = "Fiat",
+                Placa = "XYZ9K87",     // era ABC1D23
+                Quilometragem = 50_000 // igual: não deve entrar no diff
+            }));
+
+            await _auditoria.Received(1).RegistrarAsync(
+                EntidadesAuditadas.Veiculo,
+                AcoesAuditoria.Atualizou,
+                7,
+                Arg.Any<string>(),
+                Arg.Is<IEnumerable<AlteracaoCampo>>(a =>
+                    a.Count() == 1 && a.Single().Campo == "Placa" && a.Single().Para == "XYZ9K87"));
         }
     }
 }

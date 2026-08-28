@@ -1,4 +1,6 @@
-﻿using Frota360.Application.DTOs.Usuario.Response;
+﻿using Frota360.Application.Common;
+using Frota360.Application.DTOs.Usuario.Request;
+using Frota360.Application.DTOs.Usuario.Response;
 using Frota360.Application.Interfaces;
 using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
@@ -9,12 +11,61 @@ namespace Frota360.Application.Services
 {
     public class UsuarioService(IUsuarioRepository repository,
                                 ICurrentUserService currentUser,
+                                IAuditoriaService auditoria,
                                 ILogger<UsuarioService> logger) : IUsuarioService
     {
         public async Task<IEnumerable<UsuarioResponse>> ListarAsync()
         {
             var usuarios = await repository.GetAllByEmpresaAsync(currentUser.EmpresaId);
             return usuarios.Select(ToResponse);
+        }
+
+        public async Task<UsuarioResponse?> ObterPerfilAsync()
+        {
+            var usuario = await repository.GetByIdAsync(currentUser.UsuarioId);
+            return usuario is null ? null : ToResponse(usuario);
+        }
+
+        public async Task<UsuarioResponse?> AtualizarPerfilAsync(AtualizarPerfilRequest request)
+        {
+            // O alvo é sempre o dono do token: um id vindo no corpo não teria efeito nenhum.
+            var usuario = await repository.GetByIdAsync(currentUser.UsuarioId);
+
+            if (usuario is null)
+                return null;
+
+            // Em branco vira nulo: o índice único filtrado (EmpresaId, CPF) ignora quem não
+            // informou, e uma string vazia colidiria com todas as outras strings vazias.
+            var cpf = string.IsNullOrWhiteSpace(request.CPF) ? null : request.CPF.Trim();
+
+            if (cpf is not null && cpf != usuario.CPF
+                && await repository.ExisteCpfNaEmpresaAsync(usuario.EmpresaId, cpf, usuario.Id))
+                throw new InvalidOperationException("Já existe um usuário com este CPF nesta empresa.");
+
+            var nome = request.Nome.Trim();
+
+            // Diff montado antes da mutação. O builder é campo a campo por desenho: hash de
+            // senha e tokens não têm como entrar por reflexão sobre a entidade.
+            var alteracoes = new AlteracoesBuilder()
+                .Comparar("Nome", usuario.Nome, nome)
+                .Comparar("CPF", usuario.CPF, cpf)
+                .Comparar("Data de nascimento", usuario.DataNascimento, request.DataNascimento)
+                .Construir();
+
+            usuario.Nome = nome;
+            usuario.CPF = cpf;
+            usuario.DataNascimento = request.DataNascimento;
+
+            await repository.UpdateAsync(usuario);
+
+            logger.LogInformation("Usuário {Id} atualizou o próprio perfil", usuario.Id);
+
+            // A sessão não é revogada: mudar o próprio nome não é evento de segurança como a
+            // troca de papel. O claim `name` do token segue o antigo até o próximo refresh.
+            await auditoria.RegistrarAsync(EntidadesAuditadas.Usuario, AcoesAuditoria.Atualizou, usuario.Id,
+                "Atualizou os próprios dados de perfil", alteracoes);
+
+            return ToResponse(usuario);
         }
 
         public async Task<UsuarioResponse?> AlterarRoleAsync(int usuarioId, string novaRole)
@@ -30,12 +81,20 @@ namespace Frota360.Application.Services
             if (usuario.Role == Roles.Admin && usuario.Ativo && await SeriaUltimoAdminAtivoAsync())
                 throw new InvalidOperationException("Não é possível alterar a role do único administrador ativo da empresa.");
 
+            var roleAnterior = usuario.Role;
+
             usuario.Role = novaRole;
             RevogarSessao(usuario); // força novo login para o token refletir a role nova
 
             await repository.UpdateAsync(usuario);
 
             logger.LogInformation("Role do usuário {Id} alterada para {Role}", usuarioId, novaRole);
+
+            // Mudança de permissão é o evento mais consequente da trilha: é o que amplia
+            // ou reduz o que alguém consegue fazer no sistema inteiro.
+            await auditoria.RegistrarAsync(EntidadesAuditadas.Usuario, AcoesAuditoria.AlterouPermissao, usuario.Id,
+                $"Alterou a permissão de {usuario.Nome} ({usuario.Email}) de {roleAnterior} para {novaRole}",
+                new AlteracoesBuilder().Comparar("Permissão", roleAnterior, novaRole).Construir());
 
             return ToResponse(usuario);
         }
@@ -61,6 +120,10 @@ namespace Frota360.Application.Services
             await repository.UpdateAsync(usuario);
 
             logger.LogInformation("Usuário {Id} {Acao}", usuarioId, ativo ? "reativado" : "desativado");
+
+            await auditoria.RegistrarAsync(EntidadesAuditadas.Usuario,
+                ativo ? AcoesAuditoria.Ativou : AcoesAuditoria.Desativou, usuario.Id,
+                $"{(ativo ? "Reativou" : "Desativou")} o usuário {usuario.Nome} ({usuario.Email})");
 
             return ToResponse(usuario);
         }

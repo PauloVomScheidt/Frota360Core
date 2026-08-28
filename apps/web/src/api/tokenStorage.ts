@@ -24,6 +24,17 @@ export const tokenStorage = {
     )
   },
 
+  /**
+   * Corrige só o nome guardado na sessão, depois de o usuário editar o próprio perfil.
+   * O claim `name` do JWT segue o antigo até o próximo refresh — sem isto, o header
+   * exibiria o nome velho até o token girar.
+   */
+  atualizarNome(nome: string) {
+    const atual = this.getUser()
+    if (!atual) return
+    localStorage.setItem(USER_KEY, JSON.stringify({ ...atual, nome } satisfies StoredUser))
+  },
+
   getUser(): StoredUser | null {
     const raw = localStorage.getItem(USER_KEY)
     if (!raw) return null

@@ -10,6 +10,19 @@ export interface ApiResponse<T> {
   erros: string[] | null
 }
 
+/**
+ * Página de uma listagem, dentro de `dados` do envelope — o envelope em si não muda.
+ * Hoje só `/auditoria` pagina; as demais listas ainda vêm inteiras.
+ */
+export interface ResultadoPaginado<T> {
+  itens: T[]
+  pagina: number
+  tamanhoPagina: number
+  /** Total que satisfaz o filtro, ignorando a paginação. */
+  total: number
+  totalPaginas: number
+}
+
 // ---------- Auth ----------
 
 /**
@@ -83,6 +96,17 @@ export interface UsuarioResponse {
 
 export interface AlterarRoleRequest {
   role: Role
+}
+
+/**
+ * Edição do próprio cadastro (`PUT /usuario/perfil`) — o direito de correção da LGPD.
+ * Não carrega id: o alvo sai do token. E-mail e papel não são editáveis por aqui.
+ */
+export interface AtualizarPerfilRequest {
+  nome: string
+  /** Opcionais. O CPF vai só com os 11 dígitos; em branco, omita para gravar nulo. */
+  cpf?: string
+  dataNascimento?: string
 }
 
 export interface AlterarAtivoRequest {
@@ -256,4 +280,68 @@ export interface ManutencaoResponse {
   /** Sempre `null` para a role `Motorista` — a API omite o financeiro para ele. */
   custo?: number | null
   dataInclusao: string
+}
+
+// ---------- Auditoria (Admin) ----------
+
+/** Vocabulário fechado no servidor: um valor fora daqui volta 400 do validator. */
+export type EntidadeAuditada =
+  | 'Veiculo'
+  | 'Rota'
+  | 'Manutencao'
+  | 'TipoManutencao'
+  | 'Usuario'
+  | 'Convite'
+
+export type AcaoAuditoria =
+  | 'Criou'
+  | 'Atualizou'
+  | 'Excluiu'
+  | 'Encerrou'
+  | 'Concluiu'
+  | 'AlterouPermissao'
+  | 'Ativou'
+  | 'Desativou'
+  | 'Cancelou'
+  | 'Aceitou'
+
+/** Um campo que mudou. Valores já vêm como texto — o log é histórico legível. */
+export interface AlteracaoCampo {
+  campo: string
+  de?: string | null
+  para?: string | null
+}
+
+/**
+ * Uma linha da trilha. Nome, e-mail e papel de quem agiu são **desnormalizados**:
+ * refletem o que era verdade no momento da ação, não o estado atual do usuário —
+ * não cruzar com `['usuarios']` para "corrigir".
+ */
+export interface LogAuditoriaResponse {
+  id: number
+  usuarioId: number
+  usuarioNome: string
+  usuarioEmail: string
+  usuarioRole: Role
+  entidade: EntidadeAuditada
+  acao: AcaoAuditoria
+  entidadeId?: number | null
+  /** Frase pronta em pt-BR, vinda do servidor — não montar no cliente. */
+  descricao: string
+  /** Vazio em criação e exclusão, onde não há "antes e depois". */
+  alteracoes: AlteracaoCampo[]
+  dataHora: string
+  ipOrigem?: string | null
+}
+
+export interface AuditoriaFiltro {
+  pagina?: number
+  /** Teto de 100 no servidor; acima disso volta 400. */
+  tamanhoPagina?: number
+  entidade?: EntidadeAuditada
+  acao?: AcaoAuditoria
+  usuarioId?: number
+  /** `yyyy-MM-dd`; `ate` é inclusivo (o servidor estende até o fim do dia). */
+  de?: string
+  ate?: string
 }

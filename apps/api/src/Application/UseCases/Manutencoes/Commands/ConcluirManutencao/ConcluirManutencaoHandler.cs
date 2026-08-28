@@ -1,6 +1,8 @@
 using Frota360.Application.Abstractions.Messaging;
+using Frota360.Application.Common;
 using Frota360.Application.DTOs.Manutencao.Response;
 using Frota360.Application.Interfaces;
+using Frota360.Domain.Common;
 using Frota360.Domain.Enums;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
@@ -15,6 +17,7 @@ namespace Frota360.Application.UseCases.Manutencoes.Commands.ConcluirManutencao
     public sealed class ConcluirManutencaoHandler(IManutencaoRepository repository,
                                                   IVeiculoRepository veiculoRepository,
                                                   ICurrentUserService currentUser,
+                                                  IAuditoriaService auditoria,
                                                   ILogger<ConcluirManutencaoHandler> logger)
         : ICommandHandler<ConcluirManutencaoCommand, ManutencaoResponse?>
     {
@@ -48,10 +51,22 @@ namespace Frota360.Application.UseCases.Manutencoes.Commands.ConcluirManutencao
 
                 var concluida = await repository.UpdateAsync(manutencao);
 
-                await AtualizarQuilometragemDoVeiculoAsync(concluida.VeiculoId, request.QuilometragemRealizada);
+                var (placa, odometroAnterior) =
+                    await AtualizarQuilometragemDoVeiculoAsync(concluida.VeiculoId, request.QuilometragemRealizada);
 
                 logger.LogInformation("Manutenção concluída com sucesso. Id {Id} | Realizada em {Km} km",
                     concluida.Id, concluida.QuilometragemRealizada);
+
+                var alteracoes = new AlteracoesBuilder()
+                    .Comparar("Status", StatusManutencao.Pendente.ToString(), StatusManutencao.Realizada.ToString())
+                    .Comparar("Quilometragem realizada", null, concluida.QuilometragemRealizada)
+                    .Comparar("Custo", null, concluida.Custo)
+                    .Comparar($"Odômetro do veículo {placa}", odometroAnterior, odometroAnterior is null ? null : request.QuilometragemRealizada)
+                    .Construir();
+
+                await auditoria.RegistrarAsync(EntidadesAuditadas.Manutencao, AcoesAuditoria.Concluiu, concluida.Id,
+                    $"Concluiu a manutenção #{concluida.Id} ({concluida.Tipo?.Nome}, veículo {placa}) aos {concluida.QuilometragemRealizada} km",
+                    alteracoes);
 
                 return concluida.ToResponse();
             }
@@ -66,12 +81,20 @@ namespace Frota360.Application.UseCases.Manutencoes.Commands.ConcluirManutencao
         /// Só avança o odômetro, nunca retrocede: uma conclusão lançada com atraso não pode
         /// apagar uma quilometragem mais recente registrada por outro fluxo.
         /// </summary>
-        private async Task AtualizarQuilometragemDoVeiculoAsync(int veiculoId, int quilometragemRealizada)
+        /// <returns>
+        /// A placa (para a descrição da auditoria) e o odômetro anterior quando ele avançou —
+        /// nulo quando a conclusão não superou o que já estava lá.
+        /// </returns>
+        private async Task<(string Placa, int? OdometroAnterior)> AtualizarQuilometragemDoVeiculoAsync(
+            int veiculoId, int quilometragemRealizada)
         {
             var veiculo = await veiculoRepository.GetByIdAsync(veiculoId, currentUser.EmpresaId);
 
-            if (veiculo is null || quilometragemRealizada <= veiculo.Quilometragem)
-                return;
+            if (veiculo is null)
+                return ($"#{veiculoId}", null);
+
+            if (quilometragemRealizada <= veiculo.Quilometragem)
+                return (veiculo.Placa, null);
 
             var anterior = veiculo.Quilometragem;
             veiculo.Quilometragem = quilometragemRealizada;
@@ -79,6 +102,8 @@ namespace Frota360.Application.UseCases.Manutencoes.Commands.ConcluirManutencao
 
             logger.LogInformation("Quilometragem do veículo {VeiculoId} atualizada de {Anterior} para {Atual} pela conclusão da manutenção",
                 veiculoId, anterior, quilometragemRealizada);
+
+            return (veiculo.Placa, anterior);
         }
     }
 }

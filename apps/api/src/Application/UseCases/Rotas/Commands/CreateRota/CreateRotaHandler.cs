@@ -3,6 +3,7 @@ using Frota360.Application.Common;
 using Frota360.Application.DTOs.Rota.Response;
 using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Rotas;
+using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,7 @@ namespace Frota360.Application.UseCases.Rotas.Commands.CreateRota
                                           IUsuarioRepository usuarioRepository,
                                           IVeiculoRepository veiculoRepository,
                                           ICurrentUserService currentUser,
+                                          IAuditoriaService auditoria,
                                           ILogger<CreateRotaHandler> logger)
         : ICommandHandler<CreateRotaCommand, RotaResponse>
     {
@@ -44,14 +46,18 @@ namespace Frota360.Application.UseCases.Rotas.Commands.CreateRota
                         $"A quilometragem inicial não pode ser menor que o odômetro atual do veículo ({veiculo.Quilometragem} km).");
 
                 // Veículo rodou fora do sistema: o número mais recente vence.
+                // O anterior é guardado para o diff da auditoria — é justamente o caso em que
+                // hoje ninguém sabe quem fez o odômetro saltar.
+                int? odometroAnterior = null;
+
                 if (request.KmInicial > veiculo.Quilometragem)
                 {
-                    var anterior = veiculo.Quilometragem;
+                    odometroAnterior = veiculo.Quilometragem;
                     veiculo.Quilometragem = request.KmInicial;
                     await veiculoRepository.UpdateAsync(veiculo);
 
                     logger.LogInformation("Quilometragem do veículo {VeiculoId} atualizada de {Anterior} para {Atual} pela abertura da rota",
-                        veiculo.Id, anterior, request.KmInicial);
+                        veiculo.Id, odometroAnterior, request.KmInicial);
                 }
 
                 var rota = new Rota
@@ -71,6 +77,16 @@ namespace Frota360.Application.UseCases.Rotas.Commands.CreateRota
                 var criado = await repository.AddAsync(rota);
 
                 logger.LogInformation("Rota cadastrada com sucesso. Id {Id} | Origem {Origem} | Destino {Destino}", criado.Id, criado.Origem, criado.Destino);
+
+                // Criação não tem diff, mas o salto de odômetro tem — e é a informação
+                // mais consequente da abertura.
+                var alteracoes = new AlteracoesBuilder()
+                    .Comparar($"Odômetro do veículo {veiculo.Placa}", odometroAnterior, odometroAnterior is null ? null : criado.KmInicial)
+                    .Construir();
+
+                await auditoria.RegistrarAsync(EntidadesAuditadas.Rota, AcoesAuditoria.Criou, criado.Id,
+                    $"Abriu a rota {criado.Origem} → {criado.Destino} para {motorista.Nome}, veículo {veiculo.Placa}",
+                    alteracoes);
 
                 var resposta = criado.ToResponse();
                 // A navegação não vem carregada numa entidade recém-inserida, e o nome

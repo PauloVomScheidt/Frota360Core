@@ -10,5 +10,15 @@
         int UsuarioId { get; }
         int EmpresaId { get; }
         string Role { get; }
+
+        /// <summary>
+        /// Nome e e-mail vêm das claims <c>name</c>/<c>email</c>, que o token já emite —
+        /// a trilha de auditoria os desnormaliza em cada linha sem uma ida a mais ao banco.
+        /// </summary>
+        string Nome { get; }
+        string Email { get; }
+
+        /// <summary>IP de origem da requisição, quando disponível. Só a auditoria consome.</summary>
+        string? IpOrigem { get; }
     }
 }

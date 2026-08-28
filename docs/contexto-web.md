@@ -3,7 +3,7 @@
 > Documento **único** de referência do front-end (React + Vite): arquitetura, rotas, endpoints consumidos, o que cada tela faz e as armadilhas conhecidas.
 > Complementa [`contexto-api.md`](contexto-api.md): lá está o contrato do servidor, aqui está o que a aplicação faz com ele.
 > **Caminhos**: relativos à raiz do monorepo — o código do front vive em `apps/web/`, e os comandos `npm` rodam de lá.
-> Última atualização: 2026-08-27 — role `Motorista` e a tela `/minhas-rotas` (§5.9). O motorista é um usuário com essa role: `/motoristas` virou somente leitura (§5.2), ele lê `/veiculos` e `/manutencoes` (§5.3, §5.5) e as permissões de tela passaram a ser individuais (§2, §7).
+> Última atualização: 2026-08-28 — tela `/perfil` (§5.11): o próprio usuário corrige nome, CPF e nascimento, em qualquer papel. Também nesta rodada: o 422 da RN08 ao excluir veículo com rota (§5.3) e a placa aceita nos dois formatos e normalizada em maiúsculas pelo servidor.
 
 ---
 
@@ -34,7 +34,7 @@ O `empresaId` **nunca** é enviado pelo cliente — vem do JWT. A multi-tenancy 
 
 Em base nova não existe usuário: é preciso provisionar uma empresa pelo backoffice da API (`POST /backoffice/empresa`) e abrir o `linkConvite` devolvido, que cai em `/convite?token=…`.
 
-O app tem **duas faces**: o painel de gestão da frota (Admin, Supervisor, Operador) e a tela do motorista (`/minhas-rotas`), que é tudo o que a role `Motorista` enxerga. Um usuário nunca vê as duas.
+O app tem **duas faces**: o painel de gestão da frota (Admin, Supervisor, Operador) e a operação do motorista, cuja home é `/minhas-rotas`. Um usuário nunca vê as duas — o motorista alcança ainda `/veiculos` e `/manutencoes` em leitura (precisa saber o estado do caminhão) e `/perfil`, que não é de face nenhuma: vale para todos os papéis.
 
 Não existe cadastro de motorista separado: **um motorista é um usuário com a role `Motorista`**, convidado, promovido e rebaixado exatamente como Supervisor e Operador.
 
@@ -60,12 +60,16 @@ Definido em [`apps/web/src/App.tsx`](apps/web/src/App.tsx). Qualquer rota descon
 | `/tipos-manutencao` | `TiposManutencaoPage` | **Admin / Supervisor** |
 | `/usuarios` | `UsuariosPage` | **Admin** |
 | `/convites` | `ConvitesPage` | **Admin** |
+| `/auditoria` | `AuditoriaPage` | **Admin** |
+| `/perfil` | `PerfilPage` | **Qualquer autenticado** — única rota interna sem `RequirePode` |
 
 "Gestão" significa **todos os papéis menos `Motorista`**. Ele tem `/minhas-rotas` como home e mais duas telas em leitura: veículos e manutenções — saber o estado do caminhão faz parte do trabalho.
 
 Os guardas estão em [`apps/web/src/components/RequireAuth.tsx`](apps/web/src/components/RequireAuth.tsx) e são **dois**: `RequireAuth`, que redireciona para `/login` quando não há token (guardando a origem em `location.state.from`), e `RequirePode`, que recebe um predicado de `auth/permissions.ts`.
 
 Cada rota declara a própria permissão (`<RequirePode permitido={pode.verVeiculos} />`). Um guarda por bloco de papéis deixou de fazer sentido quando o motorista passou a enxergar parte do painel: quem manda é a tela, não o papel.
+
+**`/perfil` é a exceção**: fica dentro de `RequireAuth` e fora de qualquer `RequirePode`. Editar o próprio cadastro é direito de quem está autenticado, seja qual for o papel — e envolvê-la num predicado seria criar um `pode.verPerfil` que devolve `true` para todo mundo.
 
 **Todo redirecionamento de guarda usa `rotaInicial(role)`** de `auth/permissions.ts` (`/minhas-rotas` para motorista, `/dashboard` para o resto), nunca `/dashboard` fixo — para o motorista o dashboard é justamente uma tela bloqueada, e o par de guardas entraria em pingue-pongue. Os destinos pós-login (`LoginPage`) e pós-aceite de convite (`AcceptInvitePage`) usam a mesma função, a partir do `role` que vem no `AuthResponse`.
 
@@ -143,9 +147,9 @@ Formulário: nome, senha, confirmação e checkbox de termos (obrigatório, vali
 
 Todas as telas autenticadas são embrulhadas por `AppLayout` ([`apps/web/src/components/AppLayout.tsx`](apps/web/src/components/AppLayout.tsx)):
 
-- **Sidebar** recolhível (preferência guardada no `localStorage`), com as categorias "Dashboard" (Visão geral, Motoristas, Veículos, Rotas, Manutenções e — só para Admin/Supervisor — Tipos de manutenção) e "Controle" (Usuários, Convites) — esta só aparece para Admin.
+- **Sidebar** recolhível (preferência guardada no `localStorage`), com as categorias "Dashboard" (Visão geral, Motoristas, Veículos, Rotas, Manutenções e — só para Admin/Supervisor — Tipos de manutenção) e "Controle" (Usuários, Convites, Auditoria) — esta só aparece para Admin.
 - Para a role **Motorista** a sidebar inteira vira um item só, "Minhas rotas", sob a categoria "Operação". Ele não tem painel de frota: esconder os itens acompanha o guarda `RequireGestao`, não o substitui.
-- **Header** com o avatar de iniciais, nome e papel do usuário, e o botão de sair (`POST /auth/logout` → limpa tokens, limpa o cache do React Query, vai para `/login`).
+- **Header** com o avatar de iniciais, nome e papel do usuário — o bloco inteiro é o link para `/perfil` — e o botão de sair (`POST /auth/logout` → limpa tokens, limpa o cache do React Query, vai para `/login`).
 - `PageHeader` padroniza título, subtítulo e o botão de ação da página.
 
 O sino de notificações é decorativo — não há funcionalidade por trás dele ainda.
@@ -184,6 +188,8 @@ Cadastro completo para a gestão; **leitura para o motorista**, que chega aqui p
 
 - Campos do formulário: nome, marca, placa (maiúsculas automáticas) e quilometragem.
 - **Detalhe importante**: `ultimoMotorista` e `dataUltimaViagem` não estão no formulário — são preenchidos pela operação de rotas. Como o `PUT` substitui o registro inteiro, a edição reenvia esses dois campos intactos, vindos do registro carregado. Alterar isso sem cuidado apaga o histórico do veículo.
+- A placa é aceita nos dois formatos (`ABC1234` e `ABC1D23`) e o servidor a grava sempre em maiúsculas — o `text-transform` da tela é conveniência, não a regra.
+- **Excluir veículo com rota associada é 422** (RN08): a mensagem *"Não é possível excluir um veículo com rotas associadas…"* aparece dentro do próprio `ConfirmDialog`, que recebe `erros={errosExclusao}`. É o caso mais comum de exclusão recusada nesta tela.
 
 ### 5.4 `/rotas`
 
@@ -280,6 +286,30 @@ Cache: chave própria **`['rotas', 'minhas']`** — o conteúdo é um recorte de
 
 Os 422 do encerramento caem no `ErrorList` do próprio `FormDialog`, igual a `/rotas`.
 
+### 5.10 `/auditoria` (Admin)
+
+Trilha do que a equipe alterou. **Somente leitura** — não há `InlineForm` nem `RowActions`, porque a API não expõe caminho para alterar ou apagar uma linha (nem para o Admin).
+
+- **Filtros no servidor**, como em `/manutencoes`: o quê (entidade), ação, quem (select alimentado por `['usuarios']` — a tela é Admin, a query já existe) e período de/até. Qualquer mudança de filtro **volta para a página 1**; sem isso a tela abriria vazia ao filtrar estando na página 4.
+- Colunas: **Quando** (`formatDateTime`), **Quem** (nome + o papel *do momento da ação*, que vem gravado na linha e não é o papel atual), **Ação** (`tag`), **Registro** (`Entidade #id`) e **O que aconteceu** (a `descricao` pronta que vem do servidor — nunca montada no cliente).
+- A cor da tag sinaliza **consequência, não entidade**: `tag-danger` para Excluiu/Desativou, `tag-warning` para AlterouPermissao, `tag-accent` para Criou/Aceitou, neutro no resto. Numa tabela longa, colorir por entidade viraria arco-íris.
+- **Linha expansível** quando há diff: clicar abre uma sublinha com `campo · de → para`, mais o IP de origem. Sem diff (criação, exclusão) a seta nem aparece — não há o que abrir.
+- Os valores do diff chegam em cultura invariante, de propósito: o histórico não depende de quem o escreveu. A tela converte datas ISO para pt-BR na leitura; o resto passa direto.
+- Rodapé com o componente `Paginacao` (25 por página, teto de 100 no servidor) e botão **Atualizar** no cabeçalho.
+
+Cache: **`['auditoria', filtro]`**, no padrão de `['manutencoes', filtro]`. **Sem cross-invalidation** — ver §6.4.
+
+### 5.11 `/perfil` (qualquer autenticado)
+
+Formulário único, sem tabela: **nome, CPF e data de nascimento** do próprio usuário. É o caminho do direito de correção da LGPD (Art. 18, III) e a única tela alcançável por todas as roles — inclusive o Motorista, que é justamente quem tem CPF. Chega-se a ela pelo bloco do avatar no header.
+
+- Carrega por `GET /usuario/perfil` (`['perfil']`) e salva por `PUT /usuario/perfil`. Nenhum id trafega: o alvo é o dono do token.
+- **E-mail e papel aparecem como texto, não como campo**, com a razão escrita ao lado: o e-mail é a chave de acesso e o papel é concedido pelo administrador. Mostrá-los evita a pergunta de onde alterar; deixá-los editáveis prometeria o que a API não faz.
+- CPF com `mascaraCpf` na digitação e só os 11 dígitos no envio (mesmo par `mascaraCpf`/`somenteDigitos` de `/convite`). Em branco vira `undefined` → a API grava `null`, e a tela avisa que apagar o campo remove o CPF do cadastro.
+- CPF já usado por outro usuário da mesma empresa → **422**, exibido no `ErrorList`.
+- O formulário é preenchido a partir da query com um **ajuste de estado durante o render** guardado pelo `id` já carregado, e não num `useEffect`: a fonte é o próprio estado do componente, e a guarda impede que um refetch descarte o que está sendo digitado.
+- No sucesso, invalida `['perfil']`, `['motoristas']` e `['usuarios']` (as duas listas exibem nome e CPF) **e** corrige o nome guardado na sessão via `tokenStorage.atualizarNome` + `notificarMudancaDeSessao` — sem isso o header exibiria o nome antigo até o token girar, porque o claim `name` do JWT não é reemitido na hora.
+
 ---
 
 ## 6. Camada de API e sessão
@@ -303,7 +333,7 @@ Os 422 do encerramento caem no `ErrorList` do próprio `FormDialog`, igual a `/r
 
 ### 6.4 Chaves do React Query
 
-`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['usuarios']`, `['convites']`, `['manutencoes', filtro]`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`apps/web/src/lib/queryClient.ts`](apps/web/src/lib/queryClient.ts)).
+`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['usuarios']`, `['convites']`, `['perfil']`, `['manutencoes', filtro]`, `['auditoria', filtro]`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`apps/web/src/lib/queryClient.ts`](apps/web/src/lib/queryClient.ts)).
 
 ⚠️ `['rotas']` e `['rotas','minhas']` são **listas diferentes**, não pai e filho: a segunda vem de outro endpoint e traz só as rotas do motorista logado. Invalidar pelo prefixo `['rotas']` alcançaria as duas, o que é inofensivo apenas porque nenhuma sessão usa as duas telas. Ao mexer nisso, invalide a chave exata.
 
@@ -313,7 +343,9 @@ Cruzamentos que não são óbvios, conferidos no código:
 - **Concluir uma manutenção** invalida também `['veiculos']` ([ManutencoesPage.tsx:165](apps/web/src/pages/ManutencoesPage.tsx#L165)) — o odômetro pode ter avançado.
 - **Abrir** ([RotasPage.tsx:118-119](apps/web/src/pages/RotasPage.tsx#L118-L119)) e **encerrar** ([RotasPage.tsx:139-140](apps/web/src/pages/RotasPage.tsx#L139-L140)) uma rota invalidam `['rotas']`, `['veiculos']` e `['manutencoes']`. É a cadeia mais longa do app: rota → veículo → manutenção. Os dois momentos mexem no odômetro (a abertura quando `kmInicial` é maior que o atual; o encerramento quando `kmFinal` é), e é do odômetro que `atrasada` e `kmRestantes` dependem. Sem invalidar a ponta da cadeia, o alerta de atraso só apareceria no próximo `staleTime`.
 - Em `/minhas-rotas`, **abrir** e **encerrar** invalidam `['rotas','minhas']`, `['veiculos']` **e** `['manutencoes']` — a mesma cadeia da tela de gestão, agora que o motorista também lê manutenções e a tela mostra a pendência do veículo escolhido.
+- **Salvar o perfil** invalida `['perfil']`, `['motoristas']` **e** `['usuarios']` ([PerfilPage.tsx](apps/web/src/pages/PerfilPage.tsx)) — as duas listas exibem nome e CPF de quem acabou de se corrigir. É o único cruzamento que parte de uma tela sem tabela.
 - Qualquer mutação no catálogo invalida o prefixo `['tiposManutencao']`, que cobre de uma vez o catálogo completo e a lista de ativos usada no agendamento.
+- ⚠️ **`['auditoria']` é a exceção deliberada: ninguém a invalida.** Praticamente toda mutação do app cria uma linha de trilha, então invalidar de dentro de cada tela espalharia acoplamento pelo front inteiro — cada mutation passaria a conhecer uma tela que ela não afeta. O `staleTime` de 30 s cobre o uso normal, e a tela tem botão "Atualizar" para quem quer ver agora.
 
 ### 6.5 Endpoints consumidos
 
@@ -328,12 +360,15 @@ Cruzamentos que não são óbvios, conferidos no código:
 | | `GET /convite` (Admin) | ConvitesPage |
 | | `DELETE /convite/{id}` (Admin) | cancelar pendente (utilizado → 422) |
 | | `POST /convite/aceitar` (anônimo) | AcceptInvitePage — **já devolve sessão autenticada**; leva `cpf`/`dataNascimento` opcionais |
-| **usuario** | `GET /usuario` (Admin) | UsuariosPage |
+| **auditoria** | `GET /auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` (Admin) | AuditoriaPage — **único endpoint paginado**: `dados` é um `ResultadoPaginado<T>`, não um array |
+| **usuario** | `GET /usuario` (Admin) | UsuariosPage, **AuditoriaPage** (select "Quem") |
 | | `PUT /usuario/{id}/role` | muda permissão — revoga a sessão do alvo |
 | | `PUT /usuario/{id}/ativo` | ativa/desativa — idem; último admin ativo → 422 |
+| | `GET /usuario/perfil` (**qualquer autenticado**) | PerfilPage — o próprio cadastro; `GET /usuario` é Admin e não serve ao Motorista |
+| | `PUT /usuario/perfil` (**qualquer autenticado**) | PerfilPage — nome/CPF/nascimento; alvo pelo token, CPF duplicado na empresa → 422 |
 | **motorista** | `GET /motorista`, `GET /motorista/{id}` | MotoristasPage, RotasPage (select) — **somente leitura**: são os usuários com a role Motorista |
 | **manutencao** | `GET /manutencao?status=Pendente` | MinhasRotasPage — alimenta o aviso de pendência do veículo escolhido |
-| **veiculo** | `GET/POST /veiculo`, `GET/PUT/DELETE /veiculo/{id}` | VeiculosPage, Dashboard |
+| **veiculo** | `GET/POST /veiculo`, `GET/PUT/DELETE /veiculo/{id}` | VeiculosPage, Dashboard — placa nos dois formatos, normalizada em maiúsculas pelo servidor; DELETE com rota associada → **422** (RN08) |
 | **rota** | `GET/POST /rota`, `GET/PUT/DELETE /rota/{id}` | RotasPage, Dashboard — o POST leva `kmInicial` e **pode avançar o odômetro do veículo**; o PUT não mexe em `kmInicial`, `ativo` nem `dataFim` |
 | | `GET /rota/minhas` (Motorista) | MinhasRotasPage — sem parâmetro: o motorista vem da claim |
 | | `POST /rota` sem `codigoMotorista` | MinhasRotasPage (`abrirMinha`) — a API grava o id do usuário logado |
@@ -361,6 +396,10 @@ Cruzamentos que não são óbvios, conferidos no código:
 | Criar/editar/concluir manutenções e tipos | ✅ | ✅ | — | — |
 | Excluir qualquer registro | ✅ | — | — | — |
 | Usuários e convites | ✅ | — | — | — |
+| Ver a trilha de auditoria | ✅ | — | — | — |
+| Editar o **próprio** cadastro (`/perfil`) | ✅ | ✅ | ✅ | ✅ |
+
+A última linha é a única em que as quatro colunas são ✅ — e por isso `/perfil` não tem entrada em `pode.*`: um predicado que devolve `true` para todo mundo é ruído, não permissão. Corrigir o cadastro **de outra pessoa** não aparece na matriz porque não existe em papel nenhum, o Admin incluído.
 
 Na prática: sem permissão de edição, o botão "Novo…" e o ícone de lápis somem; sem permissão de exclusão, some a lixeira; sem nenhuma das duas, a coluna "Ações" inteira desaparece.
 
@@ -383,6 +422,7 @@ Componentes reutilizados pelas telas:
 | `AppLayout`, `PageHeader`, `ErrorList` | `components/AppLayout.tsx` | Casca das telas internas, cabeçalho e lista de erros |
 | `AuthScreen`, `AuthHeading` | `components/AuthScreen.tsx` | Casca das telas de autenticação |
 | `InlineForm`, `TableStates` | `components/Table.tsx` | Formulário acima da tabela e as linhas de carregando/erro/vazio |
+| `Paginacao` | `components/Table.tsx` | Rodapé "X–Y de Z" + anterior/próxima. Só `/auditoria` usa (é a única lista que a API pagina) e some quando cabe tudo numa página |
 | `RowActions`, `ConfirmDialog` | `components/Table.tsx` | Ícones de editar/excluir na linha e confirmação de ação consequente (exclusão ou troca de permissão — `variante="padrao"` tira o vermelho quando não é destrutiva) |
 | `FormDialog` | `components/Table.tsx` | Diálogo com campos (concluir uma manutenção, encerrar uma rota) |
 | `LogoMark`, `Wordmark` | `components/Logo.tsx` | Marca (versões clara e escura) |
@@ -394,7 +434,7 @@ Componentes reutilizados pelas telas:
 
 ## 9. O que ainda não existe
 
-- **Paginação e ordenação** nas listas — tudo vem de uma vez (a API também não pagina).
+- **Paginação e ordenação** nas demais listas — tudo vem de uma vez. A exceção é `/auditoria`, o único endpoint paginado da API (§5.10); `ResultadoPaginado<T>` e o componente `Paginacao` já nascem genéricos para as próximas listas que precisarem.
 - **Toasts globais**: erros e sucessos são exibidos no local da ação, não há notificação central.
 - **Tratamento específico de 429**: a mensagem do rate limit chega como erro comum.
 - **Testes**: não há suíte no front.
@@ -404,7 +444,9 @@ Componentes reutilizados pelas telas:
 - **Atualizar só a quilometragem do veículo**: não há `PATCH` dedicado. O odômetro sobe pelo `PUT /veiculo/{id}` completo, pela conclusão de uma manutenção e — desde a RN10 — pela abertura e pelo encerramento de rotas, que é o caminho do dia a dia e o que finalmente alimenta os alertas de atraso.
 - **Reabrir uma rota encerrada**: a API não expõe o caminho inverso do encerramento, e o `PUT` não mexe mais em `ativo`/`dataFim`. Corrigir um encerramento errado passa por excluir a rota (Admin) e recriá-la.
 - O dashboard ainda não mostra nada de manutenção (nenhum KPI de atrasadas).
-- **Editar CPF/nascimento depois do aceite**: não há tela de perfil nem endpoint. Quem não preencheu ao criar a conta fica sem, e o Admin não tem como corrigir.
+- **Corrigir o cadastro de outra pessoa**: não existe, nem para o Admin. `/perfil` (§5.11) é autoatendimento — se alguém precisa de correção e não consegue entrar, o caminho é reenviar convite ou solicitação formal ao controlador.
+- **Trocar o próprio e-mail**: fora do escopo de `/perfil`. É a chave de login e exigiria reverificação, além de mexer em convite e refresh token.
+- **Purga da trilha de auditoria**: a política é de **12 meses**, mas a rotina que apaga não existe — hoje nada é expurgado. Limitação declarada, não esquecida.
 - **Tela do motorista em celular**: `/minhas-rotas` usa o mesmo `AppLayout` do painel, com sidebar — funciona, mas não é um layout mobile de verdade, que é o contexto natural de uso. É a próxima coisa a fazer pelo motorista.
 
 ---

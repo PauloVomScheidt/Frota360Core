@@ -1,11 +1,16 @@
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.Interfaces;
+using Frota360.Domain.Common;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo
 {
-    public sealed class DeleteVeiculoHandler(IVeiculoRepository repository, ICurrentUserService currentUser, ILogger<DeleteVeiculoHandler> logger)
+    public sealed class DeleteVeiculoHandler(IVeiculoRepository repository,
+                                             IRotaRepository rotaRepository,
+                                             ICurrentUserService currentUser,
+                                             IAuditoriaService auditoria,
+                                             ILogger<DeleteVeiculoHandler> logger)
         : ICommandHandler<DeleteVeiculoCommand, bool>
     {
         public async Task<bool> HandleAsync(DeleteVeiculoCommand command, CancellationToken cancellationToken = default)
@@ -22,13 +27,24 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo
                     return false;
                 }
 
+                // RN08 — veículo com rota associada não some: a rota guarda o histórico de
+                // quilometragem da frota e ficaria apontando para um registro inexistente.
+                if (await rotaRepository.ExisteComVeiculoAsync(currentUser.EmpresaId, veiculo.Id))
+                    throw new InvalidOperationException(
+                        "Não é possível excluir um veículo com rotas associadas. Encerre ou remova as rotas antes.");
+
                 await repository.DeleteAsync(veiculo);
 
                 logger.LogInformation("Veículo removido com sucesso. Id {Id}", command.Id);
 
+                // A descrição carrega placa e modelo porque o registro deixou de existir:
+                // depois disso o id sozinho não identifica mais nada.
+                await auditoria.RegistrarAsync(EntidadesAuditadas.Veiculo, AcoesAuditoria.Excluiu, command.Id,
+                    $"Excluiu o veículo {veiculo.Placa} ({veiculo.MarcaVeiculo} {veiculo.NomeVeiculo})");
+
                 return true;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not InvalidOperationException)
             {
                 logger.LogError(ex, "Erro ao remover veículo Id {Id}", command.Id);
                 throw;

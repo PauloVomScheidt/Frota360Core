@@ -1,5 +1,6 @@
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.Interfaces;
+using Frota360.Domain.Common;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
 
@@ -8,6 +9,7 @@ namespace Frota360.Application.UseCases.TiposManutencao.Commands.DeleteTipoManut
     public sealed class DeleteTipoManutencaoHandler(ITipoManutencaoRepository repository,
                                                     IManutencaoRepository manutencaoRepository,
                                                     ICurrentUserService currentUser,
+                                                    IAuditoriaService auditoria,
                                                     ILogger<DeleteTipoManutencaoHandler> logger)
         : ICommandHandler<DeleteTipoManutencaoCommand, bool>
     {
@@ -34,6 +36,9 @@ namespace Frota360.Application.UseCases.TiposManutencao.Commands.DeleteTipoManut
                 await repository.DeleteAsync(tipo);
 
                 logger.LogInformation("Tipo de manutenção removido com sucesso. Id {Id}", command.Id);
+
+                await auditoria.RegistrarAsync(EntidadesAuditadas.TipoManutencao, AcoesAuditoria.Excluiu, command.Id,
+                    $"Excluiu o tipo de manutenção \"{tipo.Nome}\"");
 
                 return true;
             }

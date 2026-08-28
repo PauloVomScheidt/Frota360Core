@@ -1,4 +1,5 @@
-﻿using Frota360.Application.DTOs.Rota.Request;
+﻿using Frota360.Application.Common;
+using Frota360.Application.DTOs.Rota.Request;
 using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Rotas.Commands.CreateRota;
 using Frota360.Application.UseCases.Rotas.Commands.DeleteRota;
@@ -20,6 +21,7 @@ namespace Frota360.Tests.UseCases.Rotas
         private readonly IUsuarioRepository _usuarioRepository = Substitute.For<IUsuarioRepository>();
         private readonly IVeiculoRepository _veiculoRepository = Substitute.For<IVeiculoRepository>();
         private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
+        private readonly IAuditoriaService _auditoria = Substitute.For<IAuditoriaService>();
 
         public RotaHandlersTests()
         {
@@ -27,13 +29,13 @@ namespace Frota360.Tests.UseCases.Rotas
         }
 
         private CreateRotaHandler CriarCreateHandler() =>
-            new(_repository, _usuarioRepository, _veiculoRepository, _currentUser, NullLogger<CreateRotaHandler>.Instance);
+            new(_repository, _usuarioRepository, _veiculoRepository, _currentUser, _auditoria, NullLogger<CreateRotaHandler>.Instance);
 
         private UpdateRotaHandler CriarUpdateHandler() =>
-            new(_repository, _usuarioRepository, _veiculoRepository, _currentUser, NullLogger<UpdateRotaHandler>.Instance);
+            new(_repository, _usuarioRepository, _veiculoRepository, _currentUser, _auditoria, NullLogger<UpdateRotaHandler>.Instance);
 
         private EncerrarRotaHandler CriarEncerrarHandler() =>
-            new(_repository, _veiculoRepository, _currentUser, NullLogger<EncerrarRotaHandler>.Instance);
+            new(_repository, _veiculoRepository, _currentUser, _auditoria, NullLogger<EncerrarRotaHandler>.Instance);
 
         private static Rota NovaRota(int id = 1,
                                      int kmInicial = 50_000,
@@ -480,7 +482,7 @@ namespace Frota360.Tests.UseCases.Rotas
             var existente = NovaRota(6);
             _repository.GetByIdAsync(6, 1).Returns(existente);
 
-            var handler = new DeleteRotaHandler(_repository, _currentUser, NullLogger<DeleteRotaHandler>.Instance);
+            var handler = new DeleteRotaHandler(_repository, _currentUser, _auditoria, NullLogger<DeleteRotaHandler>.Instance);
 
             var resultado = await handler.HandleAsync(new DeleteRotaCommand(6));
 
@@ -493,7 +495,7 @@ namespace Frota360.Tests.UseCases.Rotas
         {
             _repository.GetByIdAsync(123, 1).Returns((Rota?)null);
 
-            var handler = new DeleteRotaHandler(_repository, _currentUser, NullLogger<DeleteRotaHandler>.Instance);
+            var handler = new DeleteRotaHandler(_repository, _currentUser, _auditoria, NullLogger<DeleteRotaHandler>.Instance);
 
             var resultado = await handler.HandleAsync(new DeleteRotaCommand(123));
 
@@ -665,6 +667,41 @@ namespace Frota360.Tests.UseCases.Rotas
             Assert.Null(resposta);
             await _repository.DidNotReceive().UpdateAsync(Arg.Any<Rota>());
             await _veiculoRepository.DidNotReceive().UpdateAsync(Arg.Any<Veiculo>());
+        }
+
+        /// <summary>
+        /// O salto de odômetro é justamente o que hoje ninguém consegue rastrear: o
+        /// encerramento avança a quilometragem do veículo, e o diff precisa mostrar isso.
+        /// </summary>
+        [Fact]
+        public async Task Encerrar_DeveRegistrarAuditoriaComOAvancoDoOdometro()
+        {
+            _repository.GetByIdAsync(5, 1).Returns(NovaRota(5, kmInicial: 50_000));
+            _repository.UpdateAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
+            _veiculoRepository.GetByIdAsync(1, 1).Returns(NovoVeiculo(1));
+
+            await CriarEncerrarHandler().HandleAsync(
+                new EncerrarRotaCommand(5, new EncerrarRotaRequest { KmFinal = 50_400 }));
+
+            await _auditoria.Received(1).RegistrarAsync(
+                EntidadesAuditadas.Rota,
+                AcoesAuditoria.Encerrou,
+                5,
+                Arg.Any<string>(),
+                Arg.Is<IEnumerable<AlteracaoCampo>>(a => a.Any(c => c.Campo.StartsWith("Odômetro do veículo"))));
+        }
+
+        [Fact]
+        public async Task Delete_DeveRegistrarAuditoria()
+        {
+            _repository.GetByIdAsync(5, 1).Returns(NovaRota(5));
+
+            var handler = new DeleteRotaHandler(_repository, _currentUser, _auditoria, NullLogger<DeleteRotaHandler>.Instance);
+
+            await handler.HandleAsync(new DeleteRotaCommand(5));
+
+            await _auditoria.Received(1).RegistrarAsync(
+                EntidadesAuditadas.Rota, AcoesAuditoria.Excluiu, 5, Arg.Any<string>(), Arg.Any<IEnumerable<AlteracaoCampo>>());
         }
     }
 }
