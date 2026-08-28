@@ -110,6 +110,78 @@ namespace Frota360.Infrastructure.Migrations
                     b.ToTable("Empresa", (string)null);
                 });
 
+            modelBuilder.Entity("Frota360.Domain.Entities.LogAuditoria", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Acao")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Alteracoes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("DataHora")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETDATE()");
+
+                    b.Property<string>("Descricao")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int>("EmpresaId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Entidade")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<int?>("EntidadeId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("IpOrigem")
+                        .HasMaxLength(45)
+                        .HasColumnType("nvarchar(45)");
+
+                    b.Property<string>("UsuarioEmail")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UsuarioNome")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("UsuarioRole")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("EmpresaId", "DataHora");
+
+                    b.HasIndex("EmpresaId", "Entidade", "EntidadeId");
+
+                    b.HasIndex("EmpresaId", "UsuarioId", "DataHora");
+
+                    b.ToTable("LogAuditoria", (string)null);
+                });
+
             modelBuilder.Entity("Frota360.Domain.Entities.Manutencao", b =>
                 {
                     b.Property<int>("Id")
@@ -409,6 +481,21 @@ namespace Frota360.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Frota360.Domain.Entities.LogAuditoria", b =>
+                {
+                    b.HasOne("Frota360.Domain.Entities.Empresa", null)
+                        .WithMany()
+                        .HasForeignKey("EmpresaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Frota360.Domain.Entities.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Frota360.Domain.Entities.Manutencao", b =>
                 {
                     b.HasOne("Frota360.Domain.Entities.Empresa", null)
@@ -436,7 +523,7 @@ namespace Frota360.Infrastructure.Migrations
 
             modelBuilder.Entity("Frota360.Domain.Entities.Rota", b =>
                 {
-                    b.HasOne("Frota360.Domain.Entities.Usuario", null)
+                    b.HasOne("Frota360.Domain.Entities.Usuario", "Motorista")
                         .WithMany()
                         .HasForeignKey("CodigoMotorista")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -453,6 +540,8 @@ namespace Frota360.Infrastructure.Migrations
                         .HasForeignKey("EmpresaId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Motorista");
 
                     b.Navigation("Veiculo");
                 });

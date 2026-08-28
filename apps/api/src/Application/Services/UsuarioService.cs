@@ -1,4 +1,5 @@
-﻿using Frota360.Application.DTOs.Usuario.Response;
+﻿using Frota360.Application.Common;
+using Frota360.Application.DTOs.Usuario.Response;
 using Frota360.Application.Interfaces;
 using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
@@ -9,6 +10,7 @@ namespace Frota360.Application.Services
 {
     public class UsuarioService(IUsuarioRepository repository,
                                 ICurrentUserService currentUser,
+                                IAuditoriaService auditoria,
                                 ILogger<UsuarioService> logger) : IUsuarioService
     {
         public async Task<IEnumerable<UsuarioResponse>> ListarAsync()
@@ -30,12 +32,20 @@ namespace Frota360.Application.Services
             if (usuario.Role == Roles.Admin && usuario.Ativo && await SeriaUltimoAdminAtivoAsync())
                 throw new InvalidOperationException("Não é possível alterar a role do único administrador ativo da empresa.");
 
+            var roleAnterior = usuario.Role;
+
             usuario.Role = novaRole;
             RevogarSessao(usuario); // força novo login para o token refletir a role nova
 
             await repository.UpdateAsync(usuario);
 
             logger.LogInformation("Role do usuário {Id} alterada para {Role}", usuarioId, novaRole);
+
+            // Mudança de permissão é o evento mais consequente da trilha: é o que amplia
+            // ou reduz o que alguém consegue fazer no sistema inteiro.
+            await auditoria.RegistrarAsync(EntidadesAuditadas.Usuario, AcoesAuditoria.AlterouPermissao, usuario.Id,
+                $"Alterou a permissão de {usuario.Nome} ({usuario.Email}) de {roleAnterior} para {novaRole}",
+                new AlteracoesBuilder().Comparar("Permissão", roleAnterior, novaRole).Construir());
 
             return ToResponse(usuario);
         }
@@ -61,6 +71,10 @@ namespace Frota360.Application.Services
             await repository.UpdateAsync(usuario);
 
             logger.LogInformation("Usuário {Id} {Acao}", usuarioId, ativo ? "reativado" : "desativado");
+
+            await auditoria.RegistrarAsync(EntidadesAuditadas.Usuario,
+                ativo ? AcoesAuditoria.Ativou : AcoesAuditoria.Desativou, usuario.Id,
+                $"{(ativo ? "Reativou" : "Desativou")} o usuário {usuario.Nome} ({usuario.Email})");
 
             return ToResponse(usuario);
         }

@@ -13,6 +13,7 @@ import { ManutencoesPage } from './pages/ManutencoesPage'
 import { TiposManutencaoPage } from './pages/TiposManutencaoPage'
 import { UsuariosPage } from './pages/UsuariosPage'
 import { ConvitesPage } from './pages/ConvitesPage'
+import { AuditoriaPage } from './pages/AuditoriaPage'
 import { RequireAuth, RequirePode } from './components/RequireAuth'
 import { pode } from './auth/permissions'
 
@@ -54,6 +55,9 @@ export default function App() {
           <Route element={<RequirePode permitido={pode.gerenciarUsuarios} />}>
             <Route path="/usuarios" element={<UsuariosPage />} />
             <Route path="/convites" element={<ConvitesPage />} />
+          </Route>
+          <Route element={<RequirePode permitido={pode.verAuditoria} />}>
+            <Route path="/auditoria" element={<AuditoriaPage />} />
           </Route>
         </Route>
 

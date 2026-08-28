@@ -182,6 +182,15 @@ export const ClipboardIcon = (p: IconProps) => (
   </Icon>
 )
 
+/** Relógio com seta de retorno — histórico/trilha de auditoria. */
+export const HistoricoIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+    <path d="M3 3v5h5" />
+    <path d="M12 7v5l3 2" />
+  </Icon>
+)
+
 export const AlertIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M12 3 1.8 20.5h20.4L12 3Z" />

@@ -13,6 +13,29 @@ namespace Frota360.Api.Services
             httpContextAccessor.HttpContext?.User.FindFirstValue(ClaimTypes.Role)
             ?? throw new UnauthorizedAccessException("Token inválido: refaça o login.");
 
+        // Nome e e-mail são identificação para a trilha de auditoria, não autorização:
+        // um token sem eles não invalida a requisição, só deixa a linha menos informativa.
+        public string Nome => LerClaim(ClaimTypes.Name, "name") ?? string.Empty;
+
+        public string Email => LerClaim(ClaimTypes.Email, "email") ?? string.Empty;
+
+        public string? IpOrigem =>
+            httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();
+
+        private string? LerClaim(params string[] tipos)
+        {
+            var user = httpContextAccessor.HttpContext?.User;
+
+            foreach (var tipo in tipos)
+            {
+                var valor = user?.FindFirstValue(tipo);
+                if (!string.IsNullOrWhiteSpace(valor))
+                    return valor;
+            }
+
+            return null;
+        }
+
         private int LerClaimInt(params string[] tipos)
         {
             var user = httpContextAccessor.HttpContext?.User;

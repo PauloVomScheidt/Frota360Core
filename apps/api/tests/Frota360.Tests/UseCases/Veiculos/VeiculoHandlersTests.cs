@@ -1,9 +1,11 @@
+using Frota360.Application.Common;
 using Frota360.Application.DTOs.Veiculo.Request;
 using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Veiculos.Commands.CreateVeiculo;
 using Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo;
 using Frota360.Application.UseCases.Veiculos.Commands.UpdateVeiculo;
 using Frota360.Application.UseCases.Veiculos.Queries.GetAllVeiculos;
+using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,6 +17,7 @@ namespace Frota360.Tests.UseCases.Veiculos
     {
         private readonly IVeiculoRepository _repository = Substitute.For<IVeiculoRepository>();
         private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
+        private readonly IAuditoriaService _auditoria = Substitute.For<IAuditoriaService>();
 
         public VeiculoHandlersTests()
         {
@@ -42,7 +45,7 @@ namespace Frota360.Tests.UseCases.Veiculos
                     return v;
                 });
 
-            var handler = new CreateVeiculoHandler(_repository, _currentUser, NullLogger<CreateVeiculoHandler>.Instance);
+            var handler = new CreateVeiculoHandler(_repository, _currentUser, _auditoria, NullLogger<CreateVeiculoHandler>.Instance);
             var request = new CreateVeiculoRequest
             {
                 NomeVeiculo = "Saveiro",
@@ -65,7 +68,7 @@ namespace Frota360.Tests.UseCases.Veiculos
             _repository.GetByIdAsync(7, 1).Returns(NovoVeiculo(7));
             _repository.UpdateAsync(Arg.Any<Veiculo>()).Returns(ci => ci.Arg<Veiculo>());
 
-            var handler = new UpdateVeiculoHandler(_repository, _currentUser, NullLogger<UpdateVeiculoHandler>.Instance);
+            var handler = new UpdateVeiculoHandler(_repository, _currentUser, _auditoria, NullLogger<UpdateVeiculoHandler>.Instance);
             var request = new UpdateVeiculoRequest
             {
                 NomeVeiculo = "Strada Volcano",
@@ -87,7 +90,7 @@ namespace Frota360.Tests.UseCases.Veiculos
         {
             _repository.GetByIdAsync(99, 1).Returns((Veiculo?)null);
 
-            var handler = new UpdateVeiculoHandler(_repository, _currentUser, NullLogger<UpdateVeiculoHandler>.Instance);
+            var handler = new UpdateVeiculoHandler(_repository, _currentUser, _auditoria, NullLogger<UpdateVeiculoHandler>.Instance);
 
             var resposta = await handler.HandleAsync(
                 new UpdateVeiculoCommand(99, new UpdateVeiculoRequest()));
@@ -102,7 +105,7 @@ namespace Frota360.Tests.UseCases.Veiculos
             var existente = NovoVeiculo(4);
             _repository.GetByIdAsync(4, 1).Returns(existente);
 
-            var handler = new DeleteVeiculoHandler(_repository, _currentUser, NullLogger<DeleteVeiculoHandler>.Instance);
+            var handler = new DeleteVeiculoHandler(_repository, _currentUser, _auditoria, NullLogger<DeleteVeiculoHandler>.Instance);
 
             var resultado = await handler.HandleAsync(new DeleteVeiculoCommand(4));
 
@@ -115,7 +118,7 @@ namespace Frota360.Tests.UseCases.Veiculos
         {
             _repository.GetByIdAsync(123, 1).Returns((Veiculo?)null);
 
-            var handler = new DeleteVeiculoHandler(_repository, _currentUser, NullLogger<DeleteVeiculoHandler>.Instance);
+            var handler = new DeleteVeiculoHandler(_repository, _currentUser, _auditoria, NullLogger<DeleteVeiculoHandler>.Instance);
 
             var resultado = await handler.HandleAsync(new DeleteVeiculoCommand(123));
 
@@ -133,6 +136,31 @@ namespace Frota360.Tests.UseCases.Veiculos
             var resposta = (await handler.HandleAsync(new GetAllVeiculosQuery())).ToList();
 
             Assert.Equal(2, resposta.Count);
+        }
+
+        [Fact]
+        public async Task Update_DeveRegistrarAuditoriaComODiffDosCamposAlterados()
+        {
+            _repository.GetByIdAsync(7, 1).Returns(NovoVeiculo(7));
+            _repository.UpdateAsync(Arg.Any<Veiculo>()).Returns(ci => ci.Arg<Veiculo>());
+
+            var handler = new UpdateVeiculoHandler(_repository, _currentUser, _auditoria, NullLogger<UpdateVeiculoHandler>.Instance);
+
+            await handler.HandleAsync(new UpdateVeiculoCommand(7, new UpdateVeiculoRequest
+            {
+                NomeVeiculo = "Strada",
+                MarcaVeiculo = "Fiat",
+                Placa = "XYZ9K87",     // era ABC1D23
+                Quilometragem = 50_000 // igual: não deve entrar no diff
+            }));
+
+            await _auditoria.Received(1).RegistrarAsync(
+                EntidadesAuditadas.Veiculo,
+                AcoesAuditoria.Atualizou,
+                7,
+                Arg.Any<string>(),
+                Arg.Is<IEnumerable<AlteracaoCampo>>(a =>
+                    a.Count() == 1 && a.Single().Campo == "Placa" && a.Single().Para == "XYZ9K87"));
         }
     }
 }

@@ -60,6 +60,7 @@ Definido em [`apps/web/src/App.tsx`](apps/web/src/App.tsx). Qualquer rota descon
 | `/tipos-manutencao` | `TiposManutencaoPage` | **Admin / Supervisor** |
 | `/usuarios` | `UsuariosPage` | **Admin** |
 | `/convites` | `ConvitesPage` | **Admin** |
+| `/auditoria` | `AuditoriaPage` | **Admin** |
 
 "Gestão" significa **todos os papéis menos `Motorista`**. Ele tem `/minhas-rotas` como home e mais duas telas em leitura: veículos e manutenções — saber o estado do caminhão faz parte do trabalho.
 
@@ -143,7 +144,7 @@ Formulário: nome, senha, confirmação e checkbox de termos (obrigatório, vali
 
 Todas as telas autenticadas são embrulhadas por `AppLayout` ([`apps/web/src/components/AppLayout.tsx`](apps/web/src/components/AppLayout.tsx)):
 
-- **Sidebar** recolhível (preferência guardada no `localStorage`), com as categorias "Dashboard" (Visão geral, Motoristas, Veículos, Rotas, Manutenções e — só para Admin/Supervisor — Tipos de manutenção) e "Controle" (Usuários, Convites) — esta só aparece para Admin.
+- **Sidebar** recolhível (preferência guardada no `localStorage`), com as categorias "Dashboard" (Visão geral, Motoristas, Veículos, Rotas, Manutenções e — só para Admin/Supervisor — Tipos de manutenção) e "Controle" (Usuários, Convites, Auditoria) — esta só aparece para Admin.
 - Para a role **Motorista** a sidebar inteira vira um item só, "Minhas rotas", sob a categoria "Operação". Ele não tem painel de frota: esconder os itens acompanha o guarda `RequireGestao`, não o substitui.
 - **Header** com o avatar de iniciais, nome e papel do usuário, e o botão de sair (`POST /auth/logout` → limpa tokens, limpa o cache do React Query, vai para `/login`).
 - `PageHeader` padroniza título, subtítulo e o botão de ação da página.
@@ -280,6 +281,19 @@ Cache: chave própria **`['rotas', 'minhas']`** — o conteúdo é um recorte de
 
 Os 422 do encerramento caem no `ErrorList` do próprio `FormDialog`, igual a `/rotas`.
 
+### 5.10 `/auditoria` (Admin)
+
+Trilha do que a equipe alterou. **Somente leitura** — não há `InlineForm` nem `RowActions`, porque a API não expõe caminho para alterar ou apagar uma linha (nem para o Admin).
+
+- **Filtros no servidor**, como em `/manutencoes`: o quê (entidade), ação, quem (select alimentado por `['usuarios']` — a tela é Admin, a query já existe) e período de/até. Qualquer mudança de filtro **volta para a página 1**; sem isso a tela abriria vazia ao filtrar estando na página 4.
+- Colunas: **Quando** (`formatDateTime`), **Quem** (nome + o papel *do momento da ação*, que vem gravado na linha e não é o papel atual), **Ação** (`tag`), **Registro** (`Entidade #id`) e **O que aconteceu** (a `descricao` pronta que vem do servidor — nunca montada no cliente).
+- A cor da tag sinaliza **consequência, não entidade**: `tag-danger` para Excluiu/Desativou, `tag-warning` para AlterouPermissao, `tag-accent` para Criou/Aceitou, neutro no resto. Numa tabela longa, colorir por entidade viraria arco-íris.
+- **Linha expansível** quando há diff: clicar abre uma sublinha com `campo · de → para`, mais o IP de origem. Sem diff (criação, exclusão) a seta nem aparece — não há o que abrir.
+- Os valores do diff chegam em cultura invariante, de propósito: o histórico não depende de quem o escreveu. A tela converte datas ISO para pt-BR na leitura; o resto passa direto.
+- Rodapé com o componente `Paginacao` (25 por página, teto de 100 no servidor) e botão **Atualizar** no cabeçalho.
+
+Cache: **`['auditoria', filtro]`**, no padrão de `['manutencoes', filtro]`. **Sem cross-invalidation** — ver §6.4.
+
 ---
 
 ## 6. Camada de API e sessão
@@ -303,7 +317,7 @@ Os 422 do encerramento caem no `ErrorList` do próprio `FormDialog`, igual a `/r
 
 ### 6.4 Chaves do React Query
 
-`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['usuarios']`, `['convites']`, `['manutencoes', filtro]`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`apps/web/src/lib/queryClient.ts`](apps/web/src/lib/queryClient.ts)).
+`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['usuarios']`, `['convites']`, `['manutencoes', filtro]`, `['auditoria', filtro]`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`apps/web/src/lib/queryClient.ts`](apps/web/src/lib/queryClient.ts)).
 
 ⚠️ `['rotas']` e `['rotas','minhas']` são **listas diferentes**, não pai e filho: a segunda vem de outro endpoint e traz só as rotas do motorista logado. Invalidar pelo prefixo `['rotas']` alcançaria as duas, o que é inofensivo apenas porque nenhuma sessão usa as duas telas. Ao mexer nisso, invalide a chave exata.
 
@@ -314,6 +328,7 @@ Cruzamentos que não são óbvios, conferidos no código:
 - **Abrir** ([RotasPage.tsx:118-119](apps/web/src/pages/RotasPage.tsx#L118-L119)) e **encerrar** ([RotasPage.tsx:139-140](apps/web/src/pages/RotasPage.tsx#L139-L140)) uma rota invalidam `['rotas']`, `['veiculos']` e `['manutencoes']`. É a cadeia mais longa do app: rota → veículo → manutenção. Os dois momentos mexem no odômetro (a abertura quando `kmInicial` é maior que o atual; o encerramento quando `kmFinal` é), e é do odômetro que `atrasada` e `kmRestantes` dependem. Sem invalidar a ponta da cadeia, o alerta de atraso só apareceria no próximo `staleTime`.
 - Em `/minhas-rotas`, **abrir** e **encerrar** invalidam `['rotas','minhas']`, `['veiculos']` **e** `['manutencoes']` — a mesma cadeia da tela de gestão, agora que o motorista também lê manutenções e a tela mostra a pendência do veículo escolhido.
 - Qualquer mutação no catálogo invalida o prefixo `['tiposManutencao']`, que cobre de uma vez o catálogo completo e a lista de ativos usada no agendamento.
+- ⚠️ **`['auditoria']` é a exceção deliberada: ninguém a invalida.** Praticamente toda mutação do app cria uma linha de trilha, então invalidar de dentro de cada tela espalharia acoplamento pelo front inteiro — cada mutation passaria a conhecer uma tela que ela não afeta. O `staleTime` de 30 s cobre o uso normal, e a tela tem botão "Atualizar" para quem quer ver agora.
 
 ### 6.5 Endpoints consumidos
 
@@ -328,7 +343,8 @@ Cruzamentos que não são óbvios, conferidos no código:
 | | `GET /convite` (Admin) | ConvitesPage |
 | | `DELETE /convite/{id}` (Admin) | cancelar pendente (utilizado → 422) |
 | | `POST /convite/aceitar` (anônimo) | AcceptInvitePage — **já devolve sessão autenticada**; leva `cpf`/`dataNascimento` opcionais |
-| **usuario** | `GET /usuario` (Admin) | UsuariosPage |
+| **auditoria** | `GET /auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` (Admin) | AuditoriaPage — **único endpoint paginado**: `dados` é um `ResultadoPaginado<T>`, não um array |
+| **usuario** | `GET /usuario` (Admin) | UsuariosPage, **AuditoriaPage** (select "Quem") |
 | | `PUT /usuario/{id}/role` | muda permissão — revoga a sessão do alvo |
 | | `PUT /usuario/{id}/ativo` | ativa/desativa — idem; último admin ativo → 422 |
 | **motorista** | `GET /motorista`, `GET /motorista/{id}` | MotoristasPage, RotasPage (select) — **somente leitura**: são os usuários com a role Motorista |
@@ -361,6 +377,7 @@ Cruzamentos que não são óbvios, conferidos no código:
 | Criar/editar/concluir manutenções e tipos | ✅ | ✅ | — | — |
 | Excluir qualquer registro | ✅ | — | — | — |
 | Usuários e convites | ✅ | — | — | — |
+| Ver a trilha de auditoria | ✅ | — | — | — |
 
 Na prática: sem permissão de edição, o botão "Novo…" e o ícone de lápis somem; sem permissão de exclusão, some a lixeira; sem nenhuma das duas, a coluna "Ações" inteira desaparece.
 
@@ -383,6 +400,7 @@ Componentes reutilizados pelas telas:
 | `AppLayout`, `PageHeader`, `ErrorList` | `components/AppLayout.tsx` | Casca das telas internas, cabeçalho e lista de erros |
 | `AuthScreen`, `AuthHeading` | `components/AuthScreen.tsx` | Casca das telas de autenticação |
 | `InlineForm`, `TableStates` | `components/Table.tsx` | Formulário acima da tabela e as linhas de carregando/erro/vazio |
+| `Paginacao` | `components/Table.tsx` | Rodapé "X–Y de Z" + anterior/próxima. Só `/auditoria` usa (é a única lista que a API pagina) e some quando cabe tudo numa página |
 | `RowActions`, `ConfirmDialog` | `components/Table.tsx` | Ícones de editar/excluir na linha e confirmação de ação consequente (exclusão ou troca de permissão — `variante="padrao"` tira o vermelho quando não é destrutiva) |
 | `FormDialog` | `components/Table.tsx` | Diálogo com campos (concluir uma manutenção, encerrar uma rota) |
 | `LogoMark`, `Wordmark` | `components/Logo.tsx` | Marca (versões clara e escura) |
@@ -394,7 +412,7 @@ Componentes reutilizados pelas telas:
 
 ## 9. O que ainda não existe
 
-- **Paginação e ordenação** nas listas — tudo vem de uma vez (a API também não pagina).
+- **Paginação e ordenação** nas demais listas — tudo vem de uma vez. A exceção é `/auditoria`, o único endpoint paginado da API (§5.10); `ResultadoPaginado<T>` e o componente `Paginacao` já nascem genéricos para as próximas listas que precisarem.
 - **Toasts globais**: erros e sucessos são exibidos no local da ação, não há notificação central.
 - **Tratamento específico de 429**: a mensagem do rate limit chega como erro comum.
 - **Testes**: não há suíte no front.

@@ -22,6 +22,8 @@ const gestao = (role?: Role) => role !== undefined && role !== 'Motorista'
 export const pode = {
   gerenciarUsuarios: (role?: Role) => role === 'Admin',
   gerenciarConvites: (role?: Role) => role === 'Admin',
+  /** Trilha de auditoria (`/auditoria`): só o Admin enxerga o que a equipe alterou. */
+  verAuditoria: (role?: Role) => role === 'Admin',
   editarCadastros: (role?: Role) => role === 'Admin' || role === 'Supervisor',
   excluir: (role?: Role) => role === 'Admin',
 

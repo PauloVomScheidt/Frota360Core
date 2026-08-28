@@ -1,11 +1,15 @@
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.Interfaces;
+using Frota360.Domain.Common;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo
 {
-    public sealed class DeleteVeiculoHandler(IVeiculoRepository repository, ICurrentUserService currentUser, ILogger<DeleteVeiculoHandler> logger)
+    public sealed class DeleteVeiculoHandler(IVeiculoRepository repository,
+                                             ICurrentUserService currentUser,
+                                             IAuditoriaService auditoria,
+                                             ILogger<DeleteVeiculoHandler> logger)
         : ICommandHandler<DeleteVeiculoCommand, bool>
     {
         public async Task<bool> HandleAsync(DeleteVeiculoCommand command, CancellationToken cancellationToken = default)
@@ -25,6 +29,11 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo
                 await repository.DeleteAsync(veiculo);
 
                 logger.LogInformation("Veículo removido com sucesso. Id {Id}", command.Id);
+
+                // A descrição carrega placa e modelo porque o registro deixou de existir:
+                // depois disso o id sozinho não identifica mais nada.
+                await auditoria.RegistrarAsync(EntidadesAuditadas.Veiculo, AcoesAuditoria.Excluiu, command.Id,
+                    $"Excluiu o veículo {veiculo.Placa} ({veiculo.MarcaVeiculo} {veiculo.NomeVeiculo})");
 
                 return true;
             }

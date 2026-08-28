@@ -12,6 +12,7 @@ namespace Frota360.Infrastructure.Data
         public DbSet<Rota> Rotas { get; set; }
         public DbSet<TipoManutencao> TiposManutencao { get; set; }
         public DbSet<Manutencao> Manutencoes { get; set; }
+        public DbSet<LogAuditoria> LogsAuditoria { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -167,6 +168,39 @@ namespace Frota360.Infrastructure.Data
                 entity.HasOne<Empresa>()
                       .WithMany()
                       .HasForeignKey(m => m.EmpresaId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<LogAuditoria>(entity =>
+            {
+                entity.ToTable("LogAuditoria");
+                entity.HasKey(l => l.Id);
+
+                entity.Property(l => l.UsuarioNome).HasMaxLength(100).IsRequired();
+                entity.Property(l => l.UsuarioEmail).HasMaxLength(150).IsRequired();
+                entity.Property(l => l.UsuarioRole).HasMaxLength(20).IsRequired();
+                entity.Property(l => l.Entidade).HasMaxLength(40).IsRequired();
+                entity.Property(l => l.Acao).HasMaxLength(30).IsRequired();
+                entity.Property(l => l.Descricao).HasMaxLength(300).IsRequired();
+                entity.Property(l => l.IpOrigem).HasMaxLength(45); // comporta IPv6
+                entity.Property(l => l.DataHora).HasDefaultValueSql("GETDATE()");
+
+                // Um índice por consulta real da tela: a listagem, o histórico de um
+                // registro e o histórico de uma pessoa.
+                entity.HasIndex(l => new { l.EmpresaId, l.DataHora });
+                entity.HasIndex(l => new { l.EmpresaId, l.Entidade, l.EntidadeId });
+                entity.HasIndex(l => new { l.EmpresaId, l.UsuarioId, l.DataHora });
+
+                // Restrict nos dois: a trilha é histórico e não pode ser apagada em cascata
+                // por uma operação sobre a empresa ou o usuário.
+                entity.HasOne<Empresa>()
+                      .WithMany()
+                      .HasForeignKey(l => l.EmpresaId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne<Usuario>()
+                      .WithMany()
+                      .HasForeignKey(l => l.UsuarioId)
                       .OnDelete(DeleteBehavior.Restrict);
             });
         }

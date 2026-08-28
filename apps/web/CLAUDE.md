@@ -44,7 +44,11 @@ Exige a API do Frota360 rodando localmente; ela vive neste mesmo repo: `dotnet r
 
 ### Busca de dados
 
-TanStack Query 5. As cache keys são arrays simples por recurso (`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['manutencoes', filtro]`, `['tiposManutencao']`, `['tiposManutencao', 'ativos']`, `['usuarios']`, `['convites']`), invalidadas após cada mutation na página dona do recurso. `['rotas']` e `['rotas','minhas']` vêm de **endpoints diferentes** e não são pai e filho: invalide a chave exata.
+TanStack Query 5. As cache keys são arrays simples por recurso (`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['manutencoes', filtro]`, `['auditoria', filtro]`, `['tiposManutencao']`, `['tiposManutencao', 'ativos']`, `['usuarios']`, `['convites']`), invalidadas após cada mutation na página dona do recurso. `['rotas']` e `['rotas','minhas']` vêm de **endpoints diferentes** e não são pai e filho: invalide a chave exata.
+
+**`['auditoria']` é a única que ninguém invalida, de propósito**: quase toda mutation do app gera uma linha de trilha, e chamar `invalidateQueries(['auditoria'])` de dentro de cada tela faria cada mutation conhecer uma tela que ela não afeta. O `staleTime` de 30 s e o botão "Atualizar" da própria tela resolvem.
+
+**Listas paginadas.** Só `GET /auditoria` pagina hoje: o `dados` do envelope vem como `ResultadoPaginado<T>` (`itens`/`pagina`/`tamanhoPagina`/`total`/`totalPaginas`), não como array. O rodapé é o componente compartilhado `Paginacao` de `components/Table.tsx`. Ao filtrar uma lista paginada, **volte para a página 1** — senão a tela abre vazia.
 
 Atenção à **cross-invalidation**, quando a mutation de um recurso afeta o que outra lista exibe: excluir um veículo também invalida `['rotas']`, porque aquela tabela desnormaliza nome/placa; concluir uma manutenção também invalida `['veiculos']`, porque pode avançar o odômetro do veículo. A cadeia mais longa é **rota → veículo → manutenção**: tanto abrir uma rota (quando `kmInicial` supera o odômetro atual) quanto encerrá-la (`POST /rota/{id}/encerrar`) avançam o odômetro do veículo, que é de onde `atrasada`/`kmRestantes` derivam — então essas mutations invalidam `['rotas']`, `['veiculos']` **e** `['manutencoes']`. Ao adicionar uma mutation, consulte o mapa atual em `docs/contexto-web.md` §6.4 antes de assumir que um único `invalidateQueries` basta.
 
@@ -52,12 +56,13 @@ Atenção à **cross-invalidation**, quando a mutation de um recurso afeta o que
 
 As páginas autenticadas são filhas de `RequireAuth` e envolvidas por `AppLayout` ([src/components/AppLayout.tsx](src/components/AppLayout.tsx)), que fornece a sidebar retrátil (estado no `localStorage`), o header e os blocos `PageHeader`/`ErrorList`. Páginas públicas/de autenticação usam `AuthScreen`/`AuthHeading` ([src/components/AuthScreen.tsx](src/components/AuthScreen.tsx)).
 
-As páginas de CRUD (`VeiculosPage`, `RotasPage`, `ManutencoesPage`, `TiposManutencaoPage`) seguem o mesmo formato e reaproveitam `src/components/Table.tsx` (`MotoristasPage` é somente leitura — usa só o `TableStates`):
+As páginas de CRUD (`VeiculosPage`, `RotasPage`, `ManutencoesPage`, `TiposManutencaoPage`) seguem o mesmo formato e reaproveitam `src/components/Table.tsx` (`MotoristasPage` e `AuditoriaPage` são somente leitura — usam só `TableStates`, e a segunda mais o `Paginacao`):
 
 - `InlineForm` — formulário de criação/edição renderizado acima da tabela (não é modal); a edição reusa o mesmo formulário pré-preenchido, com a página rolando para o topo.
 - `TableStates` — renderização compartilhada das linhas de carregando/erro/vazio.
 - `RowActions` / `ConfirmDialog` — ícones de editar/excluir por linha e confirmação de ação consequente. Os defaults do `ConfirmDialog` são os da exclusão; `textoConfirmar`/`textoPendente`/`variante` cobrem os outros casos (a troca de permissão em `/usuarios` usa `variante="padrao"`, porque derrubar a sessão de alguém não é destrutivo como apagar um registro).
 - `FormDialog` — formulário em modal (usado em "concluir manutenção" e "encerrar rota" — as transições de estado que carregam efeito colateral no odômetro do veículo, deliberadamente mantidas fora do formulário de edição comum).
+- `Paginacao` — rodapé "X–Y de Z" com anterior/próxima; some sozinho quando há uma página só.
 
 A visibilidade dos botões de novo/editar/excluir é controlada por `pode.*` de `auth/permissions.ts`, não escondendo a página inteira. É assim que `/veiculos` e `/manutencoes` ficam read-only para o motorista sem código condicional novo.
 
@@ -76,9 +81,9 @@ Não renderiza dado de API: todos os números exibidos são mocks ilustrativos. 
 
 ### Roteamento
 
-`BrowserRouter` único em [src/App.tsx](src/App.tsx); rotas desconhecidas redirecionam para `/`. Rota autenticada nova entra dentro do wrapper `RequireAuth`, adicionalmente aninhada em `RequireGestao`/`RequireGestor`/`RequireAdmin`/`RequireMotorista` conforme o papel, e precisa ser adicionada também à sidebar em `AppLayout.tsx` e à matriz de permissões em `auth/permissions.ts` caso não seja visível a todos.
+`BrowserRouter` único em [src/App.tsx](src/App.tsx); rotas desconhecidas redirecionam para `/`. Rota autenticada nova entra dentro do wrapper `RequireAuth`, aninhada num `<RequirePode permitido={pode.X} />` com o predicado da própria tela, e precisa ser adicionada também à sidebar em `AppLayout.tsx` e à matriz em `auth/permissions.ts`.
 
-Na prática toda tela de gestão da frota vai dentro de `RequireGestao` — a role `Motorista` não deve alcançar nenhuma delas.
+**Não há guarda por bloco de papéis** (os antigos `RequireGestao`/`RequireGestor`/`RequireAdmin`/`RequireMotorista` não existem mais): desde que o motorista passou a enxergar parte do painel, quem manda é a tela, não o papel. Por isso as entradas `pode.ver*` são **por tela** — um booleano único de "é gestão" seria mentira.
 
 ### Configuração de ambiente
 

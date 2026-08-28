@@ -10,7 +10,7 @@ Panorama visual em [`docs/arquitetura.png`](docs/arquitetura.png) — as quatro 
 
 | Projeto | Papel |
 |---|---|
-| `Frota360.Domain` (`apps/api/src/Domain`) | Entidades, enums, `ApiResponse<T>`, `Roles`, interfaces de repositório/serviço. Zero pacotes. |
+| `Frota360.Domain` (`apps/api/src/Domain`) | Entidades, enums, `ApiResponse<T>`, `ResultadoPaginado<T>`, `Roles`, `AcoesAuditoria`/`EntidadesAuditadas`, interfaces de repositório/serviço. Zero pacotes. |
 | `Frota360.Application` (`apps/api/src/Application`) | CQRS manual (`UseCases/`), `Services/` (auth/convite/usuário/backoffice), DTOs, validators FluentValidation |
 | `Frota360.Infrastructure` (`apps/api/src/Infrastructure`) | EF Core + SQL Server, repositórios, JWT, e-mail (Resend), migrations |
 | `Frota360.Api` (`apps/api/src/Api`) | Controllers, `ExceptionMiddleware`, `CurrentUserService`, Program |
@@ -34,6 +34,8 @@ O `Dispatcher` (`apps/api/src/Application/Abstractions/Messaging/Dispatcher.cs`)
 Toda entidade tem `EmpresaId`. O valor vem **só** do claim `empresaId` do JWT via `CurrentUserService` — nunca do corpo/rota/query. Não há query filter global no EF: cada método de repositório recebe e filtra por `empresaId`. Índices únicos são compostos (`(EmpresaId, Nome)`, `(EmpresaId, CPF)` filtrado em `Usuario`); exceção é `Usuario.Email`, único global.
 
 O padrão correto de FK está em `CreateManutencaoHandler.cs:30-33`: resolve `VeiculoId`/`TipoManutencaoId` via `GetByIdAsync(id, empresaId)` antes de gravar, então id de outra empresa simplesmente "não existe".
+
+`LogAuditoria` entrou como mais um ponto de isolamento: o `EmpresaId` é gravado do claim por `AuditoriaService` e `ILogAuditoriaRepository.ConsultarAsync(empresaId, filtro)` não tem sobrecarga sem ele — o `empresaId` é parâmetro separado, fora do record de filtro, justamente para que nenhum caminho consiga montar uma consulta sem escopo.
 
 ### Segundo eixo: o próprio usuário (role Motorista)
 
@@ -126,6 +128,55 @@ Editar (`PUT`) e excluir continuam fora do alcance dele: correção de rota é d
 
 Além do odômetro, o encerramento grava `Veiculo.UltimoMotorista` e `Veiculo.DataUltimaViagem` — que antes **só eram preenchidos à mão** pelo CRUD de veículo, apesar de a documentação afirmar o contrário. Os três campos seguem a mesma política de "só avança": encerrar hoje uma rota de mês passado não reescreve a ficha com dado velho (`AtualizarVeiculoAsync` compara `DataUltimaViagem` antes de gravar). O odômetro é independente da data — ele avança sempre que o km final for maior.
 
+### 9. Auditoria — quem alterou o quê
+
+Tabela `LogAuditoria`, **append-only**: só insert e select. Não existe endpoint de update nem de delete, nem para o Admin, e o repositório também não os expõe.
+
+**Escopo.** Administração (usuário, convite) **e** domínio (veículo, rota, manutenção, tipo de manutenção). **Login/logout ficam de fora** de propósito: seria o maior volume da tabela e o menor valor — continuam só no Serilog.
+
+**Como é capturado.** Explicitamente, no handler/serviço, via `IAuditoriaService.RegistrarAsync` chamado ao final do caminho feliz — 15 pontos, listados abaixo. Não é um interceptor do EF: o objetivo é registrar a **intenção de negócio** ("Encerrou a rota"), que um `UPDATE Rota` não expressa, e evitar o ruído de `RefreshTokenHash` mudando a cada login.
+
+**Modelo.** `Entidade` + `Acao` (`EntidadesAuditadas` / `AcoesAuditoria`, em `Domain/Common`) são dois eixos de filtro com poucos valores distintos, no lugar de uma constante por evento. `Descricao` é uma frase pronta em português, montada no servidor. `Alteracoes` é o diff em JSON (`[{campo, de, para}]`), nulo em criação e exclusão.
+
+Nome, e-mail e papel de quem agiu ficam **desnormalizados** na linha — o log é histórico e não pode mudar de sentido quando a pessoa é renomeada ou rebaixada. Saem das claims `name`/`email` do JWT, que já existiam: nenhuma ida a mais ao banco por operação auditada.
+
+**Duas garantias de desenho:**
+
+1. **Auditoria não derruba negócio.** `AuditoriaService` roda depois de o repositório já ter feito `SaveChangesAsync`, portanto fora daquela transação, e engole a exceção em log de erro. Perder uma linha de trilha é ruim; devolver 500 numa edição que já foi persistida é pior.
+2. **Nada de segredo no diff.** Ele é montado à mão, campo a campo, por `AlteracoesBuilder` — chamado **antes** de a entidade ser mutada, já que os handlers a alteram in-place. Hash de senha, refresh token, token de reset e de convite nunca entram.
+
+**Os 15 pontos de registro:**
+
+| Origem | Entidade · Ação | Diff |
+|---|---|---|
+| `Create/Update/DeleteVeiculoHandler` | Veiculo · Criou/Atualizou/Excluiu | ✅ no update |
+| `CreateRotaHandler` | Rota · Criou | ✅ quando a abertura avança o odômetro |
+| `UpdateRotaHandler` | Rota · Atualizou | ✅ (motorista e veículo pelo nome, não pelo id) |
+| `EncerrarRotaHandler` | Rota · Encerrou | ✅ km final + avanço do odômetro |
+| `DeleteRotaHandler` | Rota · Excluiu | — |
+| `Create/Update/DeleteManutencaoHandler` | Manutencao · Criou/Atualizou/Excluiu | ✅ no update |
+| `ConcluirManutencaoHandler` | Manutencao · Concluiu | ✅ status, km, custo, odômetro |
+| `Create/Update/DeleteTipoManutencaoHandler` | TipoManutencao · Criou/Atualizou/Excluiu | ✅ no update |
+| `UsuarioService.AlterarRoleAsync` | Usuario · AlterouPermissao | ✅ papel anterior → novo |
+| `UsuarioService.DefinirAtivoAsync` | Usuario · Ativou/Desativou | — |
+| `ConviteService.CriarParaEmpresaAsync` / `CancelarAsync` | Convite · Criou/Cancelou | — |
+| `ConviteService.AceitarAsync` | Convite · Aceitou | — |
+
+Dois casos fogem do padrão:
+
+- **Provisionamento pelo backoffice** chega em `CriarParaEmpresaAsync` com `criadoPorUsuarioId: null` — sem sessão, sem ator. Ali **não registra**; fica no Serilog. Vindo de `CriarAsync` (Admin logado), registra normal.
+- **Aceite de convite** é anônimo e o usuário nasce na própria operação. Usa `RegistrarComoAsync(empresaId, ator, ...)`, que recebe o ator à mão — é o único evento em que o ator é também o objeto.
+
+**Consulta.** `GET /auditoria` (Admin), via query CQRS `GetLogsAuditoriaQuery`, filtrando por entidade, ação, usuário e período. Três índices, um por consulta real: `(EmpresaId, DataHora)` para a listagem, `(EmpresaId, Entidade, EntidadeId)` para o histórico de um registro e `(EmpresaId, UsuarioId, DataHora)` para o de uma pessoa.
+
+Retenção é **infinita** por ora — o `Id` é `long` e os índices suportam o crescimento; uma rotina de purga cabe depois sem mexer no schema.
+
+### Paginação — `ResultadoPaginado<T>`
+
+`/auditoria` é o **primeiro e único endpoint paginado** do sistema; as demais listas ainda vêm inteiras. `ResultadoPaginado<T>` (`Domain/Common`) traz `Itens`, `Pagina`, `TamanhoPagina`, `Total` e `TotalPaginas`, e vai **dentro** de `ApiResponse<T>.Dados` — o envelope não muda: `ApiResponse<ResultadoPaginado<LogAuditoriaResponse>>`.
+
+`ConsultarAuditoriaValidator` impõe teto de **100** por página. Sem ele, um `tamanhoPagina=999999` materializaria a trilha inteira da empresa em memória. Reutilize esse tipo ao paginar qualquer outra lista.
+
 ## Endpoints
 
 Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou `?version=`).
@@ -138,6 +189,7 @@ Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou 
 | GET/POST/DELETE | `/convite`, `/convite/{id}` | Admin |
 | POST | `/convite/aceitar` | anônimo |
 | GET | `/usuario` · PUT `/usuario/{id}/role` · `/{id}/ativo` | Admin |
+| GET | `/auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` — **único endpoint paginado**; somente leitura | Admin |
 | GET | `/veiculo` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**) |
 | GET | `/manutencao?veiculoId=&status=` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**, sem `custo`) |
 | GET | `/motorista` (+ `/{id}`) — **somente leitura**: os usuários com a role Motorista | Admin, Supervisor, Operador |

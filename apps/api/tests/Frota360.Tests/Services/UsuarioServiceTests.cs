@@ -1,5 +1,7 @@
-﻿using Frota360.Application.Interfaces;
+﻿using Frota360.Application.Common;
+using Frota360.Application.Interfaces;
 using Frota360.Application.Services;
+using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -11,6 +13,7 @@ namespace Frota360.Tests.Services
     {
         private readonly IUsuarioRepository _repository = Substitute.For<IUsuarioRepository>();
         private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
+        private readonly IAuditoriaService _auditoria = Substitute.For<IAuditoriaService>();
 
         public UsuarioServiceTests()
         {
@@ -18,7 +21,7 @@ namespace Frota360.Tests.Services
         }
 
         private UsuarioService CriarServico() =>
-            new(_repository, _currentUser, NullLogger<UsuarioService>.Instance);
+            new(_repository, _currentUser, _auditoria, NullLogger<UsuarioService>.Instance);
 
         private static Usuario NovoAdmin(int id = 1) => new()
         {
@@ -110,6 +113,64 @@ namespace Frota360.Tests.Services
             Assert.False(resposta!.Ativo);
             await _repository.Received(1).UpdateAsync(Arg.Is<Usuario>(u =>
                 !u.Ativo && u.RefreshTokenHash == null && u.RefreshTokenExpiraEm == null));
+        }
+
+        /// <summary>
+        /// Mudança de permissão é o evento mais consequente da trilha — o que amplia ou reduz
+        /// o alcance de alguém no sistema inteiro. O diff precisa guardar o papel anterior.
+        /// </summary>
+        [Fact]
+        public async Task AlterarRole_DeveRegistrarAuditoriaComOPapelAnterior()
+        {
+            var operador = NovoAdmin(2);
+            operador.Role = "Operador";
+            _repository.GetByIdAsync(2).Returns(operador);
+            _repository.UpdateAsync(Arg.Any<Usuario>()).Returns(ci => ci.Arg<Usuario>());
+
+            var service = CriarServico();
+
+            await service.AlterarRoleAsync(2, "Admin");
+
+            await _auditoria.Received(1).RegistrarAsync(
+                EntidadesAuditadas.Usuario,
+                AcoesAuditoria.AlterouPermissao,
+                2,
+                Arg.Any<string>(),
+                Arg.Is<IEnumerable<AlteracaoCampo>>(a =>
+                    a.Single().Campo == "Permissão" && a.Single().De == "Operador" && a.Single().Para == "Admin"));
+        }
+
+        [Fact]
+        public async Task DefinirAtivo_Desativar_DeveRegistrarAuditoriaComAAcaoDesativou()
+        {
+            var operador = NovoAdmin(2);
+            operador.Role = "Operador";
+            _repository.GetByIdAsync(2).Returns(operador);
+            _repository.UpdateAsync(Arg.Any<Usuario>()).Returns(ci => ci.Arg<Usuario>());
+
+            var service = CriarServico();
+
+            await service.DefinirAtivoAsync(2, false);
+
+            await _auditoria.Received(1).RegistrarAsync(
+                EntidadesAuditadas.Usuario, AcoesAuditoria.Desativou, 2,
+                Arg.Any<string>(), Arg.Any<IEnumerable<AlteracaoCampo>>());
+        }
+
+        [Fact]
+        public async Task AlterarRole_ParaAMesmaRole_NaoDeveRegistrarAuditoria()
+        {
+            var operador = NovoAdmin(2);
+            operador.Role = "Operador";
+            _repository.GetByIdAsync(2).Returns(operador);
+
+            var service = CriarServico();
+
+            await service.AlterarRoleAsync(2, "Operador");
+
+            // Nada mudou de fato — não vira linha na trilha.
+            await _auditoria.DidNotReceive().RegistrarAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int?>(), Arg.Any<string>(), Arg.Any<IEnumerable<AlteracaoCampo>>());
         }
     }
 }

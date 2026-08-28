@@ -12,6 +12,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   GridIcon,
+  HistoricoIcon,
   LogoutIcon,
   ClipboardIcon,
   MailIcon,
@@ -164,9 +165,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
           : []),
       ]
 
+  // A categoria inteira já é admin-only, então nenhum item aqui precisa de guarda própria.
   const itensControle: ItemNav[] = [
     { to: '/usuarios', rotulo: 'Usuários', icone: <UsersIcon size={17} /> },
     { to: '/convites', rotulo: 'Convites', icone: <MailIcon size={17} /> },
+    { to: '/auditoria', rotulo: 'Auditoria', icone: <HistoricoIcon size={17} /> },
   ]
 
   return (

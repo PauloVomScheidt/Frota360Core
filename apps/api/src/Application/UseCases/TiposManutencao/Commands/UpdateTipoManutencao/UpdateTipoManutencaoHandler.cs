@@ -1,12 +1,17 @@
 using Frota360.Application.Abstractions.Messaging;
+using Frota360.Application.Common;
 using Frota360.Application.DTOs.TipoManutencao.Response;
 using Frota360.Application.Interfaces;
+using Frota360.Domain.Common;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.TiposManutencao.Commands.UpdateTipoManutencao
 {
-    public sealed class UpdateTipoManutencaoHandler(ITipoManutencaoRepository repository, ICurrentUserService currentUser, ILogger<UpdateTipoManutencaoHandler> logger)
+    public sealed class UpdateTipoManutencaoHandler(ITipoManutencaoRepository repository,
+                                                    ICurrentUserService currentUser,
+                                                    IAuditoriaService auditoria,
+                                                    ILogger<UpdateTipoManutencaoHandler> logger)
         : ICommandHandler<UpdateTipoManutencaoCommand, TipoManutencaoResponse?>
     {
         public async Task<TipoManutencaoResponse?> HandleAsync(UpdateTipoManutencaoCommand command, CancellationToken cancellationToken = default)
@@ -29,6 +34,12 @@ namespace Frota360.Application.UseCases.TiposManutencao.Commands.UpdateTipoManut
                 if (await repository.ExisteNomeAsync(currentUser.EmpresaId, nome, ignorarId: tipo.Id))
                     throw new InvalidOperationException($"Já existe um tipo de manutenção chamado \"{nome}\".");
 
+                var alteracoes = new AlteracoesBuilder()
+                    .Comparar("Nome", tipo.Nome, nome)
+                    .Comparar("Intervalo (km)", tipo.IntervaloKm, request.IntervaloKm)
+                    .Comparar("Ativo", tipo.Ativo, request.Ativo)
+                    .Construir();
+
                 tipo.Nome = nome;
                 tipo.IntervaloKm = request.IntervaloKm;
                 tipo.Ativo = request.Ativo;
@@ -36,6 +47,9 @@ namespace Frota360.Application.UseCases.TiposManutencao.Commands.UpdateTipoManut
                 var atualizado = await repository.UpdateAsync(tipo);
 
                 logger.LogInformation("Tipo de manutenção atualizado com sucesso. Id {Id}", atualizado.Id);
+
+                await auditoria.RegistrarAsync(EntidadesAuditadas.TipoManutencao, AcoesAuditoria.Atualizou, atualizado.Id,
+                    $"Editou o tipo de manutenção \"{atualizado.Nome}\"", alteracoes);
 
                 return atualizado.ToResponse();
             }

@@ -3,6 +3,7 @@ using Frota360.Application.Common;
 using Frota360.Application.DTOs.Rota.Response;
 using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Rotas;
+using Frota360.Domain.Common;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
 
@@ -16,6 +17,7 @@ namespace Frota360.Application.UseCases.Rotas.Commands.EncerrarRota
     public sealed class EncerrarRotaHandler(IRotaRepository repository,
                                             IVeiculoRepository veiculoRepository,
                                             ICurrentUserService currentUser,
+                                            IAuditoriaService auditoria,
                                             ILogger<EncerrarRotaHandler> logger)
         : ICommandHandler<EncerrarRotaCommand, RotaResponse?>
     {
@@ -62,10 +64,19 @@ namespace Frota360.Application.UseCases.Rotas.Commands.EncerrarRota
 
                 var encerrada = await repository.UpdateAsync(rota);
 
-                await AtualizarVeiculoAsync(encerrada, request.KmFinal, dataFim);
+                var (placa, odometroAnterior) = await AtualizarVeiculoAsync(encerrada, request.KmFinal, dataFim);
 
                 logger.LogInformation("Rota encerrada com sucesso. Id {Id} | Percorrido {Km} km",
                     encerrada.Id, encerrada.KmPercorrido);
+
+                var alteracoes = new AlteracoesBuilder()
+                    .Comparar("Quilometragem final", null, encerrada.KmFinal)
+                    .Comparar($"Odômetro do veículo {placa}", odometroAnterior, odometroAnterior is null ? null : request.KmFinal)
+                    .Construir();
+
+                await auditoria.RegistrarAsync(EntidadesAuditadas.Rota, AcoesAuditoria.Encerrou, encerrada.Id,
+                    $"Encerrou a rota #{encerrada.Id} ({encerrada.Origem} → {encerrada.Destino}) com {encerrada.KmPercorrido} km rodados",
+                    alteracoes);
 
                 return encerrada.ToResponse();
             }
@@ -81,19 +92,26 @@ namespace Frota360.Application.UseCases.Rotas.Commands.EncerrarRota
         /// quando voltou e qual o odômetro. Os três só avançam, nunca retrocedem — uma
         /// rota encerrada com atraso não pode apagar um registro mais recente.
         /// </summary>
-        private async Task AtualizarVeiculoAsync(Domain.Entities.Rota rota, int kmFinal, DateTime dataFim)
+        /// <returns>
+        /// A placa (para a descrição da auditoria) e o odômetro anterior quando ele avançou —
+        /// nulo quando o número do encerramento não superou o que já estava lá.
+        /// </returns>
+        private async Task<(string Placa, int? OdometroAnterior)> AtualizarVeiculoAsync(
+            Domain.Entities.Rota rota, int kmFinal, DateTime dataFim)
         {
             var veiculo = await veiculoRepository.GetByIdAsync(rota.CodigoVeiculo, currentUser.EmpresaId);
 
             if (veiculo is null)
-                return;
+                return ($"#{rota.CodigoVeiculo}", null);
 
             var mudou = false;
+            int? odometroAnterior = null;
 
             if (kmFinal > veiculo.Quilometragem)
             {
                 logger.LogInformation("Quilometragem do veículo {VeiculoId} atualizada de {Anterior} para {Atual} pelo encerramento da rota",
                     veiculo.Id, veiculo.Quilometragem, kmFinal);
+                odometroAnterior = veiculo.Quilometragem;
                 veiculo.Quilometragem = kmFinal;
                 mudou = true;
             }
@@ -109,6 +127,8 @@ namespace Frota360.Application.UseCases.Rotas.Commands.EncerrarRota
 
             if (mudou)
                 await veiculoRepository.UpdateAsync(veiculo);
+
+            return (veiculo.Placa, odometroAnterior);
         }
     }
 }
