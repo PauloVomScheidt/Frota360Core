@@ -130,11 +130,19 @@ export function RowActions({
   )
 }
 
-/** Confirmação de exclusão. Exclusão é irreversível — nunca dispara direto do botão da linha. */
+/**
+ * Confirmação de ação consequente — exclusão (irreversível) ou mudança de permissão
+ * (derruba a sessão de outra pessoa). Nunca dispara direto do controle da linha.
+ *
+ * Os defaults são os da exclusão, que é o uso majoritário; `variante` existe porque
+ * vermelho em "promover a Supervisor" alarmaria sem motivo.
+ */
 export function ConfirmDialog({
   titulo,
   mensagem,
   textoConfirmar = 'Excluir',
+  textoPendente = 'Excluindo…',
+  variante = 'perigo',
   pending,
   erros,
   onConfirmar,
@@ -143,6 +151,8 @@ export function ConfirmDialog({
   titulo: string
   mensagem: string
   textoConfirmar?: string
+  textoPendente?: string
+  variante?: 'perigo' | 'padrao'
   pending: boolean
   erros: string[]
   onConfirmar: () => void
@@ -178,12 +188,12 @@ export function ConfirmDialog({
           </button>
           <button
             type="button"
-            className="btn btn-danger"
+            className={variante === 'perigo' ? 'btn btn-danger' : 'btn btn-primary'}
             style={{ borderRadius: 0, padding: '10px 18px' }}
             onClick={onConfirmar}
             disabled={pending}
           >
-            {pending ? 'Excluindo…' : textoConfirmar}
+            {pending ? textoPendente : textoConfirmar}
           </button>
         </div>
       </div>
@@ -255,6 +265,68 @@ export function FormDialog({
           </button>
         </div>
       </form>
+    </div>
+  )
+}
+
+/**
+ * Rodapé de listagem paginada. Hoje só `/auditoria` usa — é a única lista que a API
+ * pagina —, mas o componente nasce genérico para as próximas.
+ *
+ * Some por completo quando cabe tudo numa página só: um rodapé de paginação em cima
+ * de sete linhas é ruído.
+ */
+export function Paginacao({
+  pagina,
+  totalPaginas,
+  total,
+  tamanhoPagina,
+  onMudar,
+  pending,
+}: {
+  pagina: number
+  totalPaginas: number
+  total: number
+  tamanhoPagina: number
+  onMudar: (pagina: number) => void
+  pending?: boolean
+}) {
+  if (totalPaginas <= 1) return null
+
+  const primeiro = (pagina - 1) * tamanhoPagina + 1
+  const ultimo = Math.min(pagina * tamanhoPagina, total)
+
+  return (
+    <div
+      className="mt-4 flex items-center justify-between gap-4 py-3"
+      style={{ borderTop: '1px solid var(--color-divider)' }}
+    >
+      <span className="text-[13px]" style={{ color: mutedText }}>
+        {primeiro}–{ultimo} de {total}
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ borderRadius: 0, padding: '6px 14px' }}
+          onClick={() => onMudar(pagina - 1)}
+          disabled={pagina <= 1 || pending}
+        >
+          Anterior
+        </button>
+        <span className="text-[13px]" style={{ color: mutedText }}>
+          {pagina} / {totalPaginas}
+        </span>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ borderRadius: 0, padding: '6px 14px' }}
+          onClick={() => onMudar(pagina + 1)}
+          disabled={pagina >= totalPaginas || pending}
+        >
+          Próxima
+        </button>
+      </div>
     </div>
   )
 }

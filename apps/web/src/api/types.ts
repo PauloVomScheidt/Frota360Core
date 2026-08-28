@@ -10,9 +10,26 @@ export interface ApiResponse<T> {
   erros: string[] | null
 }
 
+/**
+ * Página de uma listagem, dentro de `dados` do envelope — o envelope em si não muda.
+ * Hoje só `/auditoria` pagina; as demais listas ainda vêm inteiras.
+ */
+export interface ResultadoPaginado<T> {
+  itens: T[]
+  pagina: number
+  tamanhoPagina: number
+  /** Total que satisfaz o filtro, ignorando a paginação. */
+  total: number
+  totalPaginas: number
+}
+
 // ---------- Auth ----------
 
-export type Role = 'Admin' | 'Supervisor' | 'Operador'
+/**
+ * `Motorista` funciona como as demais — convite, promoção e rebaixamento iguais.
+ * O que muda é a visibilidade: ele enxerga só `/minhas-rotas`.
+ */
+export type Role = 'Admin' | 'Supervisor' | 'Operador' | 'Motorista'
 
 export interface LoginRequest {
   email: string
@@ -47,6 +64,9 @@ export interface AceitarConviteRequest {
   token: string
   nome: string
   senha: string
+  /** Opcionais. O CPF vai só com os 11 dígitos — a máscara é da interface. */
+  cpf?: string
+  dataNascimento?: string
 }
 
 export interface ConviteResponse {
@@ -67,6 +87,9 @@ export interface UsuarioResponse {
   nome: string
   email: string
   role: Role
+  /** Opcionais: informados pela própria pessoa no aceite do convite. */
+  cpf?: string | null
+  dataNascimento?: string | null
   ativo: boolean
   dataInclusao: string
 }
@@ -75,21 +98,37 @@ export interface AlterarRoleRequest {
   role: Role
 }
 
+/**
+ * Edição do próprio cadastro (`PUT /usuario/perfil`) — o direito de correção da LGPD.
+ * Não carrega id: o alvo sai do token. E-mail e papel não são editáveis por aqui.
+ */
+export interface AtualizarPerfilRequest {
+  nome: string
+  /** Opcionais. O CPF vai só com os 11 dígitos; em branco, omita para gravar nulo. */
+  cpf?: string
+  dataNascimento?: string
+}
+
 export interface AlterarAtivoRequest {
   ativo: boolean
 }
 
 // ---------- Motorista ----------
 
-export interface MotoristaRequest {
+/**
+ * Um motorista é um usuário com a role `Motorista` — não existe entidade própria.
+ * O `id` é o do usuário, e é ele que a rota grava em `codigoMotorista`.
+ *
+ * Somente leitura: conceder e remover o acesso acontece em `/convites` e `/usuarios`.
+ */
+export interface MotoristaResponse {
+  id: number
   nome: string
   email: string
-  cpf: string
-  dataNascimento: string
-}
-
-export interface MotoristaResponse extends MotoristaRequest {
-  id: number
+  /** Opcionais: só existem se a pessoa os informou ao aceitar o convite. */
+  cpf?: string | null
+  dataNascimento?: string | null
+  ativo: boolean
   dataInclusao: string
 }
 
@@ -125,6 +164,12 @@ export interface RotaRequest {
 }
 
 /**
+ * `nomeMotorista` vem desnormalizado da API, como `veiculoNome` na manutenção — é o
+ * que mantém a rota identificável depois que a pessoa muda de perfil e some da lista
+ * de motoristas. Nulo só se o usuário tiver sido removido do banco à força.
+ */
+
+/**
  * O POST exige o hodômetro de abertura; o PUT não toca nele (a rota preserva o que
  * gravou na criação). Não pode ser menor que a quilometragem atual do veículo — e
  * quando é maior, a API avança o odômetro já na abertura.
@@ -132,6 +177,13 @@ export interface RotaRequest {
 export interface CriarRotaRequest extends RotaRequest {
   kmInicial: number
 }
+
+/**
+ * O mesmo POST, visto pela tela do motorista: sem `codigoMotorista`, porque a API
+ * grava o id do próprio usuário logado e ignora o do corpo. Omitir deixa explícito
+ * que a escolha não é do cliente — e o validador da API dispensa o campo nessa role.
+ */
+export type AbrirMinhaRotaRequest = Omit<CriarRotaRequest, 'codigoMotorista'>
 
 /** `dataFim` opcional — a API assume "agora" quando omitida. */
 export interface EncerrarRotaRequest {
@@ -141,6 +193,7 @@ export interface EncerrarRotaRequest {
 
 export interface RotaResponse extends RotaRequest {
   id: number
+  nomeMotorista?: string | null
   ativo: boolean
   dataFim?: string | null
   kmInicial: number
@@ -224,6 +277,71 @@ export interface ManutencaoResponse {
   atrasada: boolean
   quilometragemRealizada?: number | null
   dataRealizacao?: string | null
+  /** Sempre `null` para a role `Motorista` — a API omite o financeiro para ele. */
   custo?: number | null
   dataInclusao: string
+}
+
+// ---------- Auditoria (Admin) ----------
+
+/** Vocabulário fechado no servidor: um valor fora daqui volta 400 do validator. */
+export type EntidadeAuditada =
+  | 'Veiculo'
+  | 'Rota'
+  | 'Manutencao'
+  | 'TipoManutencao'
+  | 'Usuario'
+  | 'Convite'
+
+export type AcaoAuditoria =
+  | 'Criou'
+  | 'Atualizou'
+  | 'Excluiu'
+  | 'Encerrou'
+  | 'Concluiu'
+  | 'AlterouPermissao'
+  | 'Ativou'
+  | 'Desativou'
+  | 'Cancelou'
+  | 'Aceitou'
+
+/** Um campo que mudou. Valores já vêm como texto — o log é histórico legível. */
+export interface AlteracaoCampo {
+  campo: string
+  de?: string | null
+  para?: string | null
+}
+
+/**
+ * Uma linha da trilha. Nome, e-mail e papel de quem agiu são **desnormalizados**:
+ * refletem o que era verdade no momento da ação, não o estado atual do usuário —
+ * não cruzar com `['usuarios']` para "corrigir".
+ */
+export interface LogAuditoriaResponse {
+  id: number
+  usuarioId: number
+  usuarioNome: string
+  usuarioEmail: string
+  usuarioRole: Role
+  entidade: EntidadeAuditada
+  acao: AcaoAuditoria
+  entidadeId?: number | null
+  /** Frase pronta em pt-BR, vinda do servidor — não montar no cliente. */
+  descricao: string
+  /** Vazio em criação e exclusão, onde não há "antes e depois". */
+  alteracoes: AlteracaoCampo[]
+  dataHora: string
+  ipOrigem?: string | null
+}
+
+export interface AuditoriaFiltro {
+  pagina?: number
+  /** Teto de 100 no servidor; acima disso volta 400. */
+  tamanhoPagina?: number
+  entidade?: EntidadeAuditada
+  acao?: AcaoAuditoria
+  usuarioId?: number
+  /** `yyyy-MM-dd`; `ate` é inclusivo (o servidor estende até o fim do dia). */
+  de?: string
+  ate?: string
 }

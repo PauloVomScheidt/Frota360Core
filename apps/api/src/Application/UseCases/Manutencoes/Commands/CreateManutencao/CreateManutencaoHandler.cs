@@ -1,6 +1,7 @@
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Manutencao.Response;
 using Frota360.Application.Interfaces;
+using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Enums;
 using Frota360.Domain.Interfaces.Repositories;
@@ -12,6 +13,7 @@ namespace Frota360.Application.UseCases.Manutencoes.Commands.CreateManutencao
                                                 IVeiculoRepository veiculoRepository,
                                                 ITipoManutencaoRepository tipoRepository,
                                                 ICurrentUserService currentUser,
+                                                IAuditoriaService auditoria,
                                                 ILogger<CreateManutencaoHandler> logger)
         : ICommandHandler<CreateManutencaoCommand, ManutencaoResponse>
     {
@@ -60,6 +62,9 @@ namespace Frota360.Application.UseCases.Manutencoes.Commands.CreateManutencao
 
                 logger.LogInformation("Manutenção cadastrada com sucesso. Id {Id} | Veículo {VeiculoId} | Previsto {Km} km",
                     criada.Id, criada.VeiculoId, criada.QuilometragemPrevista);
+
+                await auditoria.RegistrarAsync(EntidadesAuditadas.Manutencao, AcoesAuditoria.Criou, criada.Id,
+                    $"Agendou {tipo.Nome} para o veículo {veiculo.Placa} aos {criada.QuilometragemPrevista} km");
 
                 return criada.ToResponse();
             }

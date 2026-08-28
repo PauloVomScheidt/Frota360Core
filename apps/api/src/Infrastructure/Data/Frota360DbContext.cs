@@ -9,10 +9,10 @@ namespace Frota360.Infrastructure.Data
         public DbSet<Convite> Convites { get; set; }
         public DbSet<Veiculo> Veiculos { get; set; }
         public DbSet<Usuario> Usuarios { get; set; }
-        public DbSet<Motorista> Motoristas { get; set; }
         public DbSet<Rota> Rotas { get; set; }
         public DbSet<TipoManutencao> TiposManutencao { get; set; }
         public DbSet<Manutencao> Manutencoes { get; set; }
+        public DbSet<LogAuditoria> LogsAuditoria { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -82,28 +82,16 @@ namespace Frota360.Infrastructure.Data
                 entity.HasIndex(u => u.ResetSenhaTokenHash);
                 entity.Property(u => u.DataInclusao).HasDefaultValueSql("GETDATE()");
 
+                // Opcionais: quem não informou fica com nulo, e o índice filtrado deixa
+                // esses de fora — só barra dois CPFs iguais na mesma empresa.
+                entity.Property(u => u.CPF).HasMaxLength(11);
+                entity.HasIndex(u => new { u.EmpresaId, u.CPF })
+                      .IsUnique()
+                      .HasFilter("[CPF] IS NOT NULL");
+
                 entity.HasOne<Empresa>()
                       .WithMany()
                       .HasForeignKey(u => u.EmpresaId)
-                      .OnDelete(DeleteBehavior.Restrict);
-            });
-
-            modelBuilder.Entity<Motorista>(entity =>
-            {
-                entity.ToTable("Motorista");
-                entity.HasKey(m => m.Id);
-                entity.Property(m => m.Nome).HasMaxLength(100).IsRequired();
-                entity.Property(m => m.Email).HasMaxLength(150).IsRequired();
-                entity.Property(m => m.CPF).HasMaxLength(11).IsRequired();
-                entity.Property(m => m.DataInclusao).HasDefaultValueSql("GETDATE()");
-
-                // Unicidade por empresa: transportadoras diferentes podem cadastrar o mesmo motorista
-                entity.HasIndex(m => new { m.EmpresaId, m.Email }).IsUnique();
-                entity.HasIndex(m => new { m.EmpresaId, m.CPF }).IsUnique();
-
-                entity.HasOne<Empresa>()
-                      .WithMany()
-                      .HasForeignKey(m => m.EmpresaId)
                       .OnDelete(DeleteBehavior.Restrict);
             });
 
@@ -116,9 +104,12 @@ namespace Frota360.Infrastructure.Data
                 entity.Property(r => r.Ativo).HasDefaultValue(true);
                 entity.Property(r => r.DataInclusao).HasDefaultValueSql("GETDATE()");
 
+                // O motorista é um Usuario. Restrict porque usuário nunca é excluído,
+                // só desativado — o histórico de rotas fica inapagável por acidente.
                 entity.HasOne(r => r.Motorista)
                       .WithMany()
-                      .HasForeignKey(r => r.CodigoMotorista);
+                      .HasForeignKey(r => r.CodigoMotorista)
+                      .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(r => r.Veiculo)
                       .WithMany()
@@ -177,6 +168,39 @@ namespace Frota360.Infrastructure.Data
                 entity.HasOne<Empresa>()
                       .WithMany()
                       .HasForeignKey(m => m.EmpresaId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<LogAuditoria>(entity =>
+            {
+                entity.ToTable("LogAuditoria");
+                entity.HasKey(l => l.Id);
+
+                entity.Property(l => l.UsuarioNome).HasMaxLength(100).IsRequired();
+                entity.Property(l => l.UsuarioEmail).HasMaxLength(150).IsRequired();
+                entity.Property(l => l.UsuarioRole).HasMaxLength(20).IsRequired();
+                entity.Property(l => l.Entidade).HasMaxLength(40).IsRequired();
+                entity.Property(l => l.Acao).HasMaxLength(30).IsRequired();
+                entity.Property(l => l.Descricao).HasMaxLength(300).IsRequired();
+                entity.Property(l => l.IpOrigem).HasMaxLength(45); // comporta IPv6
+                entity.Property(l => l.DataHora).HasDefaultValueSql("GETDATE()");
+
+                // Um índice por consulta real da tela: a listagem, o histórico de um
+                // registro e o histórico de uma pessoa.
+                entity.HasIndex(l => new { l.EmpresaId, l.DataHora });
+                entity.HasIndex(l => new { l.EmpresaId, l.Entidade, l.EntidadeId });
+                entity.HasIndex(l => new { l.EmpresaId, l.UsuarioId, l.DataHora });
+
+                // Restrict nos dois: a trilha é histórico e não pode ser apagada em cascata
+                // por uma operação sobre a empresa ou o usuário.
+                entity.HasOne<Empresa>()
+                      .WithMany()
+                      .HasForeignKey(l => l.EmpresaId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne<Usuario>()
+                      .WithMany()
+                      .HasForeignKey(l => l.UsuarioId)
                       .OnDelete(DeleteBehavior.Restrict);
             });
         }

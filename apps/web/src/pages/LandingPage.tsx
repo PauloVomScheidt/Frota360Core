@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { LogoMark, Wordmark } from '../components/Logo'
-import { CheckIcon, SearchIcon, WhatsappIcon } from '../components/icons'
+import { CheckIcon, SearchIcon, WhatsappIcon, XIcon } from '../components/icons'
 import '../styles/landing.css'
 
 const WHATSAPP = '5547991120404'
@@ -11,40 +11,54 @@ const LINK_EMAIL = `mailto:${EMAIL}`
 
 // ── conteúdo ────────────────────────────────────────────────────────────────
 
+const ANCORAS = [
+  { href: '#recursos', texto: 'Recursos' },
+  { href: '#manutencao', texto: 'Manutenção' },
+  { href: '#permissoes', texto: 'Permissões' },
+  { href: '#implantacao', texto: 'Implantação' },
+  { href: '#duvidas', texto: 'Dúvidas' },
+]
+
 const MENU_MOCK = ['Visão geral', 'Motoristas', 'Veículos', 'Rotas', 'Manutenções', 'Usuários']
 const MENU_ATIVO = 'Veículos'
 
-type Tom = 'accent' | 'neutral' | 'warn'
+type Tom = 'painel' | 'neutro' | 'vencendo' | 'alerta'
+
+const CLASSE_ETIQ: Record<Tom, string> = {
+  painel: 'lp-etiq lp-etiq-painel',
+  neutro: 'lp-etiq lp-etiq-neutro',
+  vencendo: 'lp-etiq lp-etiq-vencendo',
+  alerta: 'lp-etiq lp-etiq-alerta',
+}
 
 const VEICULOS_MOCK: { placa: string; modelo: string; km: string; motorista: string; situacao: string; tom: Tom }[] = [
-  { placa: 'MHT-4G21', modelo: 'Ford Cargo 816', km: '148.230 km', motorista: 'Ana Ribeiro', situacao: 'Em rota', tom: 'accent' },
-  { placa: 'LZP-9D14', modelo: 'VW Constellation', km: '312.940 km', motorista: 'Ivo Nascimento', situacao: 'Em rota', tom: 'accent' },
-  { placa: 'QKA-7B08', modelo: 'VW Delivery', km: '96.510 km', motorista: 'Carlos Deppe', situacao: 'Disponível', tom: 'neutral' },
-  { placa: 'RTB-2C55', modelo: 'Mercedes Sprinter', km: '74.180 km', motorista: 'Marta Lins', situacao: 'Disponível', tom: 'neutral' },
-  { placa: 'MJU-5F71', modelo: 'VW Saveiro', km: '52.700 km', motorista: 'Helena Cruz', situacao: 'Revisão', tom: 'warn' },
-  { placa: 'PGE-1H47', modelo: 'Fiat Fiorino', km: '38.420 km', motorista: 'Régis Alves', situacao: 'Disponível', tom: 'neutral' },
+  { placa: 'MHT-4G21', modelo: 'Ford Cargo 816', km: '148.230', motorista: 'Ana Ribeiro', situacao: 'Em rota', tom: 'painel' },
+  { placa: 'LZP-9D14', modelo: 'VW Constellation', km: '312.940', motorista: 'Ivo Nascimento', situacao: 'Em rota', tom: 'painel' },
+  { placa: 'QKA-7B08', modelo: 'VW Delivery', km: '96.510', motorista: 'Carlos Deppe', situacao: 'Disponível', tom: 'neutro' },
+  { placa: 'RTB-2C55', modelo: 'Mercedes Sprinter', km: '74.180', motorista: 'Marta Lins', situacao: 'Disponível', tom: 'neutro' },
+  { placa: 'MJU-5F71', modelo: 'VW Saveiro', km: '51.988', motorista: 'Helena Cruz', situacao: 'Revisão', tom: 'vencendo' },
+  { placa: 'PGE-1H47', modelo: 'Fiat Fiorino', km: '38.420', motorista: 'Régis Alves', situacao: 'Disponível', tom: 'neutro' },
 ]
 
-const FUNDACOES = [
-  'Multiempresa desde o primeiro dia',
-  'Convites com papel definido',
-  'Sessão revogada na hora',
-  'Manutenção preventiva por km',
-  'Validação de CPF e idade',
-]
-
-const STATS = [
-  { valor: '5–500', rotulo: 'Veículos por empresa, sem mudar de plano' },
-  { valor: '3', rotulo: 'Papéis de acesso prontos para usar' },
-  { valor: '1 semana', rotulo: 'Do primeiro contato ao painel rodando' },
-  { valor: '100%', rotulo: 'Isolamento dos dados entre empresas' },
-]
-
-const DORES = [
-  { num: '01', texto: 'A quilometragem de cada veículo mora em três lugares — e nenhum deles está atualizado.' },
-  { num: '02', texto: 'Ninguém sabe de cabeça quem estava com o caminhão na última viagem.' },
-  { num: '03', texto: 'A planilha é compartilhada com a equipe toda, então qualquer um apaga qualquer coisa.' },
-  { num: '04', texto: 'CPF errado, motorista duplicado, cadastro de gente que já saiu da empresa.' },
+// Rótulo de campo + a falha que ele sofre na planilha. O rótulo nomeia o dado,
+// não a posição — não é uma sequência, então não é numerado.
+const FALHAS = [
+  {
+    campo: 'Quilometragem',
+    texto: 'A km de cada veículo mora em três lugares — e nenhum deles está atualizado.',
+  },
+  {
+    campo: 'Responsável',
+    texto: 'Ninguém sabe de cabeça quem estava com o caminhão na última viagem.',
+  },
+  {
+    campo: 'Permissão',
+    texto: 'A planilha é compartilhada com a equipe toda, então qualquer um apaga qualquer coisa.',
+  },
+  {
+    campo: 'Cadastro',
+    texto: 'CPF errado, motorista duplicado, cadastro de gente que já saiu da empresa.',
+  },
 ]
 
 const COMPARATIVO = [
@@ -61,7 +75,7 @@ const COMPARATIVO = [
 
 const RECURSOS = [
   {
-    inicial: 'M',
+    inicial: 'MT',
     titulo: 'Motoristas',
     texto: 'Cadastro validado de verdade: CPF conferido dígito a dígito e idade mínima checada na hora.',
     itens: [
@@ -71,19 +85,19 @@ const RECURSOS = [
     ],
   },
   {
-    inicial: 'V',
+    inicial: 'VE',
     titulo: 'Veículos',
     texto: 'Placa, marca, quilometragem e o rastro de quem rodou por último com ele.',
     itens: ['Quilometragem sempre no cadastro', 'Último motorista e última viagem', 'Frota inteira em uma lista só'],
   },
   {
-    inicial: 'R',
+    inicial: 'RO',
     titulo: 'Rotas',
     texto: 'Origem, destino, motorista e veículo — abertas ou encerradas, com datas.',
     itens: ['Rota ativa x encerrada', 'Motorista e veículo vinculados', 'Qualquer membro da equipe pode lançar'],
   },
   {
-    inicial: 'P',
+    inicial: 'MN',
     titulo: 'Manutenções',
     texto: 'Manutenção preventiva por quilometragem: você agenda, o painel avisa quando está vencendo.',
     itens: [
@@ -94,6 +108,55 @@ const RECURSOS = [
   },
 ]
 
+const MANUTENCOES_MOCK: {
+  placa: string
+  modelo: string
+  tipo: string
+  km: string
+  andamento: string
+  situacao: string
+  tom: Tom
+}[] = [
+  // A ordem é o argumento da seção: atrasada primeiro, depois vencendo, e o
+  // que está em dia no fim.
+  { placa: 'RTB-2C55', modelo: 'Sprinter · 74.180 km', tipo: 'Troca de óleo', km: '73.500', andamento: 'atrasada 680 km', situacao: 'Atrasada', tom: 'alerta' },
+  { placa: 'MJU-5F71', modelo: 'Saveiro · 51.988 km', tipo: 'Troca de óleo', km: '52.000', andamento: 'faltam 12 km', situacao: 'Vencendo', tom: 'vencendo' },
+  { placa: 'QRS-5T90', modelo: 'HB20 · 9.850 km', tipo: 'Revisão', km: '10.000', andamento: 'faltam 150 km', situacao: 'Vencendo', tom: 'vencendo' },
+  { placa: 'LZP-9D14', modelo: 'Constellation · 312.940 km', tipo: 'Troca de pneus', km: '315.000', andamento: 'faltam 2.060 km', situacao: 'Pendente', tom: 'painel' },
+  { placa: 'ABC-1D23', modelo: 'Civic 2.0 · 65.200 km', tipo: 'Troca de óleo', km: '55.200', andamento: 'concluída 25/08 · R$ 500,00', situacao: 'Concluída', tom: 'neutro' },
+]
+
+const TIPOS_MOCK = [
+  { nome: 'Troca de óleo', intervalo: '10.000 km' },
+  { nome: 'Revisão', intervalo: '10.000 km' },
+  { nome: 'Filtro de ar-condicionado', intervalo: '50.000 km' },
+]
+
+const MATRIZ = [
+  { acao: 'Ver tudo da empresa', admin: true, supervisor: true, operador: true },
+  { acao: 'Lançar e editar rotas', admin: true, supervisor: true, operador: true },
+  { acao: 'Cadastrar motoristas e veículos', admin: true, supervisor: true, operador: false },
+  { acao: 'Agendar e concluir manutenções', admin: true, supervisor: true, operador: false },
+  { acao: 'Excluir qualquer registro', admin: true, supervisor: false, operador: false },
+  { acao: 'Convidar e gerenciar usuários', admin: true, supervisor: false, operador: false },
+]
+
+const GARANTIAS = [
+  {
+    titulo: 'Sua empresa, seus dados',
+    texto: 'O acesso de cada usuário carrega a empresa dele. Dado de outra empresa simplesmente não existe para ele.',
+  },
+  {
+    titulo: 'Saída imediata',
+    texto: 'Tirar o acesso de alguém ou trocar o papel dele derruba a sessão aberta na hora.',
+  },
+  {
+    titulo: 'Só quem foi convidado',
+    texto: 'Não existe cadastro aberto. Toda conta nasce de um convite com validade e uso único.',
+  },
+]
+
+// Aqui a numeração é real: os passos acontecem nesta ordem.
 const PASSOS = [
   {
     num: '1',
@@ -112,80 +175,16 @@ const PASSOS = [
   },
 ]
 
-const ROTAS_MOCK: { trecho: string; motorista: string; veiculo: string; inicio: string; situacao: string; tom: Tom }[] = [
-  { trecho: 'Joinville → Curitiba', motorista: 'Ana Ribeiro', veiculo: 'MHT-4G21', inicio: '22/08 06:10', situacao: 'Em curso', tom: 'accent' },
-  { trecho: 'Pátio → Blumenau', motorista: 'Carlos Deppe', veiculo: 'QKA-7B08', inicio: '22/08 07:40', situacao: 'Em curso', tom: 'accent' },
-  { trecho: 'CD Norte → Itajaí', motorista: 'Marta Lins', veiculo: 'RTB-2C55', inicio: '21/08 13:05', situacao: 'Encerrada', tom: 'neutral' },
-  { trecho: 'Joinville → Porto Itapoá', motorista: 'Ivo Nascimento', veiculo: 'LZP-9D14', inicio: '21/08 05:30', situacao: 'Encerrada', tom: 'neutral' },
-  { trecho: 'São Bento → Pátio', motorista: 'Helena Cruz', veiculo: 'MJU-5F71', inicio: '20/08 16:20', situacao: 'Encerrada', tom: 'neutral' },
-]
-
-const MANUTENCOES_MOCK: {
-  placa: string
-  modelo: string
-  tipo: string
-  km: string
-  andamento: string
-  custo: string
-  situacao: string
-  tom: Tom
-}[] = [
-  { placa: 'QRS5T90', modelo: 'HB20 · 150 km', tipo: 'Revisão', km: '10.150 km', andamento: 'faltam 10.000 km', custo: '—', situacao: 'Pendente', tom: 'accent' },
-  { placa: 'LZP-9D14', modelo: 'Constellation · 312.940 km', tipo: 'Troca de pneus', km: '315.000 km', andamento: 'faltam 2.060 km', custo: '—', situacao: 'Pendente', tom: 'accent' },
-  { placa: 'MJU-5F71', modelo: 'Saveiro · 52.700 km', tipo: 'Troca de óleo', km: '52.000 km', andamento: 'atrasada 700 km', custo: '—', situacao: 'Atrasada', tom: 'warn' },
-  { placa: 'ABC1D23', modelo: 'Civic 2.0 · 65.200 km', tipo: 'Troca de óleo', km: '55.200 km', andamento: '25/08/2026 · 65.200 km', custo: 'R$ 500,00', situacao: 'Concluída', tom: 'neutral' },
-]
-
-const TIPOS_MOCK = [
-  { nome: 'Troca de óleo', intervalo: '10.000 km' },
-  { nome: 'Revisão', intervalo: '10.000 km' },
-  { nome: 'Filtro de ar-condicionado', intervalo: '50.000 km' },
-]
-
-const MATRIZ = [
-  { acao: 'Ver tudo da empresa', admin: 'Sim', supervisor: 'Sim', operador: 'Sim' },
-  { acao: 'Lançar e editar rotas', admin: 'Sim', supervisor: 'Sim', operador: 'Sim' },
-  { acao: 'Cadastrar motoristas e veículos', admin: 'Sim', supervisor: 'Sim', operador: '—' },
-  { acao: 'Agendar e concluir manutenções', admin: 'Sim', supervisor: 'Sim', operador: '—' },
-  { acao: 'Excluir qualquer registro', admin: 'Sim', supervisor: '—', operador: '—' },
-  { acao: 'Convidar e gerenciar usuários', admin: 'Sim', supervisor: '—', operador: '—' },
-]
-
-const SEGURANCA = [
-  {
-    kicker: 'Isolamento',
-    titulo: 'Sua empresa, seus dados',
-    texto: 'O acesso de cada usuário carrega a empresa dele. Dado de outra empresa simplesmente não existe para ele.',
-  },
-  {
-    kicker: 'Sessões',
-    titulo: 'Saída imediata',
-    texto: 'Tirar o acesso de alguém ou trocar o papel dele derruba a sessão aberta na hora.',
-  },
-  {
-    kicker: 'Entrada',
-    titulo: 'Só quem foi convidado',
-    texto: 'Não existe cadastro aberto. Toda conta nasce de um convite com validade e uso único.',
-  },
-]
-
-const OBJECOES = [
-  {
-    q: '“Tenho só 8 veículos, é grande demais para mim.”',
-    r: 'O painel é o mesmo para 8 ou 300 veículos. Com frota pequena a implantação leva um dia — e são justamente esses casos que a planilha bagunça primeiro.',
-  },
-  {
-    q: '“Meu motorista não vai usar aplicativo.”',
-    r: 'Ele não precisa. Quem lança rota é o escritório; o motorista só aparece como cadastro. Se um dia quiser, ele entra como operador.',
-  },
-  {
-    q: '“Minha planilha funciona bem.”',
-    r: 'Funciona até duas pessoas mexerem no mesmo dia. Você pode começar importando exatamente essa planilha — sem retrabalho.',
-  },
-]
-
-const FAQ = [
+const DUVIDAS = [
   { p: 'Preciso instalar algo?', r: 'Não. O painel roda no navegador — computador do escritório, notebook ou celular.' },
+  {
+    p: 'Tenho só 8 veículos. É grande demais para mim?',
+    r: 'O painel é o mesmo para 8 ou 300 veículos, e com frota pequena a implantação leva um dia. São justamente esses casos que a planilha bagunça primeiro.',
+  },
+  {
+    p: 'Meu motorista não usa aplicativo. Isso é um problema?',
+    r: 'Não. Quem lança rota é o escritório; o motorista só aparece como cadastro. Se um dia quiser, ele entra como operador.',
+  },
   {
     p: 'Como minha equipe entra?',
     r: 'O administrador envia um convite por e-mail com o papel já definido. A pessoa cria a senha e cai direto no painel.',
@@ -214,13 +213,84 @@ const FAQ = [
 
 const TAMANHOS_FROTA = ['Até 10 veículos', '11 a 50 veículos', '51 a 200 veículos', 'Mais de 200 veículos']
 
-// ── peças ───────────────────────────────────────────────────────────────────
+// ── odômetro ────────────────────────────────────────────────────────────────
 
-const CLASSE_TAG: Record<Tom, string> = {
-  accent: 'lp-tag lp-tag-accent',
-  neutral: 'lp-tag lp-tag-neutral',
-  warn: 'lp-tag lp-tag-warn',
+const KM_INICIAL = 51_780
+const KM_FINAL = 51_988
+const KM_PREVISTO = 52_000
+/** Dentro desta faixa a manutenção já aparece como "vencendo". */
+const FAIXA_AVISO = 500
+
+function prefereMenosMovimento() {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
 }
+
+/**
+ * Conta a quilometragem de KM_INICIAL até KM_FINAL. Quem pediu menos movimento
+ * recebe o valor final direto — o estado da manutenção é a mensagem, não a
+ * animação.
+ */
+function useOdometro() {
+  // Quem pediu menos movimento já começa no valor final — nem chega a ver a
+  // contagem, em vez de vê-la saltar depois do primeiro render.
+  const [km, setKm] = useState(() => (prefereMenosMovimento() ? KM_FINAL : KM_INICIAL))
+
+  useEffect(() => {
+    if (prefereMenosMovimento()) return
+    let passo = 0
+    const inicio = window.setTimeout(() => {
+      passo = window.setInterval(() => {
+        setKm((atual) => {
+          if (atual >= KM_FINAL) {
+            window.clearInterval(passo)
+            return KM_FINAL
+          }
+          return Math.min(atual + 4, KM_FINAL)
+        })
+      }, 90)
+    }, 700)
+    return () => {
+      window.clearTimeout(inicio)
+      window.clearInterval(passo)
+    }
+  }, [])
+
+  return km
+}
+
+/** Um dígito do odômetro: fita de 0–9 que desliza até o algarismo certo. */
+function Digito({ valor }: { valor: string }) {
+  return (
+    <span className="lp-odo-digito">
+      <span className="lp-odo-fita" style={{ '--digito': valor } as CSSProperties}>
+        {['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
+          <span key={d}>{d}</span>
+        ))}
+      </span>
+    </span>
+  )
+}
+
+/**
+ * Odômetro de 6 casas, sem separador de milhar — é assim que o instrumento
+ * real mostra, e a largura fica fixa enquanto conta. O rótulo acessível traz o
+ * número formatado em pt-BR, que é como se lê em voz alta.
+ */
+function Odometro({ km }: { km: number }) {
+  const casas = String(km).padStart(6, '0').split('')
+  return (
+    <div className="lp-odo" role="img" aria-label={`Quilometragem atual: ${km.toLocaleString('pt-BR')} quilômetros`}>
+      {casas.map((c, i) => (
+        <Digito key={i} valor={c} />
+      ))}
+      <span className="lp-odo-unidade" aria-hidden="true">
+        km
+      </span>
+    </div>
+  )
+}
+
+// ── peças ───────────────────────────────────────────────────────────────────
 
 function Marca({ tamanho = 22 }: { tamanho?: number }) {
   return (
@@ -231,140 +301,182 @@ function Marca({ tamanho = 22 }: { tamanho?: number }) {
   )
 }
 
-function Secao({
+function Faixa({
   id,
-  className = 'lp-wrap lp-section',
+  forte = false,
+  estreito = false,
   children,
 }: {
   id?: string
-  className?: string
+  forte?: boolean
+  estreito?: boolean
   children: ReactNode
 }) {
   return (
-    <section id={id} className={`${className} lp-reveal`} data-reveal style={id ? { scrollMarginTop: 96 } : undefined}>
-      {children}
+    <section id={id} className={forte ? 'lp-faixa-forte' : 'lp-faixa'} style={id ? { scrollMarginTop: 72 } : undefined}>
+      <div className={estreito ? 'lp-wrap lp-wrap-estreito' : 'lp-wrap'}>{children}</div>
     </section>
+  )
+}
+
+/** Região rolável precisa ser focável para quem navega só pelo teclado. */
+function Rolagem({ rotulo, children }: { rotulo: string; children: ReactNode }) {
+  return (
+    <div className="lp-rolagem" tabIndex={0} role="region" aria-label={rotulo}>
+      {children}
+    </div>
   )
 }
 
 // ── página ──────────────────────────────────────────────────────────────────
 
 export function LandingPage() {
-  const raiz = useRef<HTMLDivElement>(null)
-
-  // Revela as seções conforme entram na tela. Sem IntersectionObserver, tudo
-  // aparece de uma vez — o conteúdo nunca pode ficar preso invisível.
-  useEffect(() => {
-    const alvos = Array.from(raiz.current?.querySelectorAll('[data-reveal]') ?? [])
-    if (alvos.length === 0) return
-
-    if (!('IntersectionObserver' in window)) {
-      alvos.forEach((el) => el.classList.add('is-visible'))
-      return
-    }
-
-    const observador = new IntersectionObserver(
-      (entradas) => {
-        entradas.forEach((entrada) => {
-          if (!entrada.isIntersecting) return
-          entrada.target.classList.add('is-visible')
-          observador.unobserve(entrada.target)
-        })
-      },
-      { rootMargin: '0px 0px -12% 0px' },
-    )
-    alvos.forEach((el) => observador.observe(el))
-    return () => observador.disconnect()
-  }, [])
+  const km = useOdometro()
+  const faltam = KM_PREVISTO - km
+  const estado = faltam <= 0 ? 'atrasada' : faltam <= FAIXA_AVISO ? 'vencendo' : 'ok'
+  const textoEstado =
+    estado === 'atrasada'
+      ? `Atrasada · ${Math.abs(faltam).toLocaleString('pt-BR')} km`
+      : estado === 'vencendo'
+        ? `Vencendo · faltam ${faltam.toLocaleString('pt-BR')} km`
+        : `Faltam ${faltam.toLocaleString('pt-BR')} km`
 
   return (
-    <div className="lp" ref={raiz}>
+    <div className="lp">
       <header className="lp-nav">
-        <Link to="/" className="lp-brand" aria-label="Frota 360 — início">
-          <Marca />
-        </Link>
-        <nav className="lp-nav-links">
-          <a href="#recursos">Recursos</a>
-          <a href="#manutencao">Manutenção</a>
-          <a href="#como-funciona">Como funciona</a>
-          <a href="#permissoes">Permissões</a>
-          <a href="#faq">Dúvidas</a>
-        </nav>
-        <div className="lp-nav-actions">
-          <Link to="/login" className="lp-btn lp-btn-quiet lp-btn-nav">
-            Entrar
+        <div className="lp-nav-inner">
+          <Link to="/" className="lp-brand" aria-label="Frota 360 — início">
+            <Marca />
           </Link>
-          <a href={LINK_WHATS} className="lp-btn lp-btn-primary lp-btn-sm">
-            Falar com a gente
-          </a>
+          <nav className="lp-nav-links" aria-label="Seções da página">
+            {ANCORAS.map((a) => (
+              <a key={a.href} href={a.href}>
+                {a.texto}
+              </a>
+            ))}
+          </nav>
+          <div className="lp-nav-acoes">
+            <Link to="/login" className="lp-btn lp-btn-discreto lp-btn-p lp-nav-entrar">
+              Entrar
+            </Link>
+            <a href={LINK_WHATS} className="lp-btn lp-btn-primario lp-btn-p">
+              Falar com a gente
+            </a>
+            <details className="lp-menu">
+              <summary aria-label="Abrir as seções da página">Seções</summary>
+              <nav className="lp-menu-lista" aria-label="Seções da página">
+                {ANCORAS.map((a) => (
+                  <a key={a.href} href={a.href}>
+                    {a.texto}
+                  </a>
+                ))}
+                {/* Abaixo de 560px "Entrar" some da barra; aqui é o caminho dele. */}
+                <Link to="/login" className="lp-menu-entrar">
+                  Entrar
+                </Link>
+              </nav>
+            </details>
+          </div>
         </div>
       </header>
 
-      <section className="lp-hero">
-        <h1 className="lp-h1" style={{ marginTop: 26, maxWidth: '20ch' }}>
-          Sua frota inteira em um único painel
-        </h1>
-        <p className="lp-hero-sub">
-          Motoristas, veículos, manutenções e rotas em um só lugar  com quilometragem em dia, histórico de viagens e controle de
-          quem pode fazer o quê.
-        </p>
-        <div className="lp-hero-ctas">
-          <a href={LINK_WHATS} className="lp-btn lp-btn-primary lp-btn-lg">
-            <WhatsappIcon size={17} />
-            Falar no WhatsApp
-          </a>
-          <a href="#demonstracao" className="lp-btn lp-btn-outline lp-btn-lg">
-            Pedir uma demonstração
-          </a>
+      {/* Hero: o odômetro conta até a revisão avisar — é a mecânica do produto
+          inteira, sem texto. Os números são ilustrativos e vêm marcados assim. */}
+      <section className="lp-faixa-forte">
+        <div className="lp-wrap lp-hero">
+          <div className="lp-hero-grade">
+            <div className="lp-hero-texto">
+              <span className="lp-campo lp-campo-painel">Manutenção preventiva por quilometragem</span>
+              <h1 className="lp-h1">A revisão avisa antes de virar oficina.</h1>
+              <p className="lp-hero-sub">
+                Você agenda a manutenção na quilometragem prevista. Conforme o veículo roda, o painel recalcula sozinho
+                quantos quilômetros faltam — e põe no topo da lista o que está vencendo.
+              </p>
+              <div className="lp-hero-ctas">
+                <a href={LINK_WHATS} className="lp-btn lp-btn-primario lp-btn-g">
+                  <WhatsappIcon size={17} />
+                  Falar no WhatsApp
+                </a>
+                <a href="#demonstracao" className="lp-btn lp-btn-contorno lp-btn-g">
+                  Pedir uma demonstração
+                </a>
+              </div>
+              <p className="lp-miudo">
+                Implantação assistida · sem cartão de crédito · <Link to="/login">já é cliente?</Link>
+              </p>
+            </div>
+
+            <div className="lp-instrumento">
+              <div className="lp-instrumento-topo">
+                <span className="lp-instrumento-placa">MJU-5F71</span>
+                <span className="lp-instrumento-modelo">VW Saveiro</span>
+                <span className="lp-instrumento-selo">Demonstração</span>
+              </div>
+              <div className="lp-instrumento-corpo">
+                <Odometro km={km} />
+                <div className="lp-servico">
+                  <span className="lp-servico-nome">Troca de óleo</span>
+                  <span className="lp-servico-prev">Prevista para {KM_PREVISTO.toLocaleString('pt-BR')} km</span>
+                  {/* Sem `aria-live`: o texto muda a cada tique da contagem e
+                      viraria dezenas de anúncios. O estado final fica no DOM
+                      como texto normal, que é o que importa ler. */}
+                  <span className={`lp-servico-estado${estado === 'ok' ? '' : ` is-${estado}`}`}>
+                    <span className="lp-farol" aria-hidden="true" />
+                    {textoEstado}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <p className="lp-fineprint">
-          Implantação assistida · sem cartão de crédito · <Link to="/login">já é cliente?</Link>
-        </p>
       </section>
 
       {/* Mock do painel: dados ilustrativos, não vêm da API. */}
-      <section className="lp-wrap">
+      <Faixa>
+        <span className="lp-campo">O painel</span>
         <div className="lp-mock">
           <aside className="lp-mock-aside">
             <div className="lp-brand" style={{ padding: '0 8px', marginRight: 0 }}>
               <Marca tamanho={20} />
             </div>
-            <nav style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }} aria-hidden="true">
               {MENU_MOCK.map((item) => (
-                <div key={item} className={`lp-mock-item${item === MENU_ATIVO ? ' is-active' : ''}`}>
-                  <span className="lp-mock-square" />
+                <div key={item} className={`lp-mock-item${item === MENU_ATIVO ? ' is-ativo' : ''}`}>
+                  <span className="lp-mock-quad" />
                   {item}
                 </div>
               ))}
             </nav>
             <div className="lp-mock-user">
               <span className="lp-avatar">PD</span>
-              <div style={{ fontSize: 12, lineHeight: 1.3 }}>
+              <div>
                 Paulo D.
-                <div style={{ color: 'var(--lp-ink-45)' }}>Admin</div>
+                <div style={{ color: 'var(--tinta-fraca)' }}>Admin</div>
               </div>
             </div>
           </aside>
 
           <div>
-            <div className="lp-mock-head">
-              <span className="lp-mock-title">Veículos</span>
-              <span className="lp-pill-count">42 cadastrados</span>
-              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span className="lp-mock-search">
+            <div className="lp-mock-cab">
+              <span className="lp-mock-titulo">Veículos</span>
+              <span className="lp-contagem">42 cadastrados</span>
+              <div className="lp-direita">
+                <span className="lp-mock-busca" aria-hidden="true">
                   <SearchIcon size={14} />
                   Buscar placa ou modelo
                 </span>
-                <span className="lp-mock-btn">Novo veículo</span>
+                <span className="lp-mock-btn" aria-hidden="true">
+                  Novo veículo
+                </span>
               </div>
             </div>
-            <div className="lp-scroll">
-              <table className="lp-table">
+            <Rolagem rotulo="Exemplo da lista de veículos">
+              <table className="lp-tabela">
                 <thead>
                   <tr>
                     <th>Placa</th>
                     <th>Modelo</th>
-                    <th className="num">Quilometragem</th>
+                    <th className="lp-numero-dir">Quilometragem</th>
                     <th>Último motorista</th>
                     <th>Situação</th>
                   </tr>
@@ -372,99 +484,74 @@ export function LandingPage() {
                 <tbody>
                   {VEICULOS_MOCK.map((v) => (
                     <tr key={v.placa}>
-                      <td className="lp-strong">{v.placa}</td>
+                      <td className="lp-forte">{v.placa}</td>
                       <td>{v.modelo}</td>
-                      <td className="num">{v.km}</td>
+                      <td className="lp-numero lp-numero-dir">{v.km}</td>
                       <td>{v.motorista}</td>
                       <td>
-                        <span className={CLASSE_TAG[v.tom]}>{v.situacao}</span>
+                        <span className={CLASSE_ETIQ[v.tom]}>{v.situacao}</span>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-            <div className="lp-mock-foot">
-              <span className="lp-dot" />
-              Última atualização hoje, 14:20 — por Ana Ribeiro
-            </div>
+            </Rolagem>
+            <div className="lp-mock-rodape">Última atualização hoje, 14:20 — por Ana Ribeiro</div>
           </div>
         </div>
-      </section>
+      </Faixa>
 
-      <Secao className="lp-wrap">
-        <div className="lp-chips">
-          <span style={{ fontSize: 13, color: 'var(--lp-ink-45)' }}>Construído sobre</span>
-          {FUNDACOES.map((f) => (
-            <span key={f} className="lp-chip">
-              {f}
-            </span>
-          ))}
-        </div>
-      </Secao>
-
-      <Secao className="lp-wrap lp-section-tight">
-        <div className="lp-grid lp-grid-4">
-          {STATS.map((s) => (
-            <div key={s.rotulo}>
-              <div className="lp-stat-valor">{s.valor}</div>
-              <div className="lp-stat-rotulo">{s.rotulo}</div>
-            </div>
-          ))}
-        </div>
-      </Secao>
-
-      <Secao>
-        <h2 className="lp-h2" style={{ maxWidth: '24ch' }}>
+      <Faixa>
+        <span className="lp-campo">O que a planilha perde</span>
+        <h2 className="lp-h2" style={{ maxWidth: '22ch' }}>
           Planilha não avisa quando a revisão passou do ponto
         </h2>
-        <div className="lp-grid lp-grid-2" style={{ marginTop: 44, gap: 28 }}>
-          {DORES.map((d) => (
-            <div key={d.num} className="lp-card lp-card-lift lp-card-pad" style={{ borderRadius: 16 }}>
-              <div className="lp-num">{d.num}</div>
-              <p style={{ fontSize: 16.5, color: 'var(--lp-ink-80)', marginTop: 10 }}>{d.texto}</p>
+        <div className="lp-grade lp-grade-2" style={{ marginTop: 40 }}>
+          {FALHAS.map((f) => (
+            <div key={f.campo}>
+              <span className="lp-falha-rotulo">{f.campo}</span>
+              <p className="lp-falha-texto">{f.texto}</p>
             </div>
           ))}
         </div>
-      </Secao>
+      </Faixa>
 
-      <Secao>
-        <h2 className="lp-h2" style={{ maxWidth: '22ch' }}>
+      <Faixa>
+        <span className="lp-campo">Planilha × Frota360</span>
+        <h2 className="lp-h2" style={{ maxWidth: '20ch' }}>
           O que muda quando sai da planilha
         </h2>
-        <div className="lp-card lp-card-float" style={{ marginTop: 44 }}>
-          <div className="lp-scroll">
-            <div className="lp-compare">
-              <div className="lp-compare-row lp-compare-head">
-                <div />
-                <div>Na planilha</div>
-                <div className="is-app">No Frota360</div>
-              </div>
-              {COMPARATIVO.map((c) => (
-                <div key={c.item} className="lp-compare-row">
-                  <div style={{ fontSize: 15, fontWeight: 600 }}>{c.item}</div>
-                  <div style={{ fontSize: 14.5, color: 'rgba(27,29,33,.5)' }}>{c.planilha}</div>
-                  <div style={{ fontSize: 14.5, color: 'var(--lp-ink-80)' }}>{c.app}</div>
-                </div>
-              ))}
+        <Rolagem rotulo="Comparativo entre a planilha e o Frota360">
+          <div className="lp-compara" style={{ marginTop: 40 }}>
+            <div className="lp-compara-linha lp-compara-cab">
+              <div>Dado</div>
+              <div>Na planilha</div>
+              <div className="is-app">No Frota360</div>
             </div>
+            {COMPARATIVO.map((c) => (
+              <div key={c.item} className="lp-compara-linha">
+                <div className="lp-compara-item">{c.item}</div>
+                <div className="lp-compara-antes">{c.planilha}</div>
+                <div className="lp-compara-depois">{c.app}</div>
+              </div>
+            ))}
           </div>
-        </div>
-      </Secao>
+        </Rolagem>
+      </Faixa>
 
-      <Secao id="recursos">
-        <div className="lp-kicker">Recursos</div>
-        <h2 className="lp-h2" style={{ maxWidth: '26ch', marginTop: 14 }}>
+      <Faixa id="recursos">
+        <span className="lp-campo lp-campo-painel">Recursos</span>
+        <h2 className="lp-h2" style={{ maxWidth: '24ch' }}>
           Quatro cadastros, uma operação inteira sob controle
         </h2>
-        <div className="lp-grid lp-grid-2" style={{ marginTop: 48 }}>
-          {RECURSOS.map((f) => (
-            <div key={f.titulo} className="lp-feature">
-              <div className="lp-feature-mark">{f.inicial}</div>
-              <h3 style={{ fontSize: 22 }}>{f.titulo}</h3>
-              <p style={{ fontSize: 15.5, color: 'var(--lp-ink-60)' }}>{f.texto}</p>
-              <ul className="lp-check-list">
-                {f.itens.map((it) => (
+        <div className="lp-grade lp-grade-2" style={{ marginTop: 40 }}>
+          {RECURSOS.map((r) => (
+            <div key={r.titulo}>
+              <div className="lp-recurso-marca">{r.inicial}</div>
+              <h3 className="lp-h3">{r.titulo}</h3>
+              <p className="lp-recurso-texto">{r.texto}</p>
+              <ul className="lp-lista">
+                {r.itens.map((it) => (
                   <li key={it}>
                     <CheckIcon size={15} />
                     <span>{it}</span>
@@ -474,88 +561,36 @@ export function LandingPage() {
             </div>
           ))}
         </div>
-      </Secao>
+      </Faixa>
 
-      <Secao id="como-funciona">
-        <div className="lp-kicker">Como funciona</div>
-        <h2 className="lp-h2" style={{ maxWidth: '24ch', marginTop: 14 }}>
-          Do primeiro contato ao painel rodando em uma semana
+      <Faixa id="manutencao">
+        <span className="lp-campo lp-campo-painel">Manutenção</span>
+        <h2 className="lp-h2" style={{ maxWidth: '22ch' }}>
+          O que está vencendo sobe para o topo
         </h2>
-        <div className="lp-grid lp-grid-3" style={{ marginTop: 48, gap: 36 }}>
-          {PASSOS.map((p) => (
-            <div key={p.num} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div className="lp-step-num">{p.num}</div>
-              <h3 style={{ fontSize: 20, marginTop: 4 }}>{p.titulo}</h3>
-              <p style={{ fontSize: 15.5, color: 'var(--lp-ink-60)' }}>{p.texto}</p>
-            </div>
-          ))}
-        </div>
-      </Secao>
-
-      <Secao className="lp-wrap lp-section-tight lp-split lp-split-rotas">
-        <div>
-          <div className="lp-kicker">Rotas</div>
-          <h2 className="lp-h3" style={{ maxWidth: '18ch', marginTop: 14 }}>
-            A viagem de hoje e o histórico da semana na mesma tela
-          </h2>
-          <p className="lp-lead" style={{ fontSize: 16, maxWidth: '38ch' }}>
-            Qualquer pessoa da equipe pode lançar uma rota. Encerrar é um clique — e o histórico fica preso ao motorista
-            e ao veículo.
-          </p>
-        </div>
-        <div className="lp-card lp-card-float">
-          <div className="lp-list-head">
-            <span style={{ fontSize: 15, fontWeight: 600 }}>Rotas</span>
-            <span className="lp-pill-count">2 em curso</span>
-            <span className="lp-mock-btn" style={{ marginLeft: 'auto' }}>
-              Nova rota
-            </span>
-          </div>
-          <div className="lp-scroll">
-            {ROTAS_MOCK.map((r) => (
-              <div key={r.trecho} className="lp-rota-row">
-                <div style={{ fontSize: 14, fontWeight: 600 }}>
-                  {r.trecho}
-                  <div className="lp-sub" style={{ fontWeight: 400 }}>
-                    Início {r.inicio}
-                  </div>
-                </div>
-                <div style={{ fontSize: 13.5, color: 'rgba(27,29,33,.65)' }}>{r.motorista}</div>
-                <div style={{ fontSize: 13.5, color: 'rgba(27,29,33,.5)' }}>{r.veiculo}</div>
-                <div>
-                  <span className={CLASSE_TAG[r.tom]}>{r.situacao}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </Secao>
-
-      <Secao id="manutencao">
-        <div className="lp-kicker">Manutenção preventiva</div>
-        <h2 className="lp-h2" style={{ maxWidth: '24ch', marginTop: 14 }}>
-          A revisão avisa antes de virar oficina
-        </h2>
-        <p className="lp-lead" style={{ maxWidth: '56ch' }}>
-          Você agenda a manutenção na quilometragem prevista. Conforme o veículo roda, o painel recalcula sozinho
-          quantos quilômetros faltam — e joga o que está vencendo para o topo da lista.
+        <p className="lp-lead">
+          O painel compara a quilometragem prevista de cada manutenção com a km atual do veículo. Quando concluir, você
+          informa a km real e o custo — e a quilometragem do veículo sobe junto, sem atualizar em dois lugares.
         </p>
-        <div className="lp-grid lp-split-manutencao" style={{ marginTop: 44 }}>
-          <div className="lp-card lp-card-float">
-            <div className="lp-list-head">
-              <span style={{ fontSize: 15, fontWeight: 600 }}>Manutenções</span>
-              <span className="lp-pill-count">3 pendentes</span>
-              <span className="lp-mock-btn" style={{ marginLeft: 'auto' }}>
-                Nova manutenção
-              </span>
+
+        <div className="lp-mock" style={{ marginTop: 40, gridTemplateColumns: '1fr' }}>
+          <div>
+            <div className="lp-mock-cab">
+              <span className="lp-mock-titulo">Manutenções</span>
+              <span className="lp-contagem">4 em aberto</span>
+              <div className="lp-direita">
+                <span className="lp-mock-btn" aria-hidden="true">
+                  Nova manutenção
+                </span>
+              </div>
             </div>
-            <div className="lp-scroll">
-              <table className="lp-table">
+            <Rolagem rotulo="Exemplo da lista de manutenções">
+              <table className="lp-tabela">
                 <thead>
                   <tr>
                     <th>Veículo</th>
                     <th>Tipo</th>
-                    <th>Prevista</th>
+                    <th className="lp-numero-dir">Prevista</th>
                     <th>Andamento</th>
                     <th>Situação</th>
                   </tr>
@@ -564,66 +599,48 @@ export function LandingPage() {
                   {MANUTENCOES_MOCK.map((m) => (
                     <tr key={`${m.placa}-${m.tipo}`}>
                       <td>
-                        <span className="lp-strong">{m.placa}</span>
+                        <span className="lp-forte">{m.placa}</span>
                         <div className="lp-sub">{m.modelo}</div>
                       </td>
                       <td>{m.tipo}</td>
-                      <td style={{ fontVariantNumeric: 'tabular-nums' }}>{m.km}</td>
-                      <td style={{ color: 'rgba(27,29,33,.55)' }}>
-                        {m.andamento}
-                        <div className="lp-sub" style={{ color: 'rgba(27,29,33,.4)' }}>
-                          {m.custo}
-                        </div>
-                      </td>
+                      <td className="lp-numero lp-numero-dir">{m.km}</td>
+                      <td className="lp-numero">{m.andamento}</td>
                       <td>
-                        <span className={CLASSE_TAG[m.tom]}>{m.situacao}</span>
+                        <span className={CLASSE_ETIQ[m.tom]}>{m.situacao}</span>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div className="lp-card lp-card-pad-sm" style={{ borderRadius: 16 }}>
-              <div style={{ fontSize: 15, fontWeight: 600 }}>Tipos de manutenção</div>
-              <p style={{ fontSize: 13.5, color: 'rgba(27,29,33,.5)', marginTop: 4 }}>
-                Catálogo da empresa, com intervalo em km.
-              </p>
-              <div style={{ marginTop: 14 }}>
-                {TIPOS_MOCK.map((t) => (
-                  <div key={t.nome} className="lp-tipo-row">
-                    <span>{t.nome}</span>
-                    <span>{t.intervalo}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="lp-card lp-card-lift lp-card-pad-sm" style={{ borderRadius: 16 }}>
-              <div className="lp-num">Concluir em um clique</div>
-              <p style={{ fontSize: 14.5, color: 'rgba(27,29,33,.65)', marginTop: 10 }}>
-                Ao concluir, você informa a km real e o custo — e a quilometragem do veículo já sobe junto. Nada de
-                atualizar em dois lugares.
-              </p>
+            </Rolagem>
+            <div className="lp-mock-rodape">
+              Catálogo da empresa:{' '}
+              {TIPOS_MOCK.map((t) => `${t.nome} a cada ${t.intervalo}`).join(' · ')}
             </div>
           </div>
         </div>
-      </Secao>
+      </Faixa>
 
-      <Secao id="permissoes" className="lp-wrap lp-section lp-split">
-        <div>
-          <div className="lp-kicker">Permissões</div>
-          <h2 className="lp-h2-sm" style={{ maxWidth: '20ch', marginTop: 14 }}>
-            Cada pessoa vê e faz exatamente o que deve
-          </h2>
-          <p className="lp-lead" style={{ maxWidth: '42ch', marginTop: 20 }}>
-            Três papéis prontos, sem tela de configuração complicada. Quem entra por convite já chega com o papel certo.
-          </p>
-        </div>
-        <div className="lp-matriz">
-          <div className="lp-scroll">
-            <table>
+      <Faixa id="permissoes">
+        <span className="lp-campo lp-campo-painel">Acesso</span>
+        <div className="lp-split" style={{ marginTop: 8 }}>
+          <div>
+            <h2 className="lp-h2">Cada pessoa vê e faz exatamente o que deve</h2>
+            <p className="lp-lead">
+              Três papéis prontos, sem tela de configuração complicada. Quem entra por convite já chega com o papel
+              certo.
+            </p>
+            <div style={{ marginTop: 32 }}>
+              {GARANTIAS.map((g) => (
+                <div key={g.titulo} className="lp-garantia">
+                  <span className="lp-garantia-titulo">{g.titulo}</span>
+                  <p>{g.texto}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <Rolagem rotulo="Matriz de permissões por papel">
+            <table className="lp-matriz">
               <thead>
                 <tr>
                   <th>Ação</th>
@@ -636,83 +653,88 @@ export function LandingPage() {
                 {MATRIZ.map((m) => (
                   <tr key={m.acao}>
                     <td>{m.acao}</td>
-                    <td>{m.admin}</td>
-                    <td>{m.supervisor}</td>
-                    <td>{m.operador}</td>
+                    {/* O ícone é visual; a palavra continua no DOM para quem
+                        usa leitor de tela — um ✓ sozinho não se lê. */}
+                    {[m.admin, m.supervisor, m.operador].map((pode, i) => (
+                      <td key={i} className={pode ? 'lp-sim' : 'lp-nao'}>
+                        {pode ? <CheckIcon size={17} /> : <XIcon size={16} />}
+                        <span className="lp-oculto">{pode ? 'Sim' : 'Não'}</span>
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </Rolagem>
         </div>
-      </Secao>
+      </Faixa>
 
-      <Secao>
-        <div className="lp-grid lp-grid-3">
-          {SEGURANCA.map((g) => (
-            <div key={g.titulo} className="lp-card lp-card-lift lp-card-pad">
-              <div className="lp-num">{g.kicker}</div>
-              <h3 style={{ fontSize: 19, marginTop: 12 }}>{g.titulo}</h3>
-              <p style={{ fontSize: 15.5, color: 'var(--lp-ink-60)', marginTop: 8 }}>{g.texto}</p>
-            </div>
-          ))}
-        </div>
-      </Secao>
-
-      <Secao>
-        <h2 className="lp-h2-sm" style={{ maxWidth: '24ch' }}>
-          O que a gente mais escuta na primeira conversa
+      <Faixa id="implantacao">
+        <span className="lp-campo">Implantação</span>
+        <h2 className="lp-h2" style={{ maxWidth: '22ch' }}>
+          Do primeiro contato ao painel rodando em uma semana
         </h2>
-        <div className="lp-grid lp-grid-3" style={{ marginTop: 44 }}>
-          {OBJECOES.map((o) => (
-            <div key={o.q} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <p className="lp-objecao-q">{o.q}</p>
-              <p style={{ fontSize: 15.5, color: 'var(--lp-ink-60)' }}>{o.r}</p>
+        <div className="lp-grade lp-grade-3" style={{ marginTop: 40 }}>
+          {PASSOS.map((p) => (
+            <div key={p.num} className="lp-passo">
+              <span className="lp-passo-num">{p.num}</span>
+              <h3 className="lp-h3">{p.titulo}</h3>
+              <p>{p.texto}</p>
             </div>
           ))}
         </div>
-      </Secao>
+      </Faixa>
 
-      <Secao id="faq" className="lp-wrap-narrow lp-section">
-        <h2 className="lp-h2-sm">Dúvidas frequentes</h2>
+      <Faixa id="duvidas" estreito>
+        <span className="lp-campo">Dúvidas</span>
+        <h2 className="lp-h2">O que a gente mais escuta na primeira conversa</h2>
         <div style={{ marginTop: 36 }}>
-          {FAQ.map((q) => (
-            <div key={q.p} className="lp-faq-item">
-              <h3>{q.p}</h3>
-              <p>{q.r}</p>
-            </div>
+          {DUVIDAS.map((d) => (
+            <details key={d.p} className="lp-faq">
+              <summary>
+                {d.p}
+                <span className="lp-faq-sinal" aria-hidden="true">
+                  +
+                </span>
+              </summary>
+              <p className="lp-faq-resposta">{d.r}</p>
+            </details>
           ))}
         </div>
-      </Secao>
+      </Faixa>
 
-      <Secao id="demonstracao">
-        <div className="lp-cta">
-          <div>
-            <h2 className="lp-h2">Mostre sua frota. A gente mostra o painel.</h2>
-            <p className="lp-cta-sub">
-              Uma conversa de 20 minutos: você conta como controla a frota hoje e sai com a empresa já configurada para
-              testar.
-            </p>
-            <div className="lp-cta-actions">
-              <a href={LINK_WHATS} className="lp-btn lp-btn-onblue lp-btn-md">
-                Prefiro o WhatsApp
-              </a>
-              <a href={LINK_EMAIL} className="lp-cta-mail">
-                {EMAIL}
-              </a>
+      <section id="demonstracao" className="lp-cta" style={{ scrollMarginTop: 72 }}>
+        <div className="lp-wrap">
+          <div className="lp-cta-grade">
+            <div>
+              <span className="lp-campo">Demonstração</span>
+              <h2 className="lp-h2">Mostre sua frota. A gente mostra o painel.</h2>
+              <p className="lp-cta-sub">
+                Uma conversa de 20 minutos: você conta como controla a frota hoje e sai com a empresa já configurada
+                para testar.
+              </p>
+              <div className="lp-cta-acoes">
+                <a href={LINK_WHATS} className="lp-btn lp-btn-claro lp-btn-g">
+                  <WhatsappIcon size={17} />
+                  Prefiro o WhatsApp
+                </a>
+                <a href={LINK_EMAIL} className="lp-cta-mail">
+                  {EMAIL}
+                </a>
+              </div>
             </div>
+            <FormularioDemonstracao />
           </div>
-          <FormularioDemonstracao />
         </div>
-      </Secao>
+      </section>
 
-      <footer className="lp-footer">
+      <footer className="lp-rodape">
         <Link to="/" className="lp-brand" aria-label="Frota 360 — início">
           <Marca tamanho={18} />
         </Link>
         <Link to="/login">Entrar</Link>
         <a href={LINK_EMAIL}>{EMAIL}</a>
-        <span>© 2026 Frota 360</span>
+        <span>© {new Date().getFullYear()} Frota 360</span>
       </footer>
     </div>
   )
@@ -722,8 +744,10 @@ const FORM_VAZIO = { nome: '', empresa: '', email: '', frota: '' }
 
 /**
  * Pedido de demonstração. O envio ainda é só de tela: não existe endpoint
- * público na API (§6 do CONTEXTO — não há cadastro aberto), então os dados
- * são abertos no cliente de e-mail do visitante.
+ * público na API (§6 do CONTEXTO — não há cadastro aberto), então os dados são
+ * abertos no cliente de e-mail do visitante. Como não dá para saber se o
+ * cliente de e-mail abriu, a confirmação não afirma que abriu — ela diz o que
+ * era para acontecer e oferece a saída.
  */
 function FormularioDemonstracao() {
   const [form, setForm] = useState(FORM_VAZIO)
@@ -745,14 +769,15 @@ function FormularioDemonstracao() {
 
   return (
     <form className="lp-form" onSubmit={handleSubmit}>
-      <div className="lp-form-title">Pedir uma demonstração</div>
+      <div className="lp-form-titulo">Pedir uma demonstração</div>
       {enviado ? (
         <p className="lp-form-ok">
-          Abrimos seu e-mail com os dados preenchidos — é só enviar. A gente responde no mesmo dia útil; se preferir
-          adiantar, chame no WhatsApp.
+          Seu programa de e-mail deve ter aberto com os dados preenchidos — é só enviar. Se nada abriu, escreva para{' '}
+          <a href={LINK_EMAIL}>{EMAIL}</a> ou <a href={LINK_WHATS}>chame no WhatsApp</a>. A gente responde no mesmo dia
+          útil.
         </p>
       ) : (
-        <div className="lp-form-fields">
+        <div className="lp-form-campos">
           <input
             className="lp-input"
             type="text"
@@ -795,10 +820,10 @@ function FormularioDemonstracao() {
               <option key={t}>{t}</option>
             ))}
           </select>
-          <button type="submit" className="lp-btn lp-btn-primary" style={{ padding: 14, fontSize: 15 }}>
+          <button type="submit" className="lp-btn lp-btn-primario" style={{ padding: 14 }}>
             Quero ver o painel
           </button>
-          <p className="lp-form-note">Sem compromisso. Usamos seus dados apenas para entrar em contato.</p>
+          <p className="lp-form-nota">Sem compromisso. Usamos seus dados apenas para entrar em contato.</p>
         </div>
       )}
     </form>

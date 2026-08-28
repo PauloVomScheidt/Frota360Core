@@ -1,4 +1,4 @@
-using Frota360.Application.DTOs.Convite.Request;
+﻿using Frota360.Application.DTOs.Convite.Request;
 using Frota360.Application.DTOs.Convite.Response;
 using Frota360.Application.DTOs.Usuario.Response;
 

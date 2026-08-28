@@ -1,6 +1,8 @@
 using Frota360.Application.Abstractions.Messaging;
+using Frota360.Application.Common;
 using Frota360.Application.DTOs.Manutencao.Response;
 using Frota360.Application.Interfaces;
+using Frota360.Domain.Common;
 using Frota360.Domain.Enums;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
@@ -11,6 +13,7 @@ namespace Frota360.Application.UseCases.Manutencoes.Commands.UpdateManutencao
                                                 IVeiculoRepository veiculoRepository,
                                                 ITipoManutencaoRepository tipoRepository,
                                                 ICurrentUserService currentUser,
+                                                IAuditoriaService auditoria,
                                                 ILogger<UpdateManutencaoHandler> logger)
         : ICommandHandler<UpdateManutencaoCommand, ManutencaoResponse?>
     {
@@ -47,6 +50,16 @@ namespace Frota360.Application.UseCases.Manutencoes.Commands.UpdateManutencao
                     throw new InvalidOperationException(
                         $"Já existe manutenção pendente de \"{tipo.Nome}\" para este veículo em {request.QuilometragemPrevista} km.");
 
+                // Veículo e tipo entram pelo nome legível, não pelo id: a auditoria é lida
+                // por gente, e as navegações já vieram carregadas do repositório.
+                var alteracoes = new AlteracoesBuilder()
+                    .Comparar("Veículo", manutencao.Veiculo?.Placa ?? $"#{manutencao.VeiculoId}", veiculo.Placa)
+                    .Comparar("Tipo", manutencao.Tipo?.Nome ?? $"#{manutencao.TipoManutencaoId}", tipo.Nome)
+                    .Comparar("Quilometragem prevista", manutencao.QuilometragemPrevista, request.QuilometragemPrevista)
+                    .Comparar("Data prevista", manutencao.DataPrevista, request.DataPrevista)
+                    .Comparar("Observação", manutencao.Observacao, request.Observacao)
+                    .Construir();
+
                 manutencao.VeiculoId = veiculo.Id;
                 manutencao.TipoManutencaoId = tipo.Id;
                 manutencao.QuilometragemPrevista = request.QuilometragemPrevista;
@@ -58,6 +71,9 @@ namespace Frota360.Application.UseCases.Manutencoes.Commands.UpdateManutencao
                 atualizada.Tipo = tipo;
 
                 logger.LogInformation("Manutenção atualizada com sucesso. Id {Id}", atualizada.Id);
+
+                await auditoria.RegistrarAsync(EntidadesAuditadas.Manutencao, AcoesAuditoria.Atualizou, atualizada.Id,
+                    $"Replanejou a manutenção #{atualizada.Id} ({tipo.Nome}, veículo {veiculo.Placa})", alteracoes);
 
                 return atualizada.ToResponse();
             }

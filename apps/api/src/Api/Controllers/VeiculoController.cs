@@ -1,4 +1,4 @@
-using Asp.Versioning;
+﻿using Asp.Versioning;
 using FluentValidation;
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Veiculo.Request;
@@ -14,6 +14,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Frota360.Api.Controllers
 {
+    // Leitura aberta a todos os papéis, motorista incluído: ele abre rota escolhendo o
+    // veículo e consulta a frota em /veiculos. Escrita continua restrita.
     [Authorize]
     [ApiController]
     [ApiVersion("1.0")]
@@ -100,15 +102,17 @@ namespace Frota360.Api.Controllers
             return Ok(ApiResponse<VeiculoResponse>.Ok(atualizado, "Veículo atualizado com sucesso."));
         }
 
-        /// <summary>Remove um veículo da frota. (Admin)</summary>
+        /// <summary>Remove um veículo da frota sem rotas associadas. (Admin)</summary>
         /// <response code="200">Removido com sucesso</response>
         /// <response code="403">Sem permissão</response>
         /// <response code="404">Veículo não encontrado</response>
+        /// <response code="422">Veículo com rotas associadas (RN08); encerre ou remova as rotas antes</response>
         [HttpDelete("{id:int}")]
         [Authorize(Roles = Roles.Admin)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status422UnprocessableEntity)]
         public async Task<IActionResult> Delete(int id)
         {
             var deletado = await dispatcher.SendAsync(new DeleteVeiculoCommand(id));

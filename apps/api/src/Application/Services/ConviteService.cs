@@ -1,8 +1,9 @@
-using Frota360.Application.Common;
+﻿using Frota360.Application.Common;
 using Frota360.Application.DTOs.Convite.Request;
 using Frota360.Application.DTOs.Convite.Response;
 using Frota360.Application.DTOs.Usuario.Response;
 using Frota360.Application.Interfaces;
+using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
 using Frota360.Domain.Interfaces.Services;
@@ -15,6 +16,7 @@ namespace Frota360.Application.Services
                                 ITokenService tokenService,
                                 IEmailService emailService,
                                 ICurrentUserService currentUser,
+                                IAuditoriaService auditoria,
                                 FrontendSettings frontendSettings,
                                 ILogger<ConviteService> logger) : IConviteService
     {
@@ -52,6 +54,12 @@ namespace Frota360.Application.Services
 
             logger.LogInformation("Convite criado para {Email} como {Role} na empresa {EmpresaId}", email, role, empresaId);
 
+            // O backoffice também passa por aqui, sem sessão (criadoPorUsuarioId nulo): ali
+            // não há ator para registrar, e o provisionamento fica só no Serilog.
+            if (criadoPorUsuarioId is not null)
+                await auditoria.RegistrarAsync(EntidadesAuditadas.Convite, AcoesAuditoria.Criou, convite.Id,
+                    $"Convidou {email} como {role}");
+
             return new ConviteCriadoResponse
             {
                 Id = convite.Id,
@@ -62,6 +70,7 @@ namespace Frota360.Application.Services
                 LinkConvite = link
             };
         }
+
 
         public async Task<AuthResponse?> AceitarAsync(AceitarConviteRequest request)
         {
@@ -85,6 +94,9 @@ namespace Frota360.Application.Services
                 Email = convite.Email,
                 SenhaHash = BCrypt.Net.BCrypt.HashPassword(request.Senha),
                 Role = convite.Role,
+                // Dados pessoais são opcionais: quem não informou fica com nulo.
+                CPF = string.IsNullOrWhiteSpace(request.CPF) ? null : request.CPF,
+                DataNascimento = request.DataNascimento,
                 Ativo = true,
                 RefreshTokenHash = TokenHelper.Hash(refreshToken),
                 RefreshTokenExpiraEm = DateTime.UtcNow.Add(RefreshTokenValidade),
@@ -96,6 +108,12 @@ namespace Frota360.Application.Services
 
             logger.LogInformation("Convite aceito. Usuário {Id} criado na empresa {EmpresaId} como {Role}",
                 usuario.Id, usuario.EmpresaId, usuario.Role);
+
+            // Único evento da trilha em que o ator é também o objeto — e o único sem sessão:
+            // o aceite é anônimo, e o usuário que age acabou de nascer nesta operação.
+            await auditoria.RegistrarComoAsync(usuario.EmpresaId, usuario,
+                EntidadesAuditadas.Convite, AcoesAuditoria.Aceitou, convite.Id,
+                $"Aceitou o convite e criou a conta {usuario.Email} como {usuario.Role}");
 
             return new AuthResponse
             {
@@ -135,6 +153,9 @@ namespace Frota360.Application.Services
             await conviteRepository.DeleteAsync(convite);
 
             logger.LogInformation("Convite {Id} cancelado", id);
+
+            await auditoria.RegistrarAsync(EntidadesAuditadas.Convite, AcoesAuditoria.Cancelou, id,
+                $"Cancelou o convite de {convite.Email} ({convite.Role})");
 
             return true;
         }

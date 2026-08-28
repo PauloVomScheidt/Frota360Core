@@ -1,7 +1,8 @@
-using Frota360.Application.Common;
+﻿using Frota360.Application.Common;
 using Frota360.Application.DTOs.Convite.Request;
 using Frota360.Application.Interfaces;
 using Frota360.Application.Services;
+using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
 using Frota360.Domain.Interfaces.Services;
@@ -19,6 +20,7 @@ namespace Frota360.Tests.Services
         private readonly ITokenService _tokenService = Substitute.For<ITokenService>();
         private readonly IEmailService _emailService = Substitute.For<IEmailService>();
         private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
+        private readonly IAuditoriaService _auditoria = Substitute.For<IAuditoriaService>();
 
         public ConviteServiceTests()
         {
@@ -41,11 +43,12 @@ namespace Frota360.Tests.Services
         }
 
         private ConviteService CriarServico() =>
-            new(_conviteRepository, _usuarioRepository, _tokenService, _emailService, _currentUser,
+            new(_conviteRepository, _usuarioRepository, _tokenService, _emailService, _currentUser, _auditoria,
                 new FrontendSettings("http://localhost:5173"), NullLogger<ConviteService>.Instance);
 
         private static string HashDe(string token) =>
             Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+
 
         [Fact]
         public async Task Criar_DevePersistirApenasHash_EEnviarEmailComLink()
@@ -181,6 +184,64 @@ namespace Frota360.Tests.Services
             Assert.Null(resposta);
         }
 
+
+        // ----- Dados pessoais opcionais informados no aceite -----
+
+        private Convite ConvitePendente(string token = "token-convite") => new()
+        {
+            Id = 5,
+            EmpresaId = 1,
+            Email = "convidada@email.com",
+            Role = "Motorista",
+            TokenHash = HashDe(token),
+            ExpiraEm = DateTime.UtcNow.AddDays(1)
+        };
+
+        [Fact]
+        public async Task Aceitar_ComCpfENascimento_DeveGravarNoUsuario()
+        {
+            _conviteRepository.GetByTokenHashAsync(HashDe("token-convite")).Returns(ConvitePendente());
+            _tokenService.GerarToken(Arg.Any<Usuario>()).Returns("jwt-novo");
+
+            var service = CriarServico();
+
+            await service.AceitarAsync(new AceitarConviteRequest
+            {
+                Token = "token-convite",
+                Nome = "Ana",
+                Senha = "SenhaForte1",
+                CPF = "39053344705",
+                DataNascimento = new DateTime(1990, 1, 1)
+            });
+
+            await _usuarioRepository.Received(1).AddAsync(Arg.Is<Usuario>(u =>
+                u.Role == "Motorista" &&
+                u.CPF == "39053344705" &&
+                u.DataNascimento == new DateTime(1990, 1, 1)));
+        }
+
+        [Fact]
+        public async Task Aceitar_SemOsDadosOpcionais_DeveGravarNulo()
+        {
+            // Em branco vira nulo, e não string vazia: o índice único filtrado de CPF
+            // por empresa depende disso para não colidir entre quem não informou.
+            _conviteRepository.GetByTokenHashAsync(HashDe("token-convite")).Returns(ConvitePendente());
+            _tokenService.GerarToken(Arg.Any<Usuario>()).Returns("jwt-novo");
+
+            var service = CriarServico();
+
+            await service.AceitarAsync(new AceitarConviteRequest
+            {
+                Token = "token-convite",
+                Nome = "Ana",
+                Senha = "SenhaForte1",
+                CPF = "   "
+            });
+
+            await _usuarioRepository.Received(1).AddAsync(Arg.Is<Usuario>(u =>
+                u.CPF == null && u.DataNascimento == null));
+        }
+
         [Fact]
         public async Task Cancelar_ConviteJaUtilizado_DeveLancar()
         {
@@ -191,6 +252,72 @@ namespace Frota360.Tests.Services
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => service.CancelarAsync(4));
             await _conviteRepository.DidNotReceive().DeleteAsync(Arg.Any<Convite>());
+        }
+
+        /// <summary>
+        /// O aceite é o único evento da trilha em que o ator é também o objeto — e o único sem
+        /// sessão, já que o usuário que age nasce na própria operação.
+        /// </summary>
+        [Fact]
+        public async Task Aceitar_DeveRegistrarAuditoriaComOUsuarioRecemCriadoComoAtor()
+        {
+            _conviteRepository.GetByTokenHashAsync(HashDe("token-valido")).Returns(new Convite
+            {
+                Id = 5,
+                EmpresaId = 1,
+                Email = "novo@email.com",
+                Role = "Operador",
+                ExpiraEm = DateTime.UtcNow.AddDays(1)
+            });
+            _usuarioRepository.ExisteEmailAsync("novo@email.com").Returns(false);
+
+            var service = CriarServico();
+
+            await service.AceitarAsync(new AceitarConviteRequest
+            {
+                Token = "token-valido",
+                Nome = "João Lima",
+                Senha = "SenhaForte123"
+            });
+
+            await _auditoria.Received(1).RegistrarComoAsync(
+                1,
+                Arg.Is<Usuario>(u => u.Id == 99 && u.Email == "novo@email.com" && u.Role == "Operador"),
+                EntidadesAuditadas.Convite,
+                AcoesAuditoria.Aceitou,
+                5,
+                Arg.Any<string>(),
+                Arg.Any<IEnumerable<AlteracaoCampo>>());
+        }
+
+        [Fact]
+        public async Task Criar_PeloBackofficeSemSessao_NaoDeveRegistrarAuditoria()
+        {
+            // Provisionamento chega sem ator (criadoPorUsuarioId nulo): fica só no Serilog.
+            _usuarioRepository.ExisteEmailAsync("admin@nova.com").Returns(false);
+            _tokenService.GerarRefreshToken().Returns("token-convite");
+
+            var service = CriarServico();
+
+            await service.CriarParaEmpresaAsync(7, criadoPorUsuarioId: null, "admin@nova.com", "Admin");
+
+            await _auditoria.DidNotReceive().RegistrarAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int?>(), Arg.Any<string>(), Arg.Any<IEnumerable<AlteracaoCampo>>());
+        }
+
+        [Fact]
+        public async Task Criar_PorAdminLogado_DeveRegistrarAuditoria()
+        {
+            _usuarioRepository.ExisteEmailAsync("nova@email.com").Returns(false);
+            _tokenService.GerarRefreshToken().Returns("token-convite");
+
+            var service = CriarServico();
+
+            await service.CriarAsync(new CriarConviteRequest { Email = "nova@email.com", Role = "Operador" });
+
+            await _auditoria.Received(1).RegistrarAsync(
+                EntidadesAuditadas.Convite, AcoesAuditoria.Criou, 5,
+                Arg.Any<string>(), Arg.Any<IEnumerable<AlteracaoCampo>>());
         }
     }
 }

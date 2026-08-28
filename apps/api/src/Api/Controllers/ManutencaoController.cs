@@ -1,4 +1,4 @@
-using Asp.Versioning;
+﻿using Asp.Versioning;
 using FluentValidation;
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Manutencao.Request;
@@ -16,6 +16,9 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Frota360.Api.Controllers
 {
+    // Leitura aberta a todos os papéis: o motorista precisa saber se o veículo que vai
+    // pegar tem pendência. Escrita continua restrita, e o custo é omitido para ele
+    // (ver GetAllManutencoesHandler).
     [Authorize]
     [ApiController]
     [ApiVersion("1.0")]

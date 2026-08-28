@@ -16,6 +16,9 @@ namespace Frota360.Application.DependencyInjection
             services.AddScoped<IUsuarioService, UsuarioService>();
             services.AddScoped<IBackofficeService, BackofficeService>();
 
+            // Escrita da trilha de auditoria; a leitura é uma query CQRS
+            services.AddScoped<IAuditoriaService, AuditoriaService>();
+
             // Infraestrutura CQRS manual
             services.AddScoped<IDispatcher, Dispatcher>();
             services.AddCqrsHandlers();

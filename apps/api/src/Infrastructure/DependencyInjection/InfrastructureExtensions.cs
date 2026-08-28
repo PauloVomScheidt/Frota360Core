@@ -33,12 +33,12 @@ namespace Frota360.Infrastructure.DependencyInjection
 
             services.AddScoped<IVeiculoRepository, VeiculoRepository>();
             services.AddScoped<IUsuarioRepository, UsuarioRepository>();
-            services.AddScoped<IMotoristaRepository, MotoristaRepository>();
             services.AddScoped<IRotaRepository, RotaRepository>();
             services.AddScoped<IConviteRepository, ConviteRepository>();
             services.AddScoped<IEmpresaRepository, EmpresaRepository>();
             services.AddScoped<IManutencaoRepository, ManutencaoRepository>();
             services.AddScoped<ITipoManutencaoRepository, TipoManutencaoRepository>();
+            services.AddScoped<ILogAuditoriaRepository, LogAuditoriaRepository>();
             services.AddScoped<ITokenService, TokenService>();
 
             // E-mail: Resend quando a chave está configurada; em dev sem chave, loga o conteúdo no console

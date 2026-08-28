@@ -12,6 +12,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   GridIcon,
+  HistoricoIcon,
   LogoutIcon,
   ClipboardIcon,
   MailIcon,
@@ -124,6 +125,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const user = useSession()
   const admin = pode.gerenciarUsuarios(user?.role)
   const gestor = pode.editarTiposManutencao(user?.role)
+  const motorista = pode.verMinhasRotas(user?.role)
 
   const [expanded, setExpanded] = useState(() => lerPreferencia(SIDEBAR_KEY, true))
   const [catDashboard, setCatDashboard] = useState(true)
@@ -143,21 +145,31 @@ export function AppLayout({ children }: { children: ReactNode }) {
     navigate('/login', { replace: true })
   }
 
-  const itensDashboard: ItemNav[] = [
-    { to: '/dashboard', rotulo: 'Visão geral', icone: <GridIcon size={17} /> },
-    { to: '/motoristas', rotulo: 'Motoristas', icone: <UsersIcon size={17} /> },
-    { to: '/veiculos', rotulo: 'Veículos', icone: <TruckIcon size={17} /> },
-    { to: '/rotas', rotulo: 'Rotas', icone: <RouteIcon size={17} /> },
-    { to: '/manutencoes', rotulo: 'Manutenções', icone: <WrenchIcon size={17} /> },
-    // O catálogo de tipos só aparece para quem pode mantê-lo (Admin/Supervisor).
-    ...(gestor
-      ? [{ to: '/tipos-manutencao', rotulo: 'Tipos de manutenção', icone: <ClipboardIcon size={17} /> }]
-      : []),
-  ]
+  // O motorista opera uma tela e consulta duas: veículos e manutenções entram em
+  // modo leitura, porque saber o estado do caminhão faz parte do trabalho dele.
+  const itensDashboard: ItemNav[] = motorista
+    ? [
+        { to: '/minhas-rotas', rotulo: 'Minhas rotas', icone: <RouteIcon size={17} /> },
+        { to: '/veiculos', rotulo: 'Veículos', icone: <TruckIcon size={17} /> },
+        { to: '/manutencoes', rotulo: 'Manutenções', icone: <WrenchIcon size={17} /> },
+      ]
+    : [
+        { to: '/dashboard', rotulo: 'Visão geral', icone: <GridIcon size={17} /> },
+        { to: '/motoristas', rotulo: 'Motoristas', icone: <UsersIcon size={17} /> },
+        { to: '/veiculos', rotulo: 'Veículos', icone: <TruckIcon size={17} /> },
+        { to: '/rotas', rotulo: 'Rotas', icone: <RouteIcon size={17} /> },
+        { to: '/manutencoes', rotulo: 'Manutenções', icone: <WrenchIcon size={17} /> },
+        // O catálogo de tipos só aparece para quem pode mantê-lo (Admin/Supervisor).
+        ...(gestor
+          ? [{ to: '/tipos-manutencao', rotulo: 'Tipos de manutenção', icone: <ClipboardIcon size={17} /> }]
+          : []),
+      ]
 
+  // A categoria inteira já é admin-only, então nenhum item aqui precisa de guarda própria.
   const itensControle: ItemNav[] = [
     { to: '/usuarios', rotulo: 'Usuários', icone: <UsersIcon size={17} /> },
     { to: '/convites', rotulo: 'Convites', icone: <MailIcon size={17} /> },
+    { to: '/auditoria', rotulo: 'Auditoria', icone: <HistoricoIcon size={17} /> },
   ]
 
   return (
@@ -198,7 +210,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
         <nav className="flex-1 overflow-y-auto py-3">
           <SidebarCategoria
-            titulo="Dashboard"
+            titulo={motorista ? 'Operação' : 'Dashboard'}
             itens={itensDashboard}
             expanded={expanded}
             aberta={catDashboard}
@@ -224,7 +236,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <button type="button" className="btn btn-icon" aria-label="Notificações">
             <BellIcon />
           </button>
-          <div className="flex items-center gap-2">
+          {/* O bloco do avatar é o caminho para `/perfil` — a tela onde a pessoa corrige os
+              próprios dados. Sem gate de papel: vale para todas as roles. */}
+          <NavLink
+            to="/perfil"
+            className="flex items-center gap-2"
+            style={{ color: 'inherit', textDecoration: 'none' }}
+            title="Meu perfil"
+          >
             <div
               className="flex h-[30px] w-[30px] items-center justify-center rounded-full text-xs font-extrabold"
               style={{
@@ -242,7 +261,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </div>
             </div>
             <ChevronDownIcon size={14} />
-          </div>
+          </NavLink>
           <button type="button" className="btn btn-icon" aria-label="Sair" onClick={handleLogout}>
             <LogoutIcon />
           </button>

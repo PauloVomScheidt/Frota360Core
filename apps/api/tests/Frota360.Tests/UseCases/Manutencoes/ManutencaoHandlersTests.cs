@@ -1,3 +1,4 @@
+using Frota360.Application.Common;
 using Frota360.Application.DTOs.Manutencao.Request;
 using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Manutencoes.Commands.ConcluirManutencao;
@@ -5,6 +6,7 @@ using Frota360.Application.UseCases.Manutencoes.Commands.CreateManutencao;
 using Frota360.Application.UseCases.Manutencoes.Commands.DeleteManutencao;
 using Frota360.Application.UseCases.Manutencoes.Commands.UpdateManutencao;
 using Frota360.Application.UseCases.Manutencoes.Queries.GetAllManutencoes;
+using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Enums;
 using Frota360.Domain.Interfaces.Repositories;
@@ -19,6 +21,7 @@ namespace Frota360.Tests.UseCases.Manutencoes
         private readonly IVeiculoRepository _veiculoRepository = Substitute.For<IVeiculoRepository>();
         private readonly ITipoManutencaoRepository _tipoRepository = Substitute.For<ITipoManutencaoRepository>();
         private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
+        private readonly IAuditoriaService _auditoria = Substitute.For<IAuditoriaService>();
 
         public ManutencaoHandlersTests()
         {
@@ -61,13 +64,13 @@ namespace Frota360.Tests.UseCases.Manutencoes
         };
 
         private CreateManutencaoHandler CreateHandler() =>
-            new(_repository, _veiculoRepository, _tipoRepository, _currentUser, NullLogger<CreateManutencaoHandler>.Instance);
+            new(_repository, _veiculoRepository, _tipoRepository, _currentUser, _auditoria, NullLogger<CreateManutencaoHandler>.Instance);
 
         private UpdateManutencaoHandler UpdateHandler() =>
-            new(_repository, _veiculoRepository, _tipoRepository, _currentUser, NullLogger<UpdateManutencaoHandler>.Instance);
+            new(_repository, _veiculoRepository, _tipoRepository, _currentUser, _auditoria, NullLogger<UpdateManutencaoHandler>.Instance);
 
         private ConcluirManutencaoHandler ConcluirHandler() =>
-            new(_repository, _veiculoRepository, _currentUser, NullLogger<ConcluirManutencaoHandler>.Instance);
+            new(_repository, _veiculoRepository, _currentUser, _auditoria, NullLogger<ConcluirManutencaoHandler>.Instance);
 
         [Fact]
         public async Task Create_DevePersistirEscopadoNaEmpresaEMapearResposta()
@@ -278,7 +281,7 @@ namespace Frota360.Tests.UseCases.Manutencoes
             var existente = NovaManutencao(4);
             _repository.GetByIdAsync(4, 1).Returns(existente);
 
-            var handler = new DeleteManutencaoHandler(_repository, _currentUser, NullLogger<DeleteManutencaoHandler>.Instance);
+            var handler = new DeleteManutencaoHandler(_repository, _currentUser, _auditoria, NullLogger<DeleteManutencaoHandler>.Instance);
 
             var resultado = await handler.HandleAsync(new DeleteManutencaoCommand(4));
 
@@ -291,12 +294,52 @@ namespace Frota360.Tests.UseCases.Manutencoes
         {
             _repository.GetByIdAsync(123, 1).Returns((Manutencao?)null);
 
-            var handler = new DeleteManutencaoHandler(_repository, _currentUser, NullLogger<DeleteManutencaoHandler>.Instance);
+            var handler = new DeleteManutencaoHandler(_repository, _currentUser, _auditoria, NullLogger<DeleteManutencaoHandler>.Instance);
 
             var resultado = await handler.HandleAsync(new DeleteManutencaoCommand(123));
 
             Assert.False(resultado);
             await _repository.DidNotReceive().DeleteAsync(Arg.Any<Manutencao>());
+        }
+
+        [Fact]
+        public async Task Concluir_DeveRegistrarAuditoriaComATransicaoDeStatus()
+        {
+            var pendente = NovaManutencao(9);
+            _repository.GetByIdAsync(9, 1).Returns(pendente);
+            _repository.UpdateAsync(Arg.Any<Manutencao>()).Returns(ci => ci.Arg<Manutencao>());
+            _veiculoRepository.GetByIdAsync(pendente.VeiculoId, 1).Returns(NovoVeiculo(pendente.VeiculoId));
+
+            var handler = new ConcluirManutencaoHandler(_repository, _veiculoRepository, _currentUser, _auditoria,
+                NullLogger<ConcluirManutencaoHandler>.Instance);
+
+            await handler.HandleAsync(new ConcluirManutencaoCommand(9, new ConcluirManutencaoRequest
+            {
+                QuilometragemRealizada = 61_240,
+                DataRealizacao = new DateTime(2026, 8, 28)
+            }));
+
+            await _auditoria.Received(1).RegistrarAsync(
+                EntidadesAuditadas.Manutencao,
+                AcoesAuditoria.Concluiu,
+                9,
+                Arg.Any<string>(),
+                Arg.Is<IEnumerable<AlteracaoCampo>>(a =>
+                    a.Any(c => c.Campo == "Status" && c.Para == nameof(StatusManutencao.Realizada))));
+        }
+
+        [Fact]
+        public async Task Delete_QuandoNaoExiste_NaoDeveRegistrarAuditoria()
+        {
+            _repository.GetByIdAsync(123, 1).Returns((Manutencao?)null);
+
+            var handler = new DeleteManutencaoHandler(_repository, _currentUser, _auditoria, NullLogger<DeleteManutencaoHandler>.Instance);
+
+            await handler.HandleAsync(new DeleteManutencaoCommand(123));
+
+            // Nada aconteceu de fato: um "não encontrado" não é evento de trilha.
+            await _auditoria.DidNotReceive().RegistrarAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int?>(), Arg.Any<string>(), Arg.Any<IEnumerable<AlteracaoCampo>>());
         }
     }
 }
