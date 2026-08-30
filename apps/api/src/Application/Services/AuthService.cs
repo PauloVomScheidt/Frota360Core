@@ -76,7 +76,7 @@ namespace Frota360.Application.Services
                     return null;
                 }
 
-                if (usuario.RefreshTokenExpiraEm is null || usuario.RefreshTokenExpiraEm < DateTime.UtcNow)
+                if (usuario.RefreshTokenExpiraEm is null || usuario.RefreshTokenExpiraEm < DateTime.Now)
                 {
                     logger.LogWarning("Tentativa de refresh com token expirado. Id {Id}", usuario.Id);
                     return null;
@@ -136,7 +136,7 @@ namespace Frota360.Application.Services
             var token = tokenService.GerarRefreshToken();
 
             usuario.ResetSenhaTokenHash = TokenHelper.Hash(token);
-            usuario.ResetSenhaExpiraEm = DateTime.UtcNow.Add(ResetSenhaValidade);
+            usuario.ResetSenhaExpiraEm = DateTime.Now.Add(ResetSenhaValidade);
             await repository.UpdateAsync(usuario);
 
             var link = $"{frontendSettings.BaseUrl.TrimEnd('/')}/redefinir-senha?token={Uri.EscapeDataString(token)}";
@@ -154,7 +154,7 @@ namespace Frota360.Application.Services
         {
             var usuario = await repository.GetByResetSenhaTokenHashAsync(TokenHelper.Hash(request.Token));
 
-            if (usuario is null || usuario.ResetSenhaExpiraEm is null || usuario.ResetSenhaExpiraEm < DateTime.UtcNow)
+            if (usuario is null || usuario.ResetSenhaExpiraEm is null || usuario.ResetSenhaExpiraEm < DateTime.Now)
             {
                 logger.LogWarning("Tentativa de redefinição com token inválido ou expirado");
                 return false;
@@ -187,7 +187,7 @@ namespace Frota360.Application.Services
             var refreshToken = tokenService.GerarRefreshToken();
 
             usuario.RefreshTokenHash = TokenHelper.Hash(refreshToken);
-            usuario.RefreshTokenExpiraEm = DateTime.UtcNow.Add(RefreshTokenValidade);
+            usuario.RefreshTokenExpiraEm = DateTime.Now.Add(RefreshTokenValidade);
             await repository.UpdateAsync(usuario);
 
             return refreshToken;

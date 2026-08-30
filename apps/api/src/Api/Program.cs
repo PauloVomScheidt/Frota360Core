@@ -19,6 +19,13 @@ Log.Logger = new LoggerConfiguration()
 
 Log.Information("Iniciando Frota360 API...");
 
+// O sistema grava hora local (DateTime.Now) em todas as datas persistidas, então o fuso do
+// processo faz parte da semântica dos dados, não é detalhe de ambiente. Em container sem
+// TZ definida o Linux assume UTC, e o mesmo código passaria a gravar 3 h adiantado sem
+// quebrar nada — por isso o fuso efetivo é registrado logo na primeira linha do log.
+Log.Information("Fuso horário do processo: {Fuso} (UTC{Offset:+00;-00}). Esperado em produção: America/Sao_Paulo (UTC-03).",
+    TimeZoneInfo.Local.Id, TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow).TotalHours);
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Serilog
@@ -155,7 +162,7 @@ builder.Services.AddHealthChecks()
     .AddDbContextCheck<Frota360DbContext>(
         name: "database",
         failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy,
-        tags: ["db", "sql"]);
+        tags: ["db", "postgres"]);
 
 var app = builder.Build();
 

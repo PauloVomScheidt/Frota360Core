@@ -32,6 +32,9 @@ namespace Frota360.Infrastructure.Services
                 issuer: configuration["Jwt:Issuer"],
                 audience: configuration["Jwt:Audience"],
                 claims: claims,
+                // Única data do sistema em UTC, e de propósito: este valor vira o claim `exp`,
+                // que o JWT define como epoch UTC. É um instante que sai do sistema num formato
+                // UTC-nativo, diferente das datas persistidas, que são hora local de Brasília.
                 expires: DateTime.UtcNow.AddHours(1),
                 signingCredentials: credenciais);
 

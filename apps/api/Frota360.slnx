@@ -3,5 +3,6 @@
   <Project Path="src/Domain/Frota360.Domain.csproj" />
   <Project Path="src/Infrastructure/Frota360.Infrastructure.csproj" />
   <Project Path="tests/Frota360.Tests/Frota360.Tests.csproj" />
+  <Project Path="tests/Frota360.IntegrationTests/Frota360.IntegrationTests.csproj" />
   <Project Path="src/Api/Frota360.Api.csproj" />
 </Solution>

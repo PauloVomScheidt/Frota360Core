@@ -1,10 +1,10 @@
-# Frota360
+﻿# Frota360
 
 Monorepo do **Frota360** — gestão de frotas multi-tenant. Cada empresa cliente enxerga apenas os seus veículos, motoristas, rotas e manutenções; o isolamento é aplicado em cada acesso a dados, a partir da claim `empresaId` do JWT.
 
 | App | Stack | Documentação |
 |---|---|---|
-| [`apps/api`](apps/api) — API REST | .NET 10, EF Core, SQL Server, JWT | [README](apps/api/README.md) · [CLAUDE.md](apps/api/CLAUDE.md) · [contexto-api.md](docs/contexto-api.md) |
+| [`apps/api`](apps/api) — API REST | .NET 10, EF Core, PostgreSQL, JWT | [README](apps/api/README.md) · [CLAUDE.md](apps/api/CLAUDE.md) · [contexto-api.md](docs/contexto-api.md) |
 | [`apps/web`](apps/web) — front-end | React 19, Vite, TanStack Query, Tailwind | [README](apps/web/README.md) · [CLAUDE.md](apps/web/CLAUDE.md) · [contexto-web.md](docs/contexto-web.md) |
 
 Cada app é **autocontido**: tem sua própria solution/`package.json`, seus comandos e seu `CLAUDE.md`. O que é transversal aos dois — a regra do português, a documentação de contexto e o **contrato entre API e front** — está em [CLAUDE.md](CLAUDE.md) na raiz.
@@ -25,9 +25,7 @@ apps/
     └── src/{api,auth,components,pages,styles,lib}
 docs/
 ├── contexto-api.md        contexto profundo do backend
-├── contexto-web.md        contexto profundo do front
-├── arquitetura.py         gera docs/arquitetura.png
-└── arquitetura.png
+└── contexto-web.md        contexto profundo do front
 ```
 
 Este repositório substitui os antigos `Frota360`/`Rota360` (API) e `Frota360Web` (front) — o histórico de commits dos dois foi preservado aqui.
@@ -36,12 +34,21 @@ Este repositório substitui os antigos `Frota360`/`Rota360` (API) e `Frota360Web
 
 ## Como rodar
 
-Pré-requisitos: **.NET 10 SDK**, **Node 20+** e uma instância de **SQL Server** (LocalDB ou SQL Express servem).
+Pré-requisitos: **.NET 10 SDK**, **Node 20+** e uma instância de **PostgreSQL 17**.
+
+O jeito mais rápido de ter o banco é o compose da raiz — ele já cria o banco `frota360` com as
+credenciais que os `appsettings` de desenvolvimento esperam:
+
+```powershell
+docker compose up -d
+```
 
 **Terminal 1 — API:**
 
 ```powershell
 cd apps/api
+copy src/Api/appsettings.example.json src/Api/appsettings.json
+copy src/Api/appsettings.example.json src/Api/appsettings.Development.json
 dotnet build Frota360.slnx
 dotnet user-secrets set "Jwt:Key" "uma-chave-secreta-com-pelo-menos-32-caracteres" --project src/Api
 dotnet ef database update --project src/Infrastructure --startup-project src/Api
@@ -77,6 +84,6 @@ Detalhes de configuração, endpoints, papéis e regras de negócio: [`apps/api/
 
 ## Convenções
 
-O projeto é escrito **inteiramente em português** — classes, métodos, DTOs, comentários, logs, textos de UI e mensagens de resposta. A única exceção são os rótulos do diagrama de arquitetura, em inglês para circular fora do time.
+O projeto é escrito **inteiramente em português** — classes, métodos, DTOs, comentários, logs, textos de UI e mensagens de resposta.
 
 Toda alteração estrutural, regra de negócio ou endpoint novo exige atualizar a documentação de contexto correspondente em `docs/` — e **os dois lados** quando a mudança atravessa a fronteira entre API e front.

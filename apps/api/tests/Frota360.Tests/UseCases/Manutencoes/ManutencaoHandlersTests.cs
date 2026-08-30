@@ -241,7 +241,7 @@ namespace Frota360.Tests.UseCases.Manutencoes
         {
             _repository.GetByIdAsync(5, 1).Returns(NovaManutencao(5, StatusManutencao.Realizada));
 
-            var request = new ConcluirManutencaoRequest { QuilometragemRealizada = 61_230, DataRealizacao = DateTime.UtcNow };
+            var request = new ConcluirManutencaoRequest { QuilometragemRealizada = 61_230, DataRealizacao = DateTime.Now };
 
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () => ConcluirHandler().HandleAsync(new ConcluirManutencaoCommand(5, request)));

@@ -372,13 +372,13 @@ namespace Frota360.Tests.UseCases.Rotas
             _repository.UpdateAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
             _veiculoRepository.GetByIdAsync(1, 1).Returns(NovoVeiculo(1));
 
-            var antes = DateTime.UtcNow;
+            var antes = DateTime.Now;
 
             var resposta = await CriarEncerrarHandler().HandleAsync(
                 new EncerrarRotaCommand(5, new EncerrarRotaRequest { KmFinal = 50_100 }));
 
             Assert.NotNull(resposta!.DataFim);
-            Assert.InRange(resposta.DataFim!.Value, antes, DateTime.UtcNow);
+            Assert.InRange(resposta.DataFim!.Value, antes, DateTime.Now);
         }
 
         [Fact]

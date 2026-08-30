@@ -49,7 +49,7 @@ namespace Frota360.Tests.Services
             // Apenas o hash do refresh token deve ser persistido
             await _repository.Received(1).UpdateAsync(Arg.Is<Usuario>(u =>
                 u.RefreshTokenHash == HashDe("refresh-token") &&
-                u.RefreshTokenExpiraEm > DateTime.UtcNow));
+                u.RefreshTokenExpiraEm > DateTime.Now));
         }
 
         [Fact]
@@ -113,7 +113,7 @@ namespace Frota360.Tests.Services
             {
                 Id = 1,
                 RefreshTokenHash = HashDe("refresh-token"),
-                RefreshTokenExpiraEm = DateTime.UtcNow.AddDays(1),
+                RefreshTokenExpiraEm = DateTime.Now.AddDays(1),
                 Ativo = false
             };
             _repository.GetByRefreshTokenHashAsync(HashDe("refresh-token")).Returns(usuario);
@@ -136,7 +136,7 @@ namespace Frota360.Tests.Services
                 Nome = "Ana",
                 Email = "ana@email.com",
                 RefreshTokenHash = HashDe("refresh-antigo"),
-                RefreshTokenExpiraEm = DateTime.UtcNow.AddDays(1)
+                RefreshTokenExpiraEm = DateTime.Now.AddDays(1)
             };
             _repository.GetByRefreshTokenHashAsync(HashDe("refresh-antigo")).Returns(usuario);
             _tokenService.GerarToken(usuario).Returns("token-novo");
@@ -176,7 +176,7 @@ namespace Frota360.Tests.Services
             {
                 Id = 1,
                 RefreshTokenHash = HashDe("refresh-expirado"),
-                RefreshTokenExpiraEm = DateTime.UtcNow.AddMinutes(-1)
+                RefreshTokenExpiraEm = DateTime.Now.AddMinutes(-1)
             };
             _repository.GetByRefreshTokenHashAsync(HashDe("refresh-expirado")).Returns(usuario);
 
@@ -203,7 +203,7 @@ namespace Frota360.Tests.Services
 
             await _repository.Received(1).UpdateAsync(Arg.Is<Usuario>(u =>
                 u.ResetSenhaTokenHash == HashDe("token-reset") &&
-                u.ResetSenhaExpiraEm > DateTime.UtcNow));
+                u.ResetSenhaExpiraEm > DateTime.Now));
             await _emailService.Received(1).EnviarAsync("ana@email.com",
                 Arg.Any<string>(), Arg.Is<string>(corpo => corpo.Contains("token-reset")));
         }
@@ -242,9 +242,9 @@ namespace Frota360.Tests.Services
                 Id = 1,
                 SenhaHash = BCrypt.Net.BCrypt.HashPassword("SenhaAntiga1"),
                 ResetSenhaTokenHash = HashDe("token-reset"),
-                ResetSenhaExpiraEm = DateTime.UtcNow.AddMinutes(10),
+                ResetSenhaExpiraEm = DateTime.Now.AddMinutes(10),
                 RefreshTokenHash = "sessao-ativa",
-                RefreshTokenExpiraEm = DateTime.UtcNow.AddDays(1)
+                RefreshTokenExpiraEm = DateTime.Now.AddDays(1)
             };
             _repository.GetByResetSenhaTokenHashAsync(HashDe("token-reset")).Returns(usuario);
 
@@ -269,7 +269,7 @@ namespace Frota360.Tests.Services
             {
                 Id = 1,
                 ResetSenhaTokenHash = HashDe("token-expirado"),
-                ResetSenhaExpiraEm = DateTime.UtcNow.AddMinutes(-1)
+                ResetSenhaExpiraEm = DateTime.Now.AddMinutes(-1)
             };
             _repository.GetByResetSenhaTokenHashAsync(HashDe("token-expirado")).Returns(usuario);
 
@@ -302,7 +302,7 @@ namespace Frota360.Tests.Services
             {
                 Id = 1,
                 RefreshTokenHash = HashDe("refresh-token"),
-                RefreshTokenExpiraEm = DateTime.UtcNow.AddDays(1)
+                RefreshTokenExpiraEm = DateTime.Now.AddDays(1)
             };
             _repository.GetByIdAsync(1).Returns(usuario);
 

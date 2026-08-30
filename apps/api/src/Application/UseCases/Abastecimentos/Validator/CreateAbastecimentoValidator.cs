@@ -23,7 +23,7 @@ namespace Frota360.Application.UseCases.Abastecimentos.Validator
             // Abastecimento é sempre um fato já ocorrido — não se agenda combustível.
             RuleFor(x => x.DataAbastecimento)
                 .NotEmpty().WithMessage("Data do abastecimento é obrigatória.")
-                .LessThanOrEqualTo(_ => DateTime.UtcNow.Date.AddDays(1))
+                .LessThanOrEqualTo(_ => DateTime.Now.Date.AddDays(1))
                 .WithMessage("Data do abastecimento não pode estar no futuro.");
 
             RuleFor(x => x.Observacao)

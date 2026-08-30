@@ -45,7 +45,7 @@ namespace Frota360.Domain.Entities
         /// </summary>
         public string? Alteracoes { get; set; }
 
-        /// <summary>UTC, como todo o resto do sistema.</summary>
+        /// <summary>Hora local de Brasília, como todo o resto do sistema.</summary>
         public DateTime DataHora { get; set; }
 
         /// <summary>Comporta IPv6 (45 caracteres).</summary>

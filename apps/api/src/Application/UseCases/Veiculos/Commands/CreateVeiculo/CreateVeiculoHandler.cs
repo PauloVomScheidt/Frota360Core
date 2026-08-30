@@ -34,7 +34,7 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.CreateVeiculo
                     Quilometragem = request.Quilometragem,
                     UltimoMotorista = request.UltimoMotorista,
                     DataUltimaViagem = request.DataUltimaViagem,
-                    DataInclusao = DateTime.UtcNow
+                    DataInclusao = DateTime.Now
                 };
 
                 var criado = await repository.AddAsync(veiculo);

@@ -41,6 +41,6 @@ namespace Frota360.Application.UseCases.Manutencoes
         /// <summary>Vence no que vier primeiro: quilometragem atingida ou data prevista alcançada.</summary>
         private static bool VenceuPor(Manutencao m, int kmAtual)
             => kmAtual >= m.QuilometragemPrevista
-               || (m.DataPrevista.HasValue && m.DataPrevista.Value.Date <= DateTime.UtcNow.Date);
+               || (m.DataPrevista.HasValue && m.DataPrevista.Value.Date <= DateTime.Now.Date);
     }
 }

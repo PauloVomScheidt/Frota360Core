@@ -29,7 +29,7 @@ namespace Frota360.Infrastructure.DependencyInjection
                     "Em desenvolvimento use 'dotnet user-secrets set Jwt:Key <valor>'; em produção, variável de ambiente Jwt__Key.");
 
             services.AddDbContext<Frota360DbContext>(options =>
-                options.UseSqlServer(connectionString));
+                options.UseNpgsql(connectionString));
 
             services.AddScoped<IVeiculoRepository, VeiculoRepository>();
             services.AddScoped<IUsuarioRepository, UsuarioRepository>();

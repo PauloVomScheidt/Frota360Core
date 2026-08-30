@@ -44,7 +44,7 @@ namespace Frota360.Application.UseCases.Abastecimentos.Commands.CreateAbastecime
                     Valor = request.Valor,
                     DataAbastecimento = request.DataAbastecimento,
                     Observacao = request.Observacao,
-                    DataInclusao = DateTime.UtcNow
+                    DataInclusao = DateTime.Now
                 });
 
                 logger.LogInformation("Abastecimento lançado com sucesso. Id {Id} | Veículo {VeiculoId} | Motorista {MotoristaId} | R$ {Valor}",

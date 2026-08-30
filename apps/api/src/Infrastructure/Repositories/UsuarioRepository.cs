@@ -7,8 +7,13 @@ namespace Frota360.Infrastructure.Repositories
 {
     public class UsuarioRepository(Frota360DbContext context) : IUsuarioRepository
     {
+        // A normalização fica aqui, e não só em quem chama, para que todo lookup por e-mail
+        // passe por ela — inclusive os que forem escritos depois. Ver EmailNormalizado.
         public async Task<Usuario?> GetByEmailAsync(string email)
-            => await context.Usuarios.FirstOrDefaultAsync(u => u.Email == email);
+        {
+            var normalizado = Domain.Common.EmailNormalizado.De(email);
+            return await context.Usuarios.FirstOrDefaultAsync(u => u.Email == normalizado);
+        }
 
         public async Task<Usuario?> GetByIdAsync(int id)
             => await context.Usuarios.FirstOrDefaultAsync(u => u.Id == id);
@@ -30,7 +35,10 @@ namespace Frota360.Infrastructure.Repositories
                 u.EmpresaId == empresaId && u.Role == Domain.Common.Roles.Admin && u.Ativo);
 
         public async Task<bool> ExisteEmailAsync(string email)
-            => await context.Usuarios.AnyAsync(u => u.Email == email);
+        {
+            var normalizado = Domain.Common.EmailNormalizado.De(email);
+            return await context.Usuarios.AnyAsync(u => u.Email == normalizado);
+        }
 
         public async Task<bool> ExisteCpfNaEmpresaAsync(int empresaId, string cpf, int ignorarUsuarioId)
             => await context.Usuarios.AsNoTracking()

@@ -33,7 +33,7 @@ namespace Frota360.Tests.Services
             Role = "Admin",
             Ativo = true,
             RefreshTokenHash = "hash",
-            RefreshTokenExpiraEm = DateTime.UtcNow.AddDays(1)
+            RefreshTokenExpiraEm = DateTime.Now.AddDays(1)
         };
 
         [Fact]

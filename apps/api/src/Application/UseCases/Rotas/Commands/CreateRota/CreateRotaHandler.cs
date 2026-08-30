@@ -71,7 +71,7 @@ namespace Frota360.Application.UseCases.Rotas.Commands.CreateRota
                     DataInicio = request.DataInicio,
                     DataFim = null,
                     KmInicial = request.KmInicial,
-                    DataInclusao = DateTime.UtcNow,
+                    DataInclusao = DateTime.Now,
                 };
 
                 var criado = await repository.AddAsync(rota);

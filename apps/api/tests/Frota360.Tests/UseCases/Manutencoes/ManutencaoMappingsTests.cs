@@ -55,7 +55,7 @@ namespace Frota360.Tests.UseCases.Manutencoes
         {
             // Vence no que vier primeiro: o km ainda não chegou, mas a data já passou.
             var resposta = Manutencao(prevista: 60_000, kmVeiculo: 52_000,
-                                      dataPrevista: DateTime.UtcNow.Date.AddDays(-1)).ToResponse();
+                                      dataPrevista: DateTime.Now.Date.AddDays(-1)).ToResponse();
 
             Assert.True(resposta.Atrasada);
         }

@@ -22,4 +22,10 @@ COPY --from=build /app/publish .
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
 
+# O sistema grava hora local em todas as datas persistidas (ver DataSemFusoConverter), então
+# o fuso do container faz parte da semântica dos dados. Sem esta linha o Linux assume UTC e a
+# mesma build gravaria 3 h adiantado em produção, sem erro nenhum. A imagem aspnet:10.0 já
+# traz o tzdata, então basta a variável. O fuso efetivo sai no log de inicialização.
+ENV TZ=America/Sao_Paulo
+
 ENTRYPOINT ["dotnet", "Frota360.Api.dll"]

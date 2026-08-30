@@ -19,7 +19,7 @@ namespace Frota360.Application.UseCases.Manutencoes.Validator
 
             // Data é o prazo alternativo ao km; quando informada, precisa ser futura.
             RuleFor(x => x.DataPrevista)
-                .GreaterThanOrEqualTo(_ => DateTime.UtcNow.Date)
+                .GreaterThanOrEqualTo(_ => DateTime.Now.Date)
                 .WithMessage("Data prevista não pode estar no passado.")
                 .When(x => x.DataPrevista.HasValue);
 
