@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Frota360.Application.UseCases.Veiculos.Commands.UpdateVeiculo
 {
     public sealed class UpdateVeiculoHandler(IVeiculoRepository repository,
+                                             IRotaRepository rotaRepository,
                                              ICurrentUserService currentUser,
                                              IAuditoriaService auditoria,
                                              ILogger<UpdateVeiculoHandler> logger)
@@ -59,7 +60,10 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.UpdateVeiculo
                 await auditoria.RegistrarAsync(EntidadesAuditadas.Veiculo, AcoesAuditoria.Atualizou, atualizado.Id,
                     $"Atualizou o veículo {atualizado.Placa}", alteracoes);
 
-                return atualizado.ToResponse();
+                // Editar a ficha não tira o carro da estrada: a resposta precisa refletir isso.
+                var emRota = await rotaRepository.ExisteRotaAtivaComVeiculoAsync(currentUser.EmpresaId, atualizado.Id);
+
+                return atualizado.ToResponse(emRota);
             }
             catch (Exception ex)
             {

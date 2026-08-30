@@ -6,7 +6,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Veiculos.Queries.GetVeiculoById
 {
-    public sealed class GetVeiculoByIdHandler(IVeiculoRepository repository, ICurrentUserService currentUser, ILogger<GetVeiculoByIdHandler> logger)
+    public sealed class GetVeiculoByIdHandler(IVeiculoRepository repository,
+                                              IRotaRepository rotaRepository,
+                                              ICurrentUserService currentUser,
+                                              ILogger<GetVeiculoByIdHandler> logger)
         : IQueryHandler<GetVeiculoByIdQuery, VeiculoResponse?>
     {
         public async Task<VeiculoResponse?> HandleAsync(GetVeiculoByIdQuery query, CancellationToken cancellationToken = default)
@@ -21,7 +24,9 @@ namespace Frota360.Application.UseCases.Veiculos.Queries.GetVeiculoById
                 return null;
             }
 
-            return veiculo.ToResponse();
+            var emRota = await rotaRepository.ExisteRotaAtivaComVeiculoAsync(currentUser.EmpresaId, veiculo.Id);
+
+            return veiculo.ToResponse(emRota);
         }
     }
 }

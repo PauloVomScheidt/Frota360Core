@@ -210,7 +210,7 @@ export function UsuariosPage() {
                   </select>
                 </td>
                 <td>
-                  <span className={usuario.ativo ? 'tag tag-accent' : 'tag tag-neutral'}>
+                  <span className={usuario.ativo ? 'tag tag-success' : 'tag tag-neutral'}>
                     {usuario.ativo ? 'Ativo' : 'Inativo'}
                   </span>
                 </td>

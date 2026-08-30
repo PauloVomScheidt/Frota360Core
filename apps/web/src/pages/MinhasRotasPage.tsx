@@ -9,6 +9,7 @@ import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
 import { FormDialog, InlineForm, TableStates } from '../components/Table'
 import { CheckIcon } from '../components/icons'
 import { formatDate, formatKm, hojeInputDate, paraInputDate } from '../lib/format'
+import { estaVencendo } from '../lib/manutencao'
 import { statusDaRota } from '../lib/rota'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
@@ -86,6 +87,16 @@ export function MinhasRotasPage() {
 
   const pendenciasDoVeiculoEscolhido = pendenciasPorVeiculo.get(Number(form.codigoVeiculo)) ?? []
   const atrasadasDoVeiculoEscolhido = pendenciasDoVeiculoEscolhido.filter((m) => m.atrasada)
+  const vencendoDoVeiculoEscolhido = pendenciasDoVeiculoEscolhido.filter(estaVencendo)
+
+  // Mesma escala das tags de /manutencoes: vermelho quando já venceu, âmbar quando está
+  // na faixa de aviso, contorno neutro quando a pendência ainda é distante.
+  const corDoAlerta =
+    atrasadasDoVeiculoEscolhido.length > 0
+      ? 'var(--color-danger)'
+      : vencendoDoVeiculoEscolhido.length > 0
+        ? 'var(--color-warning)'
+        : 'var(--color-divider)'
 
   // Só existe uma rota ativa por vez na prática: ela vira o destaque do topo, e o
   // resto é histórico.
@@ -279,14 +290,16 @@ export function MinhasRotasPage() {
             <div
               className="w-full p-3 text-[13px]"
               style={{
-                border: `1px solid ${atrasadasDoVeiculoEscolhido.length > 0 ? 'var(--color-danger)' : 'var(--color-divider)'}`,
+                border: `1px solid ${corDoAlerta}`,
                 background: 'var(--color-surface)',
               }}
             >
               <strong>
                 {atrasadasDoVeiculoEscolhido.length > 0
                   ? 'Este veículo tem manutenção atrasada.'
-                  : 'Este veículo tem manutenção prevista.'}
+                  : vencendoDoVeiculoEscolhido.length > 0
+                    ? 'Este veículo tem manutenção vencendo.'
+                    : 'Este veículo tem manutenção prevista.'}
               </strong>
               <ul className="mt-1 mb-0 list-none p-0">
                 {pendenciasDoVeiculoEscolhido.map((m) => (

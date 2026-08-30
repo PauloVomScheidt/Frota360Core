@@ -12,9 +12,17 @@ namespace Frota360.Application.UseCases.Manutencoes.Queries.GetAllManutencoes
     {
         public async Task<IEnumerable<ManutencaoResponse>> HandleAsync(GetAllManutencoesQuery query, CancellationToken cancellationToken = default)
         {
-            logger.LogInformation("Buscando manutenções | Veículo {VeiculoId} | Status {Status}", query.VeiculoId, query.Status);
+            logger.LogInformation("Buscando manutenções | Veículo {VeiculoId} | Status {Status} | De {De} | Até {Ate}",
+                query.VeiculoId, query.Status, query.De, query.Ate);
 
-            var manutencoes = await repository.GetAllAsync(currentUser.EmpresaId, query.VeiculoId, query.Status);
+            // Intervalo invertido devolveria lista vazia sem explicar o porquê. Não há
+            // validator neste GET (os filtros são query string solta), então a regra
+            // segue o caminho de sempre: InvalidOperationException -> 422 com o texto.
+            if (query.De is not null && query.Ate is not null && query.Ate < query.De)
+                throw new InvalidOperationException("A data final do período não pode ser anterior à inicial.");
+
+            var manutencoes = await repository.GetAllAsync(
+                currentUser.EmpresaId, query.VeiculoId, query.Status, query.De, query.Ate);
 
             logger.LogInformation("Foram encontradas {QuantidadeManutencoes} manutenções", manutencoes.Count());
 

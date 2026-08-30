@@ -17,6 +17,8 @@ export const manutencoesApi = {
       params: {
         veiculoId: filtro.veiculoId,
         status: filtro.status,
+        de: filtro.de,
+        ate: filtro.ate,
       },
     })
     return unwrap(data)

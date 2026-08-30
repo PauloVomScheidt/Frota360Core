@@ -12,6 +12,7 @@ namespace Frota360.Infrastructure.Data
         public DbSet<Rota> Rotas { get; set; }
         public DbSet<TipoManutencao> TiposManutencao { get; set; }
         public DbSet<Manutencao> Manutencoes { get; set; }
+        public DbSet<Abastecimento> Abastecimentos { get; set; }
         public DbSet<LogAuditoria> LogsAuditoria { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -104,6 +105,11 @@ namespace Frota360.Infrastructure.Data
                 entity.Property(r => r.Ativo).HasDefaultValue(true);
                 entity.Property(r => r.DataInclusao).HasDefaultValueSql("GETDATE()");
 
+                // "Quais veiculos estao rodando" roda em toda listagem de veiculo e no
+                // dashboard. Substitui o indice de FK (EmpresaId) que o EF criava sozinho:
+                // este o cobre como prefixo.
+                entity.HasIndex(r => new { r.EmpresaId, r.Ativo, r.CodigoVeiculo });
+
                 // O motorista é um Usuario. Restrict porque usuário nunca é excluído,
                 // só desativado — o histórico de rotas fica inapagável por acidente.
                 entity.HasOne(r => r.Motorista)
@@ -168,6 +174,51 @@ namespace Frota360.Infrastructure.Data
                 entity.HasOne<Empresa>()
                       .WithMany()
                       .HasForeignKey(m => m.EmpresaId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<Abastecimento>(entity =>
+            {
+                entity.ToTable("Abastecimento");
+                entity.HasKey(a => a.Id);
+
+                entity.Property(a => a.Valor).HasPrecision(10, 2);
+                entity.Property(a => a.Observacao).HasMaxLength(500);
+                entity.Property(a => a.DataInclusao).HasDefaultValueSql("GETDATE()");
+
+                // Consulta dominante da tela: historico de um veiculo em ordem de data.
+                entity.HasIndex(a => new { a.EmpresaId, a.VeiculoId, a.DataAbastecimento });
+
+                // Recorte do motorista e o relatorio de gasto por motorista.
+                entity.HasIndex(a => new { a.EmpresaId, a.MotoristaId, a.DataAbastecimento });
+
+                entity.HasOne(a => a.Veiculo)
+                      .WithMany()
+                      .HasForeignKey(a => a.VeiculoId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                // Excluir a rota nao pode levar junto o abastecimento: o gasto aconteceu de
+                // verdade, e o vinculo com a viagem e so contexto.
+                entity.HasOne(a => a.Rota)
+                      .WithMany()
+                      .HasForeignKey(a => a.RotaId)
+                      .OnDelete(DeleteBehavior.SetNull);
+
+                // Duas FKs para Usuario na mesma tabela: de quem e o gasto e quem digitou.
+                // Ambas Restrict, entao nao ha ciclo de cascata.
+                entity.HasOne(a => a.Motorista)
+                      .WithMany()
+                      .HasForeignKey(a => a.MotoristaId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(a => a.Usuario)
+                      .WithMany()
+                      .HasForeignKey(a => a.UsuarioId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne<Empresa>()
+                      .WithMany()
+                      .HasForeignKey(a => a.EmpresaId)
                       .OnDelete(DeleteBehavior.Restrict);
             });
 

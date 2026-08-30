@@ -245,7 +245,7 @@ export function TiposManutencaoPage() {
                 <td className="font-semibold">{tipo.nome}</td>
                 <td>{tipo.intervaloKm ? formatKm(tipo.intervaloKm) : '—'}</td>
                 <td>
-                  <span className={tipo.ativo ? 'tag tag-accent' : 'tag tag-neutral'}>
+                  <span className={tipo.ativo ? 'tag tag-success' : 'tag tag-neutral'}>
                     {tipo.ativo ? 'Ativo' : 'Inativo'}
                   </span>
                 </td>

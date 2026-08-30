@@ -44,13 +44,13 @@ Exige a API do Frota360 rodando localmente; ela vive neste mesmo repo: `dotnet r
 
 ### Busca de dados
 
-TanStack Query 5. As cache keys são arrays simples por recurso (`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['manutencoes', filtro]`, `['auditoria', filtro]`, `['tiposManutencao']`, `['tiposManutencao', 'ativos']`, `['usuarios']`, `['convites']`), invalidadas após cada mutation na página dona do recurso. `['rotas']` e `['rotas','minhas']` vêm de **endpoints diferentes** e não são pai e filho: invalide a chave exata.
+TanStack Query 5. As cache keys são arrays simples por recurso (`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['manutencoes', filtro]`, `['abastecimentos', filtro]`, `['auditoria', filtro]`, `['tiposManutencao']`, `['tiposManutencao', 'ativos']`, `['usuarios']`, `['convites']`), invalidadas após cada mutation na página dona do recurso. `['rotas']` e `['rotas','minhas']` vêm de **endpoints diferentes** e não são pai e filho: invalide a chave exata.
 
 **`['auditoria']` é a única que ninguém invalida, de propósito**: quase toda mutation do app gera uma linha de trilha, e chamar `invalidateQueries(['auditoria'])` de dentro de cada tela faria cada mutation conhecer uma tela que ela não afeta. O `staleTime` de 30 s e o botão "Atualizar" da própria tela resolvem.
 
 **Listas paginadas.** Só `GET /auditoria` pagina hoje: o `dados` do envelope vem como `ResultadoPaginado<T>` (`itens`/`pagina`/`tamanhoPagina`/`total`/`totalPaginas`), não como array. O rodapé é o componente compartilhado `Paginacao` de `components/Table.tsx`. Ao filtrar uma lista paginada, **volte para a página 1** — senão a tela abre vazia.
 
-Atenção à **cross-invalidation**, quando a mutation de um recurso afeta o que outra lista exibe: excluir um veículo também invalida `['rotas']`, porque aquela tabela desnormaliza nome/placa; concluir uma manutenção também invalida `['veiculos']`, porque pode avançar o odômetro do veículo. A cadeia mais longa é **rota → veículo → manutenção**: tanto abrir uma rota (quando `kmInicial` supera o odômetro atual) quanto encerrá-la (`POST /rota/{id}/encerrar`) avançam o odômetro do veículo, que é de onde `atrasada`/`kmRestantes` derivam — então essas mutations invalidam `['rotas']`, `['veiculos']` **e** `['manutencoes']`. Ao adicionar uma mutation, consulte o mapa atual em `docs/contexto-web.md` §6.4 antes de assumir que um único `invalidateQueries` basta.
+Atenção à **cross-invalidation**, quando a mutation de um recurso afeta o que outra lista exibe: excluir um veículo também invalida `['rotas']`, porque aquela tabela desnormaliza nome/placa; **excluir uma rota** invalida `['veiculos']`, porque a coluna Situação de `/veiculos` sai de `emRota`; concluir uma manutenção também invalida `['veiculos']`, porque pode avançar o odômetro do veículo. A cadeia mais longa é **rota → veículo → manutenção**: abrir uma rota (quando `kmInicial` supera o odômetro atual) e encerrá-la (`POST /rota/{id}/encerrar`) avançam o odômetro do veículo, que é de onde `atrasada`/`kmRestantes` derivam — então essas mutations invalidam a própria lista, `['veiculos']` **e** `['manutencoes']`. São **dois** os caminhos que mexem no odômetro; ao criar um terceiro, lembre da cadeia inteira. O abastecimento **não** é um deles — ele registra só o gasto e invalida apenas `['abastecimentos']`. Ao adicionar uma mutation, consulte o mapa atual em `docs/contexto-web.md` §6.4 antes de assumir que um único `invalidateQueries` basta.
 
 ### Estrutura de páginas e componentes compartilhados
 
@@ -63,12 +63,21 @@ As páginas de CRUD (`VeiculosPage`, `RotasPage`, `ManutencoesPage`, `TiposManut
 - `RowActions` / `ConfirmDialog` — ícones de editar/excluir por linha e confirmação de ação consequente. Os defaults do `ConfirmDialog` são os da exclusão; `textoConfirmar`/`textoPendente`/`variante` cobrem os outros casos (a troca de permissão em `/usuarios` usa `variante="padrao"`, porque derrubar a sessão de alguém não é destrutivo como apagar um registro).
 - `FormDialog` — formulário em modal (usado em "concluir manutenção" e "encerrar rota" — as transições de estado que carregam efeito colateral no odômetro do veículo, deliberadamente mantidas fora do formulário de edição comum).
 - `Paginacao` — rodapé "X–Y de Z" com anterior/próxima; some sozinho quando há uma página só.
+- `FiltroPeriodo` — select de período pronto (`Hoje`, `Últimos 7/30 dias`, `Este mês`, `Mês passado`), usado por `/manutencoes` e `/abastecimentos`. **Filtro de data novo usa este componente**, não dois campos `date` soltos; a conversão para `de`/`ate` vive em `lib/periodo.ts` e acontece no cliente — a API só conhece intervalo.
 
 A visibilidade dos botões de novo/editar/excluir é controlada por `pode.*` de `auth/permissions.ts`, não escondendo a página inteira. É assim que `/veiculos` e `/manutencoes` ficam read-only para o motorista sem código condicional novo.
 
 ### Design system
 
-`src/styles/design-system.css` define o visual "Modernist" do app autenticado: fundo `#fdfaf6`, superfície `#f2ede4`, texto `#201e1d`, destaque `#1f3a5f` (rampa 100–900), perigo `#a03123`, tipografia Archivo, **`border-radius: 0` em tudo** — arestas retas, sem sombras. Classes compartilhadas: `.btn` (`.btn-primary`/`.btn-secondary`/`.btn-icon`/`.btn-danger`), `.field`+`.input`, `.tag` (`.tag-accent`/`.tag-neutral`/`.tag-danger`/`.tag-warning`), `.nav`, `.table`, `.dialog*`.
+`src/styles/design-system.css` define o visual "Modernist" do app autenticado: fundo `#fdfaf6`, superfície `#f2ede4`, texto `#201e1d`, destaque `#1f3a5f` (rampa 100–900), perigo `#a03123`, tipografia Archivo, **`border-radius: 0` em tudo** — arestas retas, sem sombras. Classes compartilhadas: `.btn` (`.btn-primary`/`.btn-secondary`/`.btn-icon`/`.btn-danger`), `.field`+`.input`, `.tag` (abaixo), `.nav`, `.table`, `.dialog*`.
+
+**Cor de situação — leia a tabela normativa em [docs/contexto-web.md §8.1](../../docs/contexto-web.md) antes de colorir qualquer estado novo.** Em resumo:
+
+- **Situação se sinaliza pela classe `.tag`, nunca por `style` inline.** A `.tag` tem barra de 3px na cor do estado (`border-left: 3px solid currentColor`), fundo tonal, caixa alta e peso 600 — a mesma forma da etiqueta da landing.
+- São **cinco** tokens de estado em `:root`, cada um com seu `-bg`: `--color-accent` (acontecendo agora), `--color-success` (concluído/saudável), `--color-warning` (atenção em breve), `--color-danger` (falha/destrutivo) e a rampa neutra (sem estado). **Não invente um hex novo nem um sexto tom** — `#7a5312` e `#a03123` já viveram crus e espalhados pelo código, e é o que a tokenização veio resolver.
+- A cor diz a **consequência, não a entidade**: um tom por entidade transforma a tabela em arco-íris. Cinza é ausência de estado, não "qualquer coisa que terminou"; azul é reservado ao que está em curso, nunca ênfase decorativa num dado que não é situação.
+- Quando a cor precisar aparecer fora de uma tag (texto de andamento, borda de alerta), use os mesmos `var(--color-*)`, na mesma escala da tag daquela linha.
+- Os helpers que decidem rótulo e classe vivem em `lib/`, não dentro da página: `lib/rota.ts` (`statusDaRota`) e `lib/manutencao.ts` (`badgeDaManutencao`, `estaVencendo`, `FAIXA_AVISO`).
 
 A `LandingPage` ([src/pages/LandingPage.tsx](src/pages/LandingPage.tsx)) **segue esse mesmo visual** — reto, bege, sem sombra — e tira todas as cores de `design-system.css`. Ela mantém folha própria, `src/styles/landing.css`, escopada sob a raiz `.lp` e importada só por ela, mas por causa da **escala** (display grande, faixas de ponta a ponta, o odômetro do hero), não por discordar do sistema. Três regras ao editá-la:
 

@@ -195,8 +195,10 @@ export function DashboardPage() {
                 <td>{v.ultimoMotorista || '—'}</td>
                 <td>{formatKm(v.quilometragem)}</td>
                 <td>
+                  {/* Uma data não é uma situação: virava tag azul só por ênfase e
+                      diluía o significado do accent no resto do app. */}
                   {v.dataUltimaViagem ? (
-                    <span className="tag tag-accent">{formatDate(v.dataUltimaViagem)}</span>
+                    formatDate(v.dataUltimaViagem)
                   ) : (
                     <span className="tag tag-neutral">Sem viagens</span>
                   )}

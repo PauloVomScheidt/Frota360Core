@@ -44,7 +44,8 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.CreateVeiculo
                 await auditoria.RegistrarAsync(EntidadesAuditadas.Veiculo, AcoesAuditoria.Criou, criado.Id,
                     $"Cadastrou o veículo {criado.Placa} ({criado.MarcaVeiculo} {criado.NomeVeiculo})");
 
-                return criado.ToResponse();
+                // Veículo recém-cadastrado não tem rota: não há o que consultar.
+                return criado.ToResponse(emRota: false);
             }
             catch (Exception ex)
             {

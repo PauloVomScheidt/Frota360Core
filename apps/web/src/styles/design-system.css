@@ -9,6 +9,15 @@
   --color-danger: #a03123;
   --color-divider: color-mix(in srgb, #201e1d 40%, transparent);
 
+  /* Estado. A cor diz a consequencia, nao a entidade: azul acontece agora, verde
+     terminou bem, ambar pede atencao, vermelho falhou, cinza nao tem estado.
+     O mapeamento completo esta em docs/contexto-web.md (Design system). */
+  --color-success: #2e5c42;
+  --color-success-bg: #e3ece5;
+  --color-warning: #7a5312;
+  --color-warning-bg: #f6ecd8;
+  --color-danger-bg: color-mix(in srgb, #a03123 12%, transparent);
+
   --color-neutral-100: #f8f5f0;
   --color-neutral-200: #ece7dd;
   --color-neutral-300: #d9d2c4;
@@ -131,16 +140,24 @@ img { display: block; max-width: 100%; }
 }
 .input-underline:focus-visible { border-color: var(--color-accent); }
 
-/* — tags — */
+/* — tags —
+   Mesma forma da etiqueta da landing (.lp-etiq): a barra lateral saturada e o que
+   chama o olho numa tabela longa, sem que o fundo precise gritar. A barra sai de
+   currentColor, entao cada variante so define o par cor/fundo. */
 .tag {
-  display: inline-flex; align-items: center; font-size: 11px;
-  letter-spacing: 0.02em; padding: 3px 10px;
-  border-radius: calc(var(--radius-md) * 0.75);
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 3px 9px;
+  border-left: 3px solid currentColor;
+  white-space: nowrap;
 }
-.tag-accent { background: var(--color-accent-100); color: var(--color-accent-800); }
-.tag-neutral { background: var(--color-neutral-100); color: var(--color-neutral-800); }
-.tag-danger { background: color-mix(in srgb, var(--color-danger) 14%, transparent); color: var(--color-danger); }
-.tag-warning { background: #f6ecd8; color: #7a5312; }
+.tag-accent { background: var(--color-accent-100); color: var(--color-accent); }
+.tag-success { background: var(--color-success-bg); color: var(--color-success); }
+.tag-warning { background: var(--color-warning-bg); color: var(--color-warning); }
+.tag-danger { background: var(--color-danger-bg); color: var(--color-danger); }
+/* neutral-200 e nao 100: o 100 (#f8f5f0) some sobre o papel (#fdfaf6). */
+.tag-neutral { background: var(--color-neutral-200); color: var(--color-neutral-700); }
 
 /* — navigation — */
 .nav {

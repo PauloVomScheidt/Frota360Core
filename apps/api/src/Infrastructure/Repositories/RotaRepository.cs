@@ -26,6 +26,20 @@ namespace Frota360.Infrastructure.Repositories
             => await context.Rotas.AsNoTracking()
                 .AnyAsync(r => r.EmpresaId == empresaId && r.CodigoVeiculo == veiculoId);
 
+        // "Aberta" é `Ativo && DataFim is null` — não há estado persistido, é esta derivação
+        // que o app inteiro usa. Distinct porque nada impede duas rotas abertas no mesmo carro.
+        public async Task<IReadOnlyCollection<int>> GetVeiculosEmRotaAsync(int empresaId)
+            => await context.Rotas.AsNoTracking()
+                .Where(r => r.EmpresaId == empresaId && r.Ativo && r.DataFim == null)
+                .Select(r => r.CodigoVeiculo)
+                .Distinct()
+                .ToListAsync();
+
+        public async Task<bool> ExisteRotaAtivaComVeiculoAsync(int empresaId, int veiculoId)
+            => await context.Rotas.AsNoTracking()
+                .AnyAsync(r => r.EmpresaId == empresaId && r.CodigoVeiculo == veiculoId
+                               && r.Ativo && r.DataFim == null);
+
         // Rastreado (sem AsNoTracking): serve tanto para leitura quanto para update.
         public async Task<Rota?> GetByIdAsync(int id, int empresaId)
             => await context.Rotas

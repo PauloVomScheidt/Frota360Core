@@ -9,6 +9,8 @@ import type { RotaResponse } from '../api/types'
  */
 export function statusDaRota(rota: RotaResponse): { rotulo: string; classe: string } {
   if (rota.ativo) return { rotulo: 'Ativa', classe: 'tag tag-accent' }
-  if (rota.dataFim) return { rotulo: 'Encerrada', classe: 'tag tag-neutral' }
+  // Encerrada é conclusão bem-sucedida (verde); inativa é ausência de estado (cinza).
+  // As duas eram neutras e ficavam indistinguíveis na tabela.
+  if (rota.dataFim) return { rotulo: 'Encerrada', classe: 'tag tag-success' }
   return { rotulo: 'Inativa', classe: 'tag tag-neutral' }
 }

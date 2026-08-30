@@ -28,15 +28,20 @@ namespace Frota360.Api.Controllers
                                       IValidator<UpdateManutencaoRequest> updateValidator,
                                       IValidator<ConcluirManutencaoRequest> concluirValidator) : ControllerBase
     {
-        /// <summary>Lista as manutenções da frota, opcionalmente filtradas por veículo e status.</summary>
+        /// <summary>Lista as manutenções da frota, opcionalmente filtradas por veículo, status e período.</summary>
         /// <param name="veiculoId">Restringe a um veículo.</param>
         /// <param name="status">Pendente, Realizada ou Cancelada.</param>
+        /// <param name="de">Início do período. Incide sobre a data prevista (pendentes) ou a de realização (concluídas).</param>
+        /// <param name="ate">Fim do período, inclusivo.</param>
         /// <response code="200">Lista retornada com sucesso</response>
+        /// <response code="422">Data final anterior à inicial</response>
         [HttpGet]
         [ProducesResponseType<ApiResponse<IEnumerable<ManutencaoResponse>>>(StatusCodes.Status200OK)]
-        public async Task<IActionResult> GetAll([FromQuery] int? veiculoId, [FromQuery] StatusManutencao? status)
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status422UnprocessableEntity)]
+        public async Task<IActionResult> GetAll([FromQuery] int? veiculoId, [FromQuery] StatusManutencao? status,
+                                                [FromQuery] DateTime? de, [FromQuery] DateTime? ate)
         {
-            var manutencoes = await dispatcher.SendAsync(new GetAllManutencoesQuery(veiculoId, status));
+            var manutencoes = await dispatcher.SendAsync(new GetAllManutencoesQuery(veiculoId, status, de, ate));
             return Ok(ApiResponse<IEnumerable<ManutencaoResponse>>.Ok(manutencoes));
         }
 
