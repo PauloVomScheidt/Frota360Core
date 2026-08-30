@@ -137,6 +137,9 @@ export function RotasPage() {
       setErrosExclusao([])
       if (editando?.id === id) fecharForm()
       queryClient.invalidateQueries({ queryKey: ['rotas'] })
+      // Excluir uma rota aberta solta o veículo: a coluna "Situação" de /veiculos
+      // ficaria dizendo "Em rota" até o próximo staleTime.
+      queryClient.invalidateQueries({ queryKey: ['veiculos'] })
     },
     onError: (error) => setErrosExclusao(mensagensDeErro(error, 'Não foi possível excluir a rota.')),
   })

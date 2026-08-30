@@ -8,6 +8,7 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo
 {
     public sealed class DeleteVeiculoHandler(IVeiculoRepository repository,
                                              IRotaRepository rotaRepository,
+                                             IAbastecimentoRepository abastecimentoRepository,
                                              ICurrentUserService currentUser,
                                              IAuditoriaService auditoria,
                                              ILogger<DeleteVeiculoHandler> logger)
@@ -32,6 +33,12 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo
                 if (await rotaRepository.ExisteComVeiculoAsync(currentUser.EmpresaId, veiculo.Id))
                     throw new InvalidOperationException(
                         "Não é possível excluir um veículo com rotas associadas. Encerre ou remova as rotas antes.");
+
+                // Mesma regra para abastecimento: a FK é Restrict, então sem esta guarda o
+                // banco recusaria a exclusão e o usuário veria um 500 em vez da explicação.
+                if (await abastecimentoRepository.ExisteComVeiculoAsync(currentUser.EmpresaId, veiculo.Id))
+                    throw new InvalidOperationException(
+                        "Não é possível excluir um veículo com abastecimentos lançados. Remova os lançamentos antes.");
 
                 await repository.DeleteAsync(veiculo);
 

@@ -53,7 +53,9 @@ export function MotoristasPage() {
                 <td>{m.cpf ? formatCpf(m.cpf) : '—'}</td>
                 <td>{formatDate(m.dataNascimento)}</td>
                 <td>
-                  <span className={m.ativo ? 'tag tag-accent' : 'tag tag-neutral'}>
+                  {/* Verde, não azul: cadastro ativo é estado saudável, não algo
+                      acontecendo agora — o azul fica reservado a rota/manutenção em curso. */}
+                  <span className={m.ativo ? 'tag tag-success' : 'tag tag-neutral'}>
                     {m.ativo ? 'Ativo' : 'Inativo'}
                   </span>
                 </td>

@@ -15,9 +15,11 @@ import type {
 import { pode } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { ConfirmDialog, FormDialog, InlineForm, RowActions, TableStates } from '../components/Table'
+import { ConfirmDialog, FiltroPeriodo, FormDialog, InlineForm, RowActions, TableStates } from '../components/Table'
 import { CheckIcon } from '../components/icons'
 import { formatDate, formatKm, formatMoeda, hojeInputDate, paraInputDate } from '../lib/format'
+import { badgeDaManutencao, estaVencendo, textoKmRestantes } from '../lib/manutencao'
+import { intervaloDoPeriodo, type Periodo } from '../lib/periodo'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
@@ -36,25 +38,6 @@ const CONCLUSAO_VAZIA = {
   observacao: '',
 }
 
-/**
- * `atrasada` tem precedência sobre `status`: é o campo que a API recalcula a cada
- * leitura comparando o km previsto com a quilometragem atual do veículo (§7.3.3).
- * `Cancelada` não é produzida por nenhum endpoint hoje, mas o enum a prevê.
- */
-function badgeDaManutencao(m: ManutencaoResponse): { rotulo: string; classe: string } {
-  if (m.atrasada) return { rotulo: 'Atrasada', classe: 'tag tag-danger' }
-  if (m.status === 'Pendente') return { rotulo: 'Pendente', classe: 'tag tag-accent' }
-  if (m.status === 'Realizada') return { rotulo: 'Concluída', classe: 'tag tag-neutral' }
-  return { rotulo: 'Cancelada', classe: 'tag tag-neutral' }
-}
-
-/** `kmRestantes` vem negativo quando o veículo já passou do ponto, e null fora de "Pendente". */
-function textoKmRestantes(km: number | null | undefined): string | null {
-  if (km == null) return null
-  if (km < 0) return `${Math.abs(km).toLocaleString('pt-BR')} km em atraso`
-  return `faltam ${km.toLocaleString('pt-BR')} km`
-}
-
 export function ManutencoesPage() {
   const queryClient = useQueryClient()
   const user = useSession()
@@ -64,6 +47,7 @@ export function ManutencoesPage() {
 
   const [filtroVeiculo, setFiltroVeiculo] = useState('')
   const [filtroStatus, setFiltroStatus] = useState('')
+  const [periodo, setPeriodo] = useState<Periodo>('todos')
 
   const [aberto, setAberto] = useState(false)
   const [editando, setEditando] = useState<ManutencaoResponse | null>(null)
@@ -79,10 +63,17 @@ export function ManutencoesPage() {
   const [paraExcluir, setParaExcluir] = useState<ManutencaoResponse | null>(null)
   const [errosExclusao, setErrosExclusao] = useState<string[]>([])
 
+  // O período vira `de`/`ate` aqui: a API não conhece "últimos 7 dias".
+  const { de, ate } = intervaloDoPeriodo(periodo)
+
   const filtro: ManutencaoFiltro = {
     veiculoId: filtroVeiculo === '' ? undefined : Number(filtroVeiculo),
     status: filtroStatus === '' ? undefined : (filtroStatus as StatusManutencao),
+    de,
+    ate,
   }
+
+  const temFiltro = filtroVeiculo !== '' || filtroStatus !== '' || periodo !== 'todos'
 
   const manutencoesQuery = useQuery({
     queryKey: ['manutencoes', filtro],
@@ -448,7 +439,8 @@ export function ManutencoesPage() {
             <option value="Realizada">Concluídas</option>
           </select>
         </div>
-        {(filtroVeiculo !== '' || filtroStatus !== '') && (
+        <FiltroPeriodo valor={periodo} onMudar={setPeriodo} />
+        {temFiltro && (
           <button
             type="button"
             className="btn btn-secondary"
@@ -456,10 +448,23 @@ export function ManutencoesPage() {
             onClick={() => {
               setFiltroVeiculo('')
               setFiltroStatus('')
+              setPeriodo('todos')
             }}
           >
             Limpar filtros
           </button>
+        )}
+        {/*
+          O período incide sobre a data que importa em cada linha: prazo quando pendente,
+          execução quando concluída. Dizer isso na tela evita a leitura errada de que o
+          filtro olha uma data só.
+        */}
+        {periodo !== 'todos' && (
+          <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
+            O período considera a <strong>data prevista</strong> das pendentes e a{' '}
+            <strong>data de realização</strong> das concluídas. Manutenção agendada só por
+            quilometragem, sem data prevista, não aparece enquanto houver período.
+          </p>
         )}
       </div>
 
@@ -471,7 +476,7 @@ export function ManutencoesPage() {
               <th>Tipo</th>
               <th>Quilometragem prevista</th>
               <th>Situação</th>
-              <th>Andamento</th>
+              <th>Andamento/Conclusão</th>
               {mostrarCusto && <th>Custo</th>}
               {mostrarAcoes && <th style={{ textAlign: 'right' }}>Ações</th>}
             </tr>
@@ -485,7 +490,7 @@ export function ManutencoesPage() {
               textoCarregando="Carregando manutenções…"
               textoErro="Não foi possível carregar as manutenções."
               textoVazio={
-                filtroVeiculo !== '' || filtroStatus !== ''
+                temFiltro
                   ? 'Nenhuma manutenção encontrada com esses filtros.'
                   : 'Nenhuma manutenção agendada ainda.'
               }
@@ -494,6 +499,11 @@ export function ManutencoesPage() {
               const badge = badgeDaManutencao(m)
               const pendente = m.status === 'Pendente'
               const restante = textoKmRestantes(m.kmRestantes)
+              const corDoAndamento = m.atrasada
+                ? 'var(--color-danger)'
+                : estaVencendo(m)
+                  ? 'var(--color-warning)'
+                  : null
               return (
                 <tr key={m.id}>
                   <td>
@@ -523,7 +533,9 @@ export function ManutencoesPage() {
                   </td>
                   <td>
                     {pendente ? (
-                      <span style={m.atrasada ? { color: 'var(--color-danger)' } : undefined}>
+                      // Acompanha a cor da tag da mesma linha: vermelho no atraso,
+                      // âmbar na faixa de aviso.
+                      <span style={corDoAndamento ? { color: corDoAndamento } : undefined}>
                         {restante ?? '—'}
                       </span>
                     ) : m.dataRealizacao ? (

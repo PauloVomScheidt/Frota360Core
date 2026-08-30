@@ -22,6 +22,7 @@ const ROTULO_ENTIDADE: Record<EntidadeAuditada, string> = {
   Veiculo: 'Veículo',
   Rota: 'Rota',
   Manutencao: 'Manutenção',
+  Abastecimento: 'Abastecimento',
   TipoManutencao: 'Tipo de manutenção',
   Usuario: 'Usuário',
   Convite: 'Convite',
@@ -41,13 +42,17 @@ const ROTULO_ACAO: Record<AcaoAuditoria, string> = {
 }
 
 /**
- * A cor sinaliza a consequência, não a entidade: o que remove acesso ou apaga registro
- * merece destaque numa tabela longa; o resto fica neutro para não virar arco-íris.
+ * A cor sinaliza a consequência, não a entidade — mesmo vocabulário das outras telas:
+ * vermelho apaga ou remove acesso, âmbar mexe em permissão, azul cria, verde conclui.
+ * `Atualizou` fica neutro de propósito: é a ação mais comum da trilha, e colori-la
+ * afogaria o resto numa tabela longa.
  */
 function classeDaAcao(acao: AcaoAuditoria): string {
   if (acao === 'Excluiu' || acao === 'Desativou') return 'tag tag-danger'
-  if (acao === 'AlterouPermissao') return 'tag tag-warning'
-  if (acao === 'Criou' || acao === 'Aceitou') return 'tag tag-accent'
+  if (acao === 'AlterouPermissao' || acao === 'Cancelou') return 'tag tag-warning'
+  if (acao === 'Criou') return 'tag tag-accent'
+  if (acao === 'Concluiu' || acao === 'Encerrou' || acao === 'Ativou' || acao === 'Aceitou')
+    return 'tag tag-success'
   return 'tag tag-neutral'
 }
 

@@ -11,6 +11,7 @@ import {
   ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  FuelIcon,
   GridIcon,
   HistoricoIcon,
   LogoutIcon,
@@ -129,6 +130,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   const [expanded, setExpanded] = useState(() => lerPreferencia(SIDEBAR_KEY, true))
   const [catDashboard, setCatDashboard] = useState(true)
+  const [catVisualizacao, setCatVisualizacao] = useState(true)
   const [catControle, setCatControle] = useState(true)
 
   function toggleSidebar() {
@@ -145,13 +147,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
     navigate('/login', { replace: true })
   }
 
-  // O motorista opera uma tela e consulta duas: veículos e manutenções entram em
-  // modo leitura, porque saber o estado do caminhão faz parte do trabalho dele.
+  // Para o motorista a sidebar separa o que ele **faz** do que ele só **consulta**:
+  // rotas e abastecimentos são escrita, veículos e manutenções são leitura (saber o
+  // estado do caminhão faz parte do trabalho, mas ele não mexe em nenhum dos dois).
   const itensDashboard: ItemNav[] = motorista
     ? [
         { to: '/minhas-rotas', rotulo: 'Minhas rotas', icone: <RouteIcon size={17} /> },
-        { to: '/veiculos', rotulo: 'Veículos', icone: <TruckIcon size={17} /> },
-        { to: '/manutencoes', rotulo: 'Manutenções', icone: <WrenchIcon size={17} /> },
+        { to: '/abastecimentos', rotulo: 'Abastecimentos', icone: <FuelIcon size={17} /> },
       ]
     : [
         { to: '/dashboard', rotulo: 'Visão geral', icone: <GridIcon size={17} /> },
@@ -159,11 +161,18 @@ export function AppLayout({ children }: { children: ReactNode }) {
         { to: '/veiculos', rotulo: 'Veículos', icone: <TruckIcon size={17} /> },
         { to: '/rotas', rotulo: 'Rotas', icone: <RouteIcon size={17} /> },
         { to: '/manutencoes', rotulo: 'Manutenções', icone: <WrenchIcon size={17} /> },
+        { to: '/abastecimentos', rotulo: 'Abastecimentos', icone: <FuelIcon size={17} /> },
         // O catálogo de tipos só aparece para quem pode mantê-lo (Admin/Supervisor).
         ...(gestor
           ? [{ to: '/tipos-manutencao', rotulo: 'Tipos de manutenção', icone: <ClipboardIcon size={17} /> }]
           : []),
       ]
+
+  /** Só do motorista: as duas telas que ele alcança em leitura. */
+  const itensVisualizacao: ItemNav[] = [
+    { to: '/veiculos', rotulo: 'Veículos', icone: <TruckIcon size={17} /> },
+    { to: '/manutencoes', rotulo: 'Manutenções', icone: <WrenchIcon size={17} /> },
+  ]
 
   // A categoria inteira já é admin-only, então nenhum item aqui precisa de guarda própria.
   const itensControle: ItemNav[] = [
@@ -216,6 +225,15 @@ export function AppLayout({ children }: { children: ReactNode }) {
             aberta={catDashboard}
             onToggle={() => setCatDashboard((v) => !v)}
           />
+          {motorista && (
+            <SidebarCategoria
+              titulo="Visualização"
+              itens={itensVisualizacao}
+              expanded={expanded}
+              aberta={catVisualizacao}
+              onToggle={() => setCatVisualizacao((v) => !v)}
+            />
+          )}
           {admin && (
             <SidebarCategoria
               titulo="Controle"
@@ -302,7 +320,7 @@ export function PageHeader({
 export function ErrorList({ mensagens }: { mensagens: string[] }) {
   if (mensagens.length === 0) return null
   return (
-    <ul className="m-0 list-none p-0 text-[13px]" style={{ color: '#a03123' }}>
+    <ul className="m-0 list-none p-0 text-[13px]" style={{ color: 'var(--color-danger)' }}>
       {mensagens.map((msg) => (
         <li key={msg}>{msg}</li>
       ))}

@@ -7,7 +7,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Veiculos.Queries.GetAllVeiculos
 {
-    public sealed class GetAllVeiculosHandler(IVeiculoRepository repository, ICurrentUserService currentUser, ILogger<GetAllVeiculosHandler> logger)
+    public sealed class GetAllVeiculosHandler(IVeiculoRepository repository,
+                                              IRotaRepository rotaRepository,
+                                              ICurrentUserService currentUser,
+                                              ILogger<GetAllVeiculosHandler> logger)
         : IQueryHandler<GetAllVeiculosQuery, IEnumerable<VeiculoResponse>>
     {
         public async Task<IEnumerable<VeiculoResponse>> HandleAsync(GetAllVeiculosQuery query, CancellationToken cancellationToken = default)
@@ -18,9 +21,13 @@ namespace Frota360.Application.UseCases.Veiculos.Queries.GetAllVeiculos
 
                 var veiculos = await repository.GetAllAsync(currentUser.EmpresaId);
 
-                logger.LogInformation("Foram encontrados {QuantidadeVeiculos} veículos", veiculos.Count());
+                // Uma consulta para a lista inteira, não uma por veículo.
+                var emRota = (await rotaRepository.GetVeiculosEmRotaAsync(currentUser.EmpresaId)).ToHashSet();
 
-                return veiculos.Select(v => v.ToResponse());
+                logger.LogInformation("Foram encontrados {QuantidadeVeiculos} veículos, {QuantidadeEmRota} em rota",
+                    veiculos.Count(), emRota.Count);
+
+                return veiculos.Select(v => v.ToResponse(emRota.Contains(v.Id)));
             }
             catch (Exception ex)
             {

@@ -146,6 +146,11 @@ export interface VeiculoRequest {
 export interface VeiculoResponse extends VeiculoRequest {
   id: number
   dataInclusao: string
+  /**
+   * Derivado na leitura pela API (como `atrasada` na manutenção): existe rota aberta com
+   * este veículo. **Não entra no `VeiculoRequest`** — quem move o estado é a rota.
+   */
+  emRota: boolean
 }
 
 // ---------- Rota ----------
@@ -250,6 +255,15 @@ export interface ConcluirManutencaoRequest {
 export interface ManutencaoFiltro {
   veiculoId?: number
   status?: StatusManutencao
+  /**
+   * Período `yyyy-MM-dd`, aplicado sobre a **data relevante do status**: pendência é
+   * situada pela `dataPrevista`, concluída pela `dataRealizacao`. `ate` é inclusivo.
+   *
+   * Pendência agendada só por km (sem `dataPrevista`) não aparece com período ativo —
+   * ela não está em data nenhuma. Intervalo invertido volta 422.
+   */
+  de?: string
+  ate?: string
 }
 
 /**
@@ -289,6 +303,7 @@ export type EntidadeAuditada =
   | 'Veiculo'
   | 'Rota'
   | 'Manutencao'
+  | 'Abastecimento'
   | 'TipoManutencao'
   | 'Usuario'
   | 'Convite'
@@ -344,4 +359,62 @@ export interface AuditoriaFiltro {
   /** `yyyy-MM-dd`; `ate` é inclusivo (o servidor estende até o fim do dia). */
   de?: string
   ate?: string
+}
+
+// ---------- Abastecimento ----------
+
+/**
+ * O apontamento é curto de propósito: é o que se registra no posto sem atrito. Não há
+ * `rotaId` — a API deriva a rota da viagem aberta do motorista naquele veículo.
+ */
+export interface AbastecimentoRequest {
+  veiculoId: number
+  /**
+   * De quem é o gasto. Obrigatório para a gestão. Para a role `Motorista` a API **ignora**
+   * este campo e usa o usuário do token — ele não lança na conta de outro.
+   */
+  motoristaId?: number | null
+  valor: number
+  dataAbastecimento: string
+  observacao?: string | null
+}
+
+/**
+ * Correção de um lançamento. Sem `veiculoId` e sem `motoristaId`: trocar qualquer um dos
+ * dois reescreveria a atribuição do gasto — nesse caso, exclua e lance de novo.
+ */
+export type AtualizarAbastecimentoRequest = Pick<
+  AbastecimentoRequest,
+  'valor' | 'dataAbastecimento' | 'observacao'
+>
+
+export interface AbastecimentoFiltro {
+  veiculoId?: number
+  /** Só vale para a gestão; para a role `Motorista` o servidor sobrescreve com o do token. */
+  motoristaId?: number
+  /** `yyyy-MM-dd`; `ate` é inclusivo. Intervalo invertido volta 422. */
+  de?: string
+  ate?: string
+}
+
+/**
+ * Já vem desnormalizado: veículo, rota, motorista (de quem é o gasto) e quem lançou. Os
+ * dois últimos são pessoas diferentes quando a gestão lança em nome do motorista.
+ */
+export interface AbastecimentoResponse {
+  id: number
+  veiculoId: number
+  veiculoNome: string
+  veiculoPlaca: string
+  rotaId?: number | null
+  /** "Origem → Destino" da rota vinculada, quando há uma. */
+  rotaDescricao?: string | null
+  motoristaId: number
+  motoristaNome: string
+  usuarioId: number
+  usuarioNome: string
+  valor: number
+  dataAbastecimento: string
+  observacao?: string | null
+  dataInclusao: string
 }

@@ -10,5 +10,12 @@
         public string? UltimoMotorista { get; set; }
         public DateTime? DataUltimaViagem { get; set; }
         public DateTime DataInclusao { get; set; }
+
+        /// <summary>
+        /// Derivado na leitura, como <c>Atrasada</c> na manutenção: existe rota aberta com
+        /// este veículo. Não é coluna — o estado vive na tabela <c>Rota</c>, e persistir uma
+        /// cópia aqui daria um "em rota" envelhecido na primeira rota encerrada fora do fluxo.
+        /// </summary>
+        public bool EmRota { get; set; }
     }
 }

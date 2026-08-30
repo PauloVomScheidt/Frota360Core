@@ -56,6 +56,7 @@ Definido em [`apps/web/src/App.tsx`](apps/web/src/App.tsx). Qualquer rota descon
 | `/veiculos` | `VeiculosPage` | Todos (Motorista: leitura) |
 | `/rotas` | `RotasPage` | Gestão |
 | `/manutencoes` | `ManutencoesPage` | Todos (Motorista: leitura, sem custo) |
+| `/abastecimentos` | `AbastecimentosPage` | Todos — **leitura e escrita**; Motorista vê só o que é dele |
 | `/minhas-rotas` | `MinhasRotasPage` | **Motorista** |
 | `/tipos-manutencao` | `TiposManutencaoPage` | **Admin / Supervisor** |
 | `/usuarios` | `UsuariosPage` | **Admin** |
@@ -148,7 +149,7 @@ Formulário: nome, senha, confirmação e checkbox de termos (obrigatório, vali
 Todas as telas autenticadas são embrulhadas por `AppLayout` ([`apps/web/src/components/AppLayout.tsx`](apps/web/src/components/AppLayout.tsx)):
 
 - **Sidebar** recolhível (preferência guardada no `localStorage`), com as categorias "Dashboard" (Visão geral, Motoristas, Veículos, Rotas, Manutenções e — só para Admin/Supervisor — Tipos de manutenção) e "Controle" (Usuários, Convites, Auditoria) — esta só aparece para Admin.
-- Para a role **Motorista** a sidebar inteira vira um item só, "Minhas rotas", sob a categoria "Operação". Ele não tem painel de frota: esconder os itens acompanha o guarda `RequireGestao`, não o substitui.
+- Para a role **Motorista** a sidebar tem **duas** categorias: "Operação" (Minhas rotas, Abastecimentos — o que ele **faz**) e "Visualização" (Veículos, Manutenções — o que ele só **consulta**). A separação é por escrita vs. leitura, não por assunto: misturar as quatro sugeria que ele pudesse editar veículo e manutenção. Ele não tem painel de frota: esconder os itens acompanha o guarda `RequireGestao`, não o substitui.
 - **Header** com o avatar de iniciais, nome e papel do usuário — o bloco inteiro é o link para `/perfil` — e o botão de sair (`POST /auth/logout` → limpa tokens, limpa o cache do React Query, vai para `/login`).
 - `PageHeader` padroniza título, subtítulo e o botão de ação da página.
 
@@ -186,6 +187,7 @@ Todos os cálculos são feitos no cliente — a API não tem endpoint de agrega�
 
 Cadastro completo para a gestão; **leitura para o motorista**, que chega aqui pela sidebar para conferir odômetro, placa e quem levou o veículo por último. Os botões somem sozinhos: são controlados por `pode.editarCadastros`/`pode.excluir`, ambos falsos para ele.
 
+- **Coluna "Situação": `Em rota` (azul) ou `Disponível` (verde)**, a partir de `emRota` — derivado pela API, não cruzado aqui. Cruzar no cliente não era opção: `GET /rota` é restrito à gestão e esta tela é visível ao motorista, que tomaria 403. A coluna acompanha abrir, encerrar **e excluir** rota, pelas invalidações de `['veiculos']` (§6.4).
 - Campos do formulário: nome, marca, placa (maiúsculas automáticas) e quilometragem.
 - **Detalhe importante**: `ultimoMotorista` e `dataUltimaViagem` não estão no formulário — são preenchidos pela operação de rotas. Como o `PUT` substitui o registro inteiro, a edição reenvia esses dois campos intactos, vindos do registro carregado. Alterar isso sem cuidado apaga o histórico do veículo.
 - A placa é aceita nos dois formatos (`ABC1234` e `ABC1D23`) e o servidor a grava sempre em maiúsculas — o `text-transform` da tela é conveniência, não a regra.
@@ -226,9 +228,12 @@ A rota tem um ciclo de vida: nasce **ativa** com o hodômetro de abertura e é *
 
 A tela de manutenção preventiva. Um registro nasce **planejado** (veículo + tipo + km previsto) e recebe os dados de execução ao ser concluído — é o mesmo registro nos dois momentos.
 
-- **Os filtros** de veículo e situação disparam a query no servidor (`GET /manutencao?veiculoId=&status=`), então entram na chave do cache: `['manutencoes', { veiculoId, status }]`. "Cancelada" **não** é oferecida no filtro: o status existe no enum, mas nenhum endpoint o produz ainda.
+- **Os filtros** de veículo, situação e **período** disparam a query no servidor (`GET /manutencao?veiculoId=&status=&de=&ate=`), então entram na chave do cache: `['manutencoes', { veiculoId, status, de, ate }]`. "Cancelada" **não** é oferecida no filtro: o status existe no enum, mas nenhum endpoint o produz ainda.
+- **O período é um select de opções prontas** (`Todo o período`, `Hoje`, `Últimos 7/30 dias`, `Este mês`, `Mês passado`), não dois campos de data. Dois campos soltos exigiam do usuário o que o sistema já sabe fazer, e ainda obrigavam as duas datas a baterem entre si. A conversão para `de`/`ate` é do **cliente** ([`lib/periodo.ts`](apps/web/src/lib/periodo.ts)) — a API não conhece "últimos 7 dias" e não mudou.
+- **O período olha a data relevante do status**, não um campo fixo: pendência é situada pela `dataPrevista`, concluída pela `dataRealizacao`. Filtrar por uma só das duas deixaria metade da tela de fora. A tela **avisa em texto** quando há período ativo que pendência agendada só por quilometragem, sem `dataPrevista`, não aparece — ela não está em data nenhuma.
 - **A lista não é reordenada no cliente** — a API já devolve pendentes primeiro e, dentro de cada grupo, o que vence antes no topo.
 - **`atrasada` e `kmRestantes` vêm prontos do servidor** (recalculados a cada leitura, comparando o km previsto com a quilometragem atual do veículo). A tela só formata: `atrasada` tem precedência sobre `status` na badge, e `kmRestantes` negativo vira "3.200 km em atraso". Nada disso é recalculado aqui.
+- **Cinco situações, cinco cores** (§8.1): `Atrasada` (vermelho), `Vencendo` (âmbar), `Pendente` (azul), `Concluída` (verde), `Cancelada` (cinza). **`Vencendo` é do cliente**: pendente, ainda não vencida e com `kmRestantes <= FAIXA_AVISO` (500 km, em [`lib/manutencao.ts`](apps/web/src/lib/manutencao.ts)) — é corte de leitura, não regra do servidor, porque `kmRestantes` já chega calculado. A coluna "Andamento" acompanha a cor da tag da mesma linha.
 - O formulário **sugere a quilometragem prevista** como `km atual do veículo + intervaloKm do tipo`. A sugestão é reaplicada quando o veículo ou o tipo mudam, mas nunca sobrescreve um número digitado à mão (a comparação é com a última sugestão emitida).
 - O select de tipos usa `apenasAtivos=true`: agendar com tipo inativo resulta em 422. `dataPrevista` ganha `min` de hoje no cadastro e nenhum limite na edição, espelhando a regra da API (o PUT permite replanejar um agendamento antigo).
 - **Editar e Concluir só aparecem em linha pendente** — `PUT`/`concluir` em registro realizado retorna 422; o resto é histórico somente leitura.
@@ -262,7 +267,7 @@ Gestão da equipe, tudo editado direto na linha:
 - Formulário sempre visível: e-mail + permissão. A descrição do papel selecionado é mostrada abaixo, junto do aviso de que reenviar invalida o convite pendente anterior.
 - **`Motorista` é só mais uma opção do select de permissão** — o formulário não muda, não pede nada a mais, e o convite segue o mesmo caminho das outras roles.
 - Após criar, o **link em claro** retornado pela API aparece num painel destacado com botão "Copiar link" — em dev o e-mail só vai para o log da API, então esse é o caminho prático.
-- Tabela com status **derivado no cliente**: `utilizadoEm` → "Utilizado"; `expiraEm` no passado → "Expirado"; senão "Pendente".
+- Tabela com status **derivado no cliente**: `utilizadoEm` → "Utilizado" (verde); `expiraEm` no passado → "Expirado" (âmbar); senão "Pendente" (azul). Os três têm cor própria: expirado é uma falha que pede reenvio e antes ficava idêntico a um aceito — os dois eram neutros (§8.1).
 - Convites não utilizados podem ser cancelados; os utilizados mostram a data do aceite no lugar do botão.
 
 ### 5.9 `/minhas-rotas` (Motorista)
@@ -286,13 +291,38 @@ Cache: chave própria **`['rotas', 'minhas']`** — o conteúdo é um recorte de
 
 Os 422 do encerramento caem no `ErrorList` do próprio `FormDialog`, igual a `/rotas`.
 
+### 5.9.1 `/abastecimentos` (todos os papéis)
+
+A **única tela que todo mundo lê e escreve**: quem abastece na estrada é o motorista, no pátio é o operador.
+
+O apontamento é curto de propósito — **veículo, motorista, valor, data e observação**. A versão anterior pedia litros e odômetro para calcular consumo; era precisão que não se paga no posto e que fazia o lançamento ser evitado. O que sobrou serve ao que a tela existe para responder: **quanto se gastou**, por veículo, por motorista e por período.
+
+| Ação | Quem |
+|---|---|
+| Ver a frota inteira | Admin, Supervisor, Operador |
+| Ver **o que é dele** | Motorista |
+| Lançar e corrigir | Todos |
+| Excluir | Admin |
+
+- **O recorte do motorista é do servidor** (sai do `sub` do token), como em `/minhas-rotas`: um `motoristaId` enviado por ele é sobrescrito — filtro de cliente não é isolamento. Consequência prática na tela: **toda linha que o motorista enxerga é dele**, então o botão de corrigir não precisa de condicional por dono. Para ele a coluna "Quem lançou" some (seria sempre alguém da gestão ou ele mesmo) e o filtro por motorista também.
+- **"Motorista" e "Quem lançou" são pessoas diferentes** quando a gestão lança em nome de alguém: o gasto é do motorista, o registro é de quem digitou. O recorte do motorista é pelo **primeiro** — ele enxerga o que o supervisor lançou **para** ele.
+- **O campo motorista muda de natureza pelo papel**: para a gestão é um `<select required>` alimentado por `['motoristas']`; para a role Motorista é um `input disabled` com o próprio nome, e o corpo nem leva o campo — a API o resolve pelo token. O `useQuery` de motoristas é `enabled: !motorista`, porque `GET /motorista` é restrito à gestão e devolveria **403** para ele.
+- **Trava de veículo por rota aberta**: tendo o motorista uma rota ativa (`['rotas','minhas']`, `r.ativo` — a mesma derivação de `/minhas-rotas`), o select mostra **só o veículo da rota**, já pré-selecionado, e o formulário diz com qual carro ele está. Sem rota aberta, a lista completa. **A trava não é só visual**: mandar outro veículo devolve **422** do servidor.
+- O filtro de período usa o mesmo select de `/manutencoes` (`lib/periodo.ts`); ao lado dele, a gestão filtra por veículo e por motorista.
+- **O abastecimento não mexe no odômetro do veículo.** Quem o avança são a rota e a manutenção — a tela não participa da cadeia, e por isso a mutation invalida só `['abastecimentos']` (ver §6.4).
+- **Veículo e motorista não são editáveis na correção** — trocar qualquer um reatribuiria o gasto. Para isso, exclua e lance de novo; a tela diz isso no formulário. Só valor, data e observação são corrigíveis.
+- A rota é **contexto derivado**: a API vincula sozinha quando há rota aberta do motorista naquele veículo, e a tabela mostra "Origem → Destino" no lugar do modelo. Ninguém escolhe rota na tela.
+- Rodapé com o total **do que está filtrado** (quantidade e valor), não da frota inteira.
+
+Cache: `['abastecimentos', filtro]`, com `filtro` incluindo `motoristaId`.
+
 ### 5.10 `/auditoria` (Admin)
 
 Trilha do que a equipe alterou. **Somente leitura** — não há `InlineForm` nem `RowActions`, porque a API não expõe caminho para alterar ou apagar uma linha (nem para o Admin).
 
 - **Filtros no servidor**, como em `/manutencoes`: o quê (entidade), ação, quem (select alimentado por `['usuarios']` — a tela é Admin, a query já existe) e período de/até. Qualquer mudança de filtro **volta para a página 1**; sem isso a tela abriria vazia ao filtrar estando na página 4.
 - Colunas: **Quando** (`formatDateTime`), **Quem** (nome + o papel *do momento da ação*, que vem gravado na linha e não é o papel atual), **Ação** (`tag`), **Registro** (`Entidade #id`) e **O que aconteceu** (a `descricao` pronta que vem do servidor — nunca montada no cliente).
-- A cor da tag sinaliza **consequência, não entidade**: `tag-danger` para Excluiu/Desativou, `tag-warning` para AlterouPermissao, `tag-accent` para Criou/Aceitou, neutro no resto. Numa tabela longa, colorir por entidade viraria arco-íris.
+- A cor da tag sinaliza **consequência, não entidade** (§8.1): `tag-danger` para Excluiu/Desativou, `tag-warning` para AlterouPermissao/Cancelou, `tag-accent` para Criou, `tag-success` para Concluiu/Encerrou/Ativou/Aceitou. `Atualizou` fica neutro **de propósito** — é a ação mais comum da trilha, e colori-la afogaria o resto. Numa tabela longa, colorir por entidade viraria arco-íris.
 - **Linha expansível** quando há diff: clicar abre uma sublinha com `campo · de → para`, mais o IP de origem. Sem diff (criação, exclusão) a seta nem aparece — não há o que abrir.
 - Os valores do diff chegam em cultura invariante, de propósito: o histórico não depende de quem o escreveu. A tela converte datas ISO para pt-BR na leitura; o resto passa direto.
 - Rodapé com o componente `Paginacao` (25 por página, teto de 100 no servidor) e botão **Atualizar** no cabeçalho.
@@ -333,7 +363,7 @@ Formulário único, sem tabela: **nome, CPF e data de nascimento** do próprio u
 
 ### 6.4 Chaves do React Query
 
-`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['usuarios']`, `['convites']`, `['perfil']`, `['manutencoes', filtro]`, `['auditoria', filtro]`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`apps/web/src/lib/queryClient.ts`](apps/web/src/lib/queryClient.ts)).
+`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['usuarios']`, `['convites']`, `['perfil']`, `['manutencoes', filtro]`, `['abastecimentos', filtro]`, `['auditoria', filtro]`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`apps/web/src/lib/queryClient.ts`](apps/web/src/lib/queryClient.ts)).
 
 ⚠️ `['rotas']` e `['rotas','minhas']` são **listas diferentes**, não pai e filho: a segunda vem de outro endpoint e traz só as rotas do motorista logado. Invalidar pelo prefixo `['rotas']` alcançaria as duas, o que é inofensivo apenas porque nenhuma sessão usa as duas telas. Ao mexer nisso, invalide a chave exata.
 
@@ -342,8 +372,10 @@ Cruzamentos que não são óbvios, conferidos no código:
 - **Excluir veículo** invalida `['rotas']` ([VeiculosPage.tsx:56](apps/web/src/pages/VeiculosPage.tsx#L56)) — a tabela de rotas exibe a placa dele. Motorista não tem exclusão: é um usuário, e usuário só é desativado.
 - **Concluir uma manutenção** invalida também `['veiculos']` ([ManutencoesPage.tsx:165](apps/web/src/pages/ManutencoesPage.tsx#L165)) — o odômetro pode ter avançado.
 - **Abrir** ([RotasPage.tsx:118-119](apps/web/src/pages/RotasPage.tsx#L118-L119)) e **encerrar** ([RotasPage.tsx:139-140](apps/web/src/pages/RotasPage.tsx#L139-L140)) uma rota invalidam `['rotas']`, `['veiculos']` e `['manutencoes']`. É a cadeia mais longa do app: rota → veículo → manutenção. Os dois momentos mexem no odômetro (a abertura quando `kmInicial` é maior que o atual; o encerramento quando `kmFinal` é), e é do odômetro que `atrasada` e `kmRestantes` dependem. Sem invalidar a ponta da cadeia, o alerta de atraso só apareceria no próximo `staleTime`.
+- **Excluir uma rota** invalida `['rotas']` **e `['veiculos']`** — se a rota estava aberta, o veículo volta a `Disponível` na coluna Situação de `/veiculos` (§5.3). Não invalida `['manutencoes']`: excluir não mexe no odômetro.
 - Em `/minhas-rotas`, **abrir** e **encerrar** invalidam `['rotas','minhas']`, `['veiculos']` **e** `['manutencoes']` — a mesma cadeia da tela de gestão, agora que o motorista também lê manutenções e a tela mostra a pendência do veículo escolhido.
 - **Salvar o perfil** invalida `['perfil']`, `['motoristas']` **e** `['usuarios']` ([PerfilPage.tsx](apps/web/src/pages/PerfilPage.tsx)) — as duas listas exibem nome e CPF de quem acabou de se corrigir. É o único cruzamento que parte de uma tela sem tabela.
+- **Lançar, corrigir ou excluir abastecimento** invalida **só** `['abastecimentos']` — o lançamento é só o gasto e não toca no odômetro do veículo, então não entra na cadeia rota → veículo → manutenção. (Ele já entrou: enquanto o formulário pedia odômetro, invalidava também `['veiculos']` e `['manutencoes']`.)
 - Qualquer mutação no catálogo invalida o prefixo `['tiposManutencao']`, que cobre de uma vez o catálogo completo e a lista de ativos usada no agendamento.
 - ⚠️ **`['auditoria']` é a exceção deliberada: ninguém a invalida.** Praticamente toda mutação do app cria uma linha de trilha, então invalidar de dentro de cada tela espalharia acoplamento pelo front inteiro — cada mutation passaria a conhecer uma tela que ela não afeta. O `staleTime` de 30 s cobre o uso normal, e a tela tem botão "Atualizar" para quem quer ver agora.
 
@@ -368,14 +400,18 @@ Cruzamentos que não são óbvios, conferidos no código:
 | | `PUT /usuario/perfil` (**qualquer autenticado**) | PerfilPage — nome/CPF/nascimento; alvo pelo token, CPF duplicado na empresa → 422 |
 | **motorista** | `GET /motorista`, `GET /motorista/{id}` | MotoristasPage, RotasPage (select) — **somente leitura**: são os usuários com a role Motorista |
 | **manutencao** | `GET /manutencao?status=Pendente` | MinhasRotasPage — alimenta o aviso de pendência do veículo escolhido |
-| **veiculo** | `GET/POST /veiculo`, `GET/PUT/DELETE /veiculo/{id}` | VeiculosPage, Dashboard — placa nos dois formatos, normalizada em maiúsculas pelo servidor; DELETE com rota associada → **422** (RN08) |
+| **abastecimento** | `GET /abastecimento?veiculoId=&motoristaId=&de=&ate=` | AbastecimentosPage — `motoristaId` serve à gestão; para o Motorista a API o sobrescreve com o do token |
+| | `POST /abastecimento` | lançamento — a API resolve motorista (token, para a role Motorista) e rota; veículo fora da rota aberta → **422** |
+| | `PUT /abastecimento/{id}` | correção (só valor, data e observação); lançamento de outro motorista → 404 para ele |
+| | `DELETE /abastecimento/{id}` (Admin) | exclusão |
+| **veiculo** | `GET/POST /veiculo`, `GET/PUT/DELETE /veiculo/{id}` | VeiculosPage, Dashboard — a resposta traz `emRota` derivado (existe rota aberta com o veículo); placa nos dois formatos, normalizada em maiúsculas pelo servidor; DELETE com rota **ou abastecimento** associado → **422** (RN08) |
 | **rota** | `GET/POST /rota`, `GET/PUT/DELETE /rota/{id}` | RotasPage, Dashboard — o POST leva `kmInicial` e **pode avançar o odômetro do veículo**; o PUT não mexe em `kmInicial`, `ativo` nem `dataFim` |
 | | `GET /rota/minhas` (Motorista) | MinhasRotasPage — sem parâmetro: o motorista vem da claim |
 | | `POST /rota` sem `codigoMotorista` | MinhasRotasPage (`abrirMinha`) — a API grava o id do usuário logado |
 | | `POST /rota/{id}/encerrar` | encerramento — apura `kmPercorrido` e **pode avançar o odômetro do veículo**; para o motorista, rota alheia → 404 |
 | **tipomanutencao** | `GET /tipomanutencao?apenasAtivos=` | catálogo (sem filtro) / select de agendamento (`true`) |
 | | `POST`, `PUT /{id}`, `DELETE /{id}` | TiposManutencaoPage |
-| **manutencao** | `GET /manutencao?veiculoId=&status=` | ManutencoesPage (os filtros vão para o servidor) |
+| **manutencao** | `GET /manutencao?veiculoId=&status=&de=&ate=` | ManutencoesPage — todos os filtros vão para o servidor, período incluído |
 | | `POST /manutencao`, `PUT /manutencao/{id}` | agendar / replanejar (só pendente) |
 | | `POST /manutencao/{id}/concluir` | conclusão — **pode avançar o odômetro do veículo** |
 | | `DELETE /manutencao/{id}` (Admin) | descarte (não há endpoint de cancelar) |
@@ -394,6 +430,7 @@ Cruzamentos que não são óbvios, conferidos no código:
 | Ver/abrir/encerrar **as próprias** rotas | — | — | — | ✅ |
 | Criar/editar veículos | ✅ | ✅ | — | — |
 | Criar/editar/concluir manutenções e tipos | ✅ | ✅ | — | — |
+| Lançar e corrigir abastecimento | ✅ | ✅ | ✅ | ✅ (só o que é dele) |
 | Excluir qualquer registro | ✅ | — | — | — |
 | Usuários e convites | ✅ | — | — | — |
 | Ver a trilha de auditoria | ✅ | — | — | — |
@@ -413,7 +450,30 @@ Tokens e classes em [`apps/web/src/styles/design-system.css`](apps/web/src/style
 
 `index.html` carrega Archivo (400/600/800) e **IBM Plex Mono** (400/600). O mono é usado hoje só pela landing, para placa, quilometragem, data e rótulo de campo — se o painel passar a usá-lo em coluna numérica, promova-o a token do design system.
 
-Classes: `.btn` (`.btn-primary`, `.btn-secondary`, `.btn-icon`, `.btn-danger`), `.field` + `.input` (`.input-underline` no login), `.tag` (`.tag-accent`, `.tag-neutral`, `.tag-danger`, `.tag-warning`), `.nav`, `.table`, `.dialog*`.
+Classes: `.btn` (`.btn-primary`, `.btn-secondary`, `.btn-icon`, `.btn-danger`), `.field` + `.input` (`.input-underline` no login), `.tag` (ver abaixo), `.nav`, `.table`, `.dialog*`.
+
+### 8.1 Cor de situação — a tabela normativa
+
+**Situação se sinaliza pela classe `.tag`, nunca por `style` inline.** A `.tag` tem a forma da etiqueta da landing: barra de 3px na cor do estado (`border-left: 3px solid currentColor`), fundo tonal, caixa alta e peso 600. A barra é o que chama o olho numa tabela longa sem que o fundo precise gritar.
+
+Cinco tokens de estado, em `:root`: `--color-accent`, `--color-success` (`#2e5c42`), `--color-warning` (`#7a5312`), `--color-danger` (`#a03123`) e a rampa neutra — cada um com seu `-bg`. **Não invente um hex novo nem um sexto tom**: a cor diz a consequência, não a entidade, e um tom por entidade transformaria a tabela em arco-íris.
+
+| Classe | Significado | Onde aparece |
+|---|---|---|
+| `.tag-accent` | **acontecendo agora** | Rota `Ativa`, Manutenção `Pendente`, Convite `Pendente`, Veículo `Em rota`, Auditoria `Criou` |
+| `.tag-success` | **concluído / saudável** | Rota `Encerrada`, Manutenção `Concluída`, Convite `Utilizado`, `Ativo` (motorista/usuário/tipo), Veículo `Disponível`, Auditoria `Concluiu`/`Encerrou`/`Ativou`/`Aceitou` |
+| `.tag-warning` | **exige atenção em breve** | Manutenção `Vencendo`, Convite `Expirado`, Auditoria `Alterou permissão`/`Cancelou` |
+| `.tag-danger` | **falhou / destrutivo** | Manutenção `Atrasada`, Auditoria `Excluiu`/`Desativou` |
+| `.tag-neutral` | **sem estado** | `Inativa`/`Inativo`, Manutenção `Cancelada`, Auditoria `Atualizou` |
+
+Duas regras que a versão anterior violava e explicam o desenho atual:
+
+- **Cinza é ausência de estado, não "qualquer coisa que terminou".** Antes, `Encerrada`/`Concluída`/`Utilizado`/`Expirado`/`Cancelada` eram todos neutros — um convite expirado ficava idêntico a um aceito. Sucesso é verde; falha e vencimento são âmbar ou vermelho.
+- **Azul é reservado ao que está em curso.** Não use `.tag-accent` para dar ênfase a um dado que não é situação — a coluna "Última viagem" do dashboard exibia uma **data** como tag azul e diluía o significado do accent no app inteiro.
+
+Onde a cor de estado precisa aparecer **fora** de uma tag (texto de andamento em `/manutencoes`, borda do alerta em `/minhas-rotas`), use os mesmos tokens `var(--color-warning)`/`var(--color-danger)`, na mesma escala da tag da linha — o usuário lê os dois canais juntos.
+
+Os helpers que decidem rótulo e classe vivem em `lib/`, nunca dentro da página: [`lib/rota.ts`](apps/web/src/lib/rota.ts) (`statusDaRota`) e [`lib/manutencao.ts`](apps/web/src/lib/manutencao.ts) (`badgeDaManutencao`, `estaVencendo`, `textoKmRestantes`, `FAIXA_AVISO`) — duas telas nomeiam o mesmo estado e precisam nomeá-lo igual.
 
 Componentes reutilizados pelas telas:
 
@@ -423,12 +483,14 @@ Componentes reutilizados pelas telas:
 | `AuthScreen`, `AuthHeading` | `components/AuthScreen.tsx` | Casca das telas de autenticação |
 | `InlineForm`, `TableStates` | `components/Table.tsx` | Formulário acima da tabela e as linhas de carregando/erro/vazio |
 | `Paginacao` | `components/Table.tsx` | Rodapé "X–Y de Z" + anterior/próxima. Só `/auditoria` usa (é a única lista que a API pagina) e some quando cabe tudo numa página |
+| `FiltroPeriodo` | `components/Table.tsx` | Select de período pronto, usado por `/manutencoes` e `/abastecimentos`; a conversão para `de`/`ate` está em `lib/periodo.ts` |
 | `RowActions`, `ConfirmDialog` | `components/Table.tsx` | Ícones de editar/excluir na linha e confirmação de ação consequente (exclusão ou troca de permissão — `variante="padrao"` tira o vermelho quando não é destrutiva) |
 | `FormDialog` | `components/Table.tsx` | Diálogo com campos (concluir uma manutenção, encerrar uma rota) |
 | `LogoMark`, `Wordmark` | `components/Logo.tsx` | Marca (versões clara e escura) |
 | `icons.tsx` | — | Ícones SVG traçados, 24×24, `currentColor` |
 | `lib/format.ts` | — | Datas, CPF, quilometragem, moeda, iniciais, `paraInputDate` e `hojeInputDate` para `<input type="date">` |
 | `lib/rota.ts` | `/rotas`, `/minhas-rotas` | `statusDaRota` — o status derivado de `ativo` + `dataFim`, igual nas duas telas |
+| `lib/periodo.ts` | `/manutencoes`, `/abastecimentos` | `PERIODOS` e `intervaloDoPeriodo` — converte o período escolhido em `de`/`ate` (hora local, `ate` inclusivo) |
 
 ---
 

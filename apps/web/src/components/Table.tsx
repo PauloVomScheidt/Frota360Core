@@ -2,6 +2,7 @@ import { useEffect, type FormEvent, type ReactNode } from 'react'
 import { mensagensDeErro } from '../api/errors'
 import { ErrorList } from './AppLayout'
 import { PencilIcon, TrashIcon } from './icons'
+import { PERIODOS, type Periodo } from '../lib/periodo'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
@@ -66,7 +67,7 @@ export function TableStates({
   if (error) {
     return (
       <tr>
-        <td colSpan={colSpan} style={{ color: '#a03123' }}>
+        <td colSpan={colSpan} style={{ color: 'var(--color-danger)' }}>
           {mensagensDeErro(error, textoErro)[0]}
         </td>
       </tr>
@@ -327,6 +328,42 @@ export function Paginacao({
           Próxima
         </button>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Filtro de período com opções prontas, no lugar de dois campos de data soltos.
+ * Compartilhado por `/manutencoes` e `/abastecimentos` — dois filtros de data diferentes
+ * no mesmo sistema seria a inconsistência que incomoda depois.
+ */
+export function FiltroPeriodo({
+  valor,
+  onMudar,
+  rotulo = 'Período',
+  id = 'filtroPeriodo',
+}: {
+  valor: Periodo
+  onMudar: (periodo: Periodo) => void
+  rotulo?: string
+  id?: string
+}) {
+  return (
+    <div className="field w-[190px]">
+      <label htmlFor={id}>{rotulo}</label>
+      <select
+        id={id}
+        className="input"
+        style={{ borderRadius: 0 }}
+        value={valor}
+        onChange={(e) => onMudar(e.target.value as Periodo)}
+      >
+        {PERIODOS.map((p) => (
+          <option key={p.valor} value={p.valor}>
+            {p.rotulo}
+          </option>
+        ))}
+      </select>
     </div>
   )
 }
