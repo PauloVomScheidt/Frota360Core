@@ -37,6 +37,12 @@ export const pode = {
   verManutencoes: (role?: Role) => role !== undefined,
   /** Tela `/minhas-rotas`: a única exclusiva do motorista. */
   verMinhasRotas: (role?: Role) => role === 'Motorista',
+  /**
+   * Abastecimento é a única tela que **todo mundo lê e escreve**: quem abastece na estrada
+   * é o motorista, no pátio é o operador. O recorte de quem vê o quê é do servidor — a
+   * gestão recebe a frota inteira, o motorista só os próprios lançamentos.
+   */
+  verAbastecimentos: (role?: Role) => role !== undefined,
 
   // ----- Ações -----
   /** Cadastrar, editar e encerrar rota na tela de gestão (`/rotas`). */
@@ -45,6 +51,11 @@ export const pode = {
   editarManutencoes: (role?: Role) => role === 'Admin' || role === 'Supervisor',
   /** Manter o catálogo de tipos de manutenção (todos podem apenas visualizar). */
   editarTiposManutencao: (role?: Role) => role === 'Admin' || role === 'Supervisor',
+  /**
+   * Lançar e corrigir abastecimento — todos os papéis. O servidor é quem barra corrigir o
+   * lançamento de outra pessoa (404 para o motorista), não esta entrada.
+   */
+  lancarAbastecimento: (role?: Role) => role !== undefined,
 }
 
 /**

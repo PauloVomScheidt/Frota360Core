@@ -22,6 +22,62 @@ namespace Frota360.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("Frota360.Domain.Entities.Abastecimento", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("DataAbastecimento")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("DataInclusao")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETDATE()");
+
+                    b.Property<int>("EmpresaId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MotoristaId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Observacao")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int?>("RotaId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Valor")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int>("VeiculoId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MotoristaId");
+
+                    b.HasIndex("RotaId");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("VeiculoId");
+
+                    b.HasIndex("EmpresaId", "MotoristaId", "DataAbastecimento");
+
+                    b.HasIndex("EmpresaId", "VeiculoId", "DataAbastecimento");
+
+                    b.ToTable("Abastecimento", (string)null);
+                });
+
             modelBuilder.Entity("Frota360.Domain.Entities.Convite", b =>
                 {
                     b.Property<int>("Id")
@@ -298,7 +354,7 @@ namespace Frota360.Infrastructure.Migrations
 
                     b.HasIndex("CodigoVeiculo");
 
-                    b.HasIndex("EmpresaId");
+                    b.HasIndex("EmpresaId", "Ativo", "CodigoVeiculo");
 
                     b.ToTable("Rota", (string)null);
                 });
@@ -465,6 +521,46 @@ namespace Frota360.Infrastructure.Migrations
                     b.HasIndex("EmpresaId");
 
                     b.ToTable("Veiculo", (string)null);
+                });
+
+            modelBuilder.Entity("Frota360.Domain.Entities.Abastecimento", b =>
+                {
+                    b.HasOne("Frota360.Domain.Entities.Empresa", null)
+                        .WithMany()
+                        .HasForeignKey("EmpresaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Frota360.Domain.Entities.Usuario", "Motorista")
+                        .WithMany()
+                        .HasForeignKey("MotoristaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Frota360.Domain.Entities.Rota", "Rota")
+                        .WithMany()
+                        .HasForeignKey("RotaId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Frota360.Domain.Entities.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Frota360.Domain.Entities.Veiculo", "Veiculo")
+                        .WithMany()
+                        .HasForeignKey("VeiculoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Motorista");
+
+                    b.Navigation("Rota");
+
+                    b.Navigation("Usuario");
+
+                    b.Navigation("Veiculo");
                 });
 
             modelBuilder.Entity("Frota360.Domain.Entities.Convite", b =>

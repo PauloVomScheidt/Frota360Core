@@ -1,10 +1,11 @@
-using Frota360.Application.Common;
+﻿using Frota360.Application.Common;
 using Frota360.Application.DTOs.Veiculo.Request;
 using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Veiculos.Commands.CreateVeiculo;
 using Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo;
 using Frota360.Application.UseCases.Veiculos.Commands.UpdateVeiculo;
 using Frota360.Application.UseCases.Veiculos.Queries.GetAllVeiculos;
+using Frota360.Application.UseCases.Veiculos.Queries.GetVeiculoById;
 using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
@@ -19,9 +20,10 @@ namespace Frota360.Tests.UseCases.Veiculos
         private readonly IRotaRepository _rotaRepository = Substitute.For<IRotaRepository>();
         private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
         private readonly IAuditoriaService _auditoria = Substitute.For<IAuditoriaService>();
+        private readonly IAbastecimentoRepository _abastecimentoRepository = Substitute.For<IAbastecimentoRepository>();
 
         private DeleteVeiculoHandler CriarDeleteHandler() =>
-            new(_repository, _rotaRepository, _currentUser, _auditoria, NullLogger<DeleteVeiculoHandler>.Instance);
+            new(_repository, _rotaRepository, _abastecimentoRepository, _currentUser, _auditoria, NullLogger<DeleteVeiculoHandler>.Instance);
 
         public VeiculoHandlersTests()
         {
@@ -72,7 +74,7 @@ namespace Frota360.Tests.UseCases.Veiculos
             _repository.GetByIdAsync(7, 1).Returns(NovoVeiculo(7));
             _repository.UpdateAsync(Arg.Any<Veiculo>()).Returns(ci => ci.Arg<Veiculo>());
 
-            var handler = new UpdateVeiculoHandler(_repository, _currentUser, _auditoria, NullLogger<UpdateVeiculoHandler>.Instance);
+            var handler = new UpdateVeiculoHandler(_repository, _rotaRepository, _currentUser, _auditoria, NullLogger<UpdateVeiculoHandler>.Instance);
             var request = new UpdateVeiculoRequest
             {
                 NomeVeiculo = "Strada Volcano",
@@ -94,7 +96,7 @@ namespace Frota360.Tests.UseCases.Veiculos
         {
             _repository.GetByIdAsync(99, 1).Returns((Veiculo?)null);
 
-            var handler = new UpdateVeiculoHandler(_repository, _currentUser, _auditoria, NullLogger<UpdateVeiculoHandler>.Instance);
+            var handler = new UpdateVeiculoHandler(_repository, _rotaRepository, _currentUser, _auditoria, NullLogger<UpdateVeiculoHandler>.Instance);
 
             var resposta = await handler.HandleAsync(
                 new UpdateVeiculoCommand(99, new UpdateVeiculoRequest()));
@@ -175,12 +177,71 @@ namespace Frota360.Tests.UseCases.Veiculos
         public async Task GetAll_DeveMapearTodosOsVeiculos()
         {
             _repository.GetAllAsync(1).Returns(new[] { NovoVeiculo(1), NovoVeiculo(2) });
+            _rotaRepository.GetVeiculosEmRotaAsync(1).Returns([]);
 
-            var handler = new GetAllVeiculosHandler(_repository, _currentUser, NullLogger<GetAllVeiculosHandler>.Instance);
+            var handler = new GetAllVeiculosHandler(_repository, _rotaRepository, _currentUser, NullLogger<GetAllVeiculosHandler>.Instance);
 
             var resposta = (await handler.HandleAsync(new GetAllVeiculosQuery())).ToList();
 
             Assert.Equal(2, resposta.Count);
+        }
+
+        /// <summary>
+        /// `EmRota` é derivado na leitura, como `Atrasada` na manutenção — e a consulta é
+        /// uma só para a lista inteira, não uma por veículo.
+        /// </summary>
+        [Fact]
+        public async Task GetAll_DeveMarcarComoEmRotaSoOsVeiculosComRotaAberta()
+        {
+            _repository.GetAllAsync(1).Returns(new[] { NovoVeiculo(1), NovoVeiculo(2), NovoVeiculo(3) });
+            _rotaRepository.GetVeiculosEmRotaAsync(1).Returns(new[] { 2 });
+
+            var handler = new GetAllVeiculosHandler(_repository, _rotaRepository, _currentUser, NullLogger<GetAllVeiculosHandler>.Instance);
+
+            var resposta = (await handler.HandleAsync(new GetAllVeiculosQuery())).ToList();
+
+            Assert.False(resposta.Single(v => v.Id == 1).EmRota);
+            Assert.True(resposta.Single(v => v.Id == 2).EmRota);
+            Assert.False(resposta.Single(v => v.Id == 3).EmRota);
+
+            // Escopado na empresa do token, e uma única consulta para os três veículos.
+            await _rotaRepository.Received(1).GetVeiculosEmRotaAsync(1);
+        }
+
+        [Fact]
+        public async Task GetById_DeveConsultarARotaAbertaDaquelVeiculoEscopadaNaEmpresa()
+        {
+            _repository.GetByIdAsync(7, 1).Returns(NovoVeiculo(7));
+            _rotaRepository.ExisteRotaAtivaComVeiculoAsync(1, 7).Returns(true);
+
+            var handler = new GetVeiculoByIdHandler(_repository, _rotaRepository, _currentUser,
+                NullLogger<GetVeiculoByIdHandler>.Instance);
+
+            var resposta = await handler.HandleAsync(new GetVeiculoByIdQuery(7));
+
+            Assert.True(resposta!.EmRota);
+            await _rotaRepository.Received(1).ExisteRotaAtivaComVeiculoAsync(1, 7);
+        }
+
+        /// <summary>Editar a ficha não tira o carro da estrada.</summary>
+        [Fact]
+        public async Task Update_DevePreservarEmRotaNaResposta()
+        {
+            _repository.GetByIdAsync(7, 1).Returns(NovoVeiculo(7));
+            _repository.UpdateAsync(Arg.Any<Veiculo>()).Returns(ci => ci.Arg<Veiculo>());
+            _rotaRepository.ExisteRotaAtivaComVeiculoAsync(1, 7).Returns(true);
+
+            var handler = new UpdateVeiculoHandler(_repository, _rotaRepository, _currentUser, _auditoria, NullLogger<UpdateVeiculoHandler>.Instance);
+
+            var resposta = await handler.HandleAsync(new UpdateVeiculoCommand(7, new UpdateVeiculoRequest
+            {
+                NomeVeiculo = "Strada Volcano",
+                MarcaVeiculo = "Fiat",
+                Placa = "ABC1D23",
+                Quilometragem = 60_000
+            }));
+
+            Assert.True(resposta!.EmRota);
         }
 
         [Fact]
@@ -189,7 +250,7 @@ namespace Frota360.Tests.UseCases.Veiculos
             _repository.GetByIdAsync(7, 1).Returns(NovoVeiculo(7));
             _repository.UpdateAsync(Arg.Any<Veiculo>()).Returns(ci => ci.Arg<Veiculo>());
 
-            var handler = new UpdateVeiculoHandler(_repository, _currentUser, _auditoria, NullLogger<UpdateVeiculoHandler>.Instance);
+            var handler = new UpdateVeiculoHandler(_repository, _rotaRepository, _currentUser, _auditoria, NullLogger<UpdateVeiculoHandler>.Instance);
 
             await handler.HandleAsync(new UpdateVeiculoCommand(7, new UpdateVeiculoRequest
             {

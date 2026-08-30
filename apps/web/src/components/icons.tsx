@@ -182,6 +182,17 @@ export const ClipboardIcon = (p: IconProps) => (
   </Icon>
 )
 
+/** Bomba de combustível — abastecimento. */
+export const FuelIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 22V4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v18" />
+    <path d="M2 22h12" />
+    <path d="M4 9h8" />
+    <path d="M17 22V12a2 2 0 0 0-2-2h-2" />
+    <path d="M17 12V7l3 2v9a2 2 0 0 1-3 1.7" />
+  </Icon>
+)
+
 /** Relógio com seta de retorno — histórico/trilha de auditoria. */
 export const HistoricoIcon = (p: IconProps) => (
   <Icon {...p}>

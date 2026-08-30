@@ -47,6 +47,8 @@ Para essa role o escopo é duplo — empresa **e** o próprio usuário, os dois 
 - `POST /rota` → `CreateRotaHandler` ignora o `CodigoMotorista` do corpo e grava o `UsuarioId`.
 - `POST /rota/{id}/encerrar` → rota de outro motorista devolve `null` → **404**, não 403: para quem não é dono dela, a rota não existe.
 
+- `GET /abastecimento` → o handler aplica `motoristaId` do token quando quem consulta é motorista, sobrescrevendo o filtro do cliente; `PUT`/`GET /{id}` de lançamento de **outro motorista** devolvem `null` → **404**. `POST` ignora o `MotoristaId` do corpo para essa role e grava o do token, e recusa veículo diferente do da rota aberta (422).
+
 `CurrentUserExtensions.EhMotorista()` (`Application/Common`) é o único auxiliar que sobrou — não há vínculo a resolver nem estado inconsistente possível.
 
 Quem resolve o `CodigoMotorista` de uma rota usa `IUsuarioRepository.GetMotoristaByIdAsync(id, empresaId)`, que filtra **empresa e role**: um usuário de outra empresa, ou um Supervisor, simplesmente "não existe" como motorista e cai no mesmo 422 `"Motorista {id} não encontrado."`.
@@ -111,7 +113,13 @@ O `GET` existe porque `GET /usuario` é Admin-only: sem ele um Motorista não te
 
 A sessão **não** é revogada (diferente da troca de papel): mudar o próprio nome não amplia nem reduz acesso. O efeito colateral é que o claim `name` do token — e portanto o nome desnormalizado nas linhas de auditoria seguintes — só reflete o novo valor no próximo refresh.
 
-### 4.3 Veículo — placa e exclusão
+### 4.3 Veículo — placa, exclusão e "em rota"
+
+- **`EmRota` é derivado na leitura**, como `Atrasada` na manutenção: existe rota com aquele veículo em que `Ativo && DataFim is null`. **Não é coluna** — o estado vive na tabela `Rota`, e persistir uma cópia daria um "em rota" envelhecido na primeira rota encerrada fora do fluxo. `VeiculoMappings.ToResponse(this Veiculo v, bool emRota)` recebe o valor por **parâmetro obrigatório**, sem default: o dado vem do lado oposto da FK (`Veiculo` não tem coleção de rotas), e um `false` implícito num handler novo passaria despercebido, mostrando "Disponível" para um carro na estrada.
+- Dois métodos alimentam isso, ambos filtrando `Ativo && DataFim == null`: `IRotaRepository.GetVeiculosEmRotaAsync(empresaId)` — uma consulta para a listagem inteira, evitando N+1 — e `ExisteRotaAtivaComVeiculoAsync(empresaId, veiculoId)` para leitura e correção de um registro. ⚠️ **Não confunda com `ExisteComVeiculoAsync`**, que ignora o estado da rota de propósito: é a guarda da RN08, onde uma rota encerrada continua sendo histórico que aponta para o veículo.
+- O índice `(EmpresaId, Ativo, CodigoVeiculo)` na tabela `Rota` existe por causa dessa consulta, que roda em toda listagem de veículos. Ele substitui o índice de FK `(EmpresaId)` que o EF criava sozinho — o composto o cobre como prefixo.
+- **Nada impede duas rotas ativas no mesmo veículo**: `CreateRotaHandler` valida motorista, veículo e `KmInicial`, mas não checa se o carro já está rodando. Por isso `EmRota` é um booleano de "existe alguma", nunca um vínculo 1-1.
+
 
 - **Placa (RN09).** Formato Mercosul (`ABC1D23`) ou antigo (`ABC1234`), nos dois validators. A comparação é **case-insensitive** e o handler grava sempre em maiúsculas (`Trim().ToUpperInvariant()`): a RN09 é regra de formato, não de caixa — recusar `abc1d23` com 422 puniria um cliente da API por algo que só o front normalizava. No update, a normalização acontece **antes** do `AlteracoesBuilder`, senão reenviar a mesma placa em caixa diferente entraria no diff como alteração fantasma.
 - **Exclusão (RN08).** Veículo com rota associada não é excluído: 422 com *"Não é possível excluir um veículo com rotas associadas. Encerre ou remova as rotas antes."* — `DeleteVeiculoHandler` consulta `IRotaRepository.ExisteComVeiculoAsync`, mesmo desenho de `DeleteTipoManutencaoHandler`. A rota guarda o histórico de quilometragem da frota e ficaria apontando para um registro inexistente.
@@ -144,9 +152,48 @@ Editar (`PUT`) e excluir continuam fora do alcance dele: correção de rota é d
 
 **Motorista rebaixado:** as rotas dele continuam apontando para o usuário (a FK é `Restrict`), mas ele some de `GET /motorista`, que lista só quem tem a role. Para que a rota continue identificável, `RotaResponse` traz **`NomeMotorista` desnormalizado** — mesma técnica de `veiculoNome`/`veiculoPlaca` em `ManutencaoResponse`. O repositório carrega por `Include(r => r.Motorista)`; nos handlers de create/update a navegação não vem preenchida (ou aponta para o dono anterior), então eles atribuem o nome à mão.
 
+### 7.1 Filtro de período na manutenção
+
+`GET /manutencao?de=&ate=` recorta pela **data relevante do status**, não por um campo fixo: uma pendência é situada pela `DataPrevista`, uma manutenção feita pela `DataRealizacao`. Escolher uma só das duas deixaria metade da tela fora do filtro — só pendências ou só concluídas.
+
+No repositório as duas pernas do OR são escritas explicitamente, em vez de um ternário, porque `Status` tem conversão para texto e a comparação simples é a que o EF traduz sem surpresa.
+
+Duas consequências assumidas: `ate` é **inclusivo** (estende até o fim do dia), e **pendência agendada só por km, sem `DataPrevista`, não aparece enquanto houver período** — ela não está em data nenhuma. A tela avisa isso quando o filtro está ativo. Intervalo invertido é `InvalidOperationException` → 422, não lista vazia silenciosa.
+
 ### 8. Encerrar rota alimenta a ficha do veículo
 
 Além do odômetro, o encerramento grava `Veiculo.UltimoMotorista` e `Veiculo.DataUltimaViagem` — que antes **só eram preenchidos à mão** pelo CRUD de veículo, apesar de a documentação afirmar o contrário. Os três campos seguem a mesma política de "só avança": encerrar hoje uma rota de mês passado não reescreve a ficha com dado velho (`AtualizarVeiculoAsync` compara `DataUltimaViagem` antes de gravar). O odômetro é independente da data — ele avança sempre que o km final for maior.
+
+### 8.1 Abastecimento — o gasto com combustível
+
+**O apontamento é curto de propósito.** A primeira versão pedia litros e odômetro além de veículo, valor e data, para calcular consumo — precisão que não se paga no posto e que fazia o lançamento ser evitado. O contrato hoje é **veículo, motorista, valor, data e observação**: o dado entra sempre, e serve de base para relatório de **gasto** por veículo, por motorista, por rota e por período.
+
+**O abastecimento não mexe no odômetro.** São **dois** os fluxos que o avançam — abertura/encerramento de rota e conclusão de manutenção. Não há mais consumo (km/l), preço por litro nem custo por km; a `AbastecimentoResponse` não tem campo derivado nenhum.
+
+**Duas pessoas por lançamento, e elas podem ser diferentes:**
+
+| Coluna | Significado |
+|---|---|
+| `MotoristaId` | **de quem é o gasto** — é o segundo eixo de isolamento e o eixo do relatório por pessoa |
+| `UsuarioId` | **quem digitou** — vem sempre do token; a gestão lança em nome do motorista |
+
+A gestão escolhe o motorista, e ele é **obrigatório**: sem ele o handler recusa com 422 `"Informe o motorista do abastecimento."`. O id é resolvido por `IUsuarioRepository.GetMotoristaByIdAsync(id, empresaId)`, que filtra **empresa e role** — usuário de outra empresa ou que não é motorista cai no mesmo `"Motorista {id} não encontrado."`.
+
+**Segundo eixo, como em `/rota/minhas`:** a role `Motorista` vê e corrige só o que é dela — **inclusive o que a gestão lançou para ela**, já que o recorte é por `MotoristaId` e não por quem digitou. O recorte sai do token dentro do handler (`GetAllAbastecimentosHandler`), nunca de parâmetro do cliente: um `motoristaId` na query string é sobrescrito para a role Motorista, e serve só à gestão. Lançamento de outro motorista devolve `null` → **404**, não 403.
+
+**No create, para a role Motorista, o `MotoristaId` do corpo é ignorado** em favor do usuário do token — mesma lógica do `CreateRotaHandler`: o cliente não escolhe de quem é o registro.
+
+**Trava de veículo por rota aberta (RN11).** `CreateAbastecimentoHandler.ResolverRotaAsync` busca a rota aberta do motorista (`Ativo && DataFim is null` sobre `GetAllByMotoristaAsync` — "ativa" não é estado persistido, é essa derivação) e:
+
+- **motorista com rota aberta em outro veículo** → 422 `"Você está em rota com outro veículo. Lance o abastecimento no veículo da sua rota aberta."` A trava vale só para quem está dirigindo; a gestão pode lançar por ele em qualquer veículo (troca, apoio).
+- **veículo bate com o da rota aberta** (motorista ou gestão) → `RotaId` vinculado.
+- **sem rota aberta** → `RotaId` nulo e qualquer veículo da empresa é aceito.
+
+`RotaId` **saiu do contrato de entrada**: é sempre derivado no servidor. A FK continua `SetNull` — excluir a rota não pode levar junto o gasto, que aconteceu de verdade.
+
+Escrita é aberta a **todos os papéis** (quem abastece na estrada é o motorista, no pátio é o operador); exclusão é só Admin, como no resto. Veículo, motorista e rota não entram no `PUT` — só valor, data e observação: trocar qualquer um dos três reatribuiria o gasto. Nesse caso, exclua e lance de novo.
+
+**RN08 estendida:** veículo com abastecimento lançado não pode ser excluído (a FK é `Restrict`, então sem a guarda o usuário veria 500 em vez da explicação).
 
 ### 9. Auditoria — quem alterou o quê
 
@@ -165,7 +212,7 @@ Nome, e-mail e papel de quem agiu ficam **desnormalizados** na linha — o log �
 1. **Auditoria não derruba negócio.** `AuditoriaService` roda depois de o repositório já ter feito `SaveChangesAsync`, portanto fora daquela transação, e engole a exceção em log de erro. Perder uma linha de trilha é ruim; devolver 500 numa edição que já foi persistida é pior.
 2. **Nada de segredo no diff.** Ele é montado à mão, campo a campo, por `AlteracoesBuilder` — chamado **antes** de a entidade ser mutada, já que os handlers a alteram in-place. Hash de senha, refresh token, token de reset e de convite nunca entram.
 
-**Os 20 pontos de registro:**
+**Os 23 pontos de registro:**
 
 | Origem | Entidade · Ação | Diff |
 |---|---|---|
@@ -176,6 +223,7 @@ Nome, e-mail e papel de quem agiu ficam **desnormalizados** na linha — o log �
 | `DeleteRotaHandler` | Rota · Excluiu | — |
 | `Create/Update/DeleteManutencaoHandler` | Manutencao · Criou/Atualizou/Excluiu | ✅ no update |
 | `ConcluirManutencaoHandler` | Manutencao · Concluiu | ✅ status, km, custo, odômetro |
+| `Create/Update/DeleteAbastecimentoHandler` | Abastecimento · Criou/Atualizou/Excluiu | ✅ no update (valor, data, observação) |
 | `Create/Update/DeleteTipoManutencaoHandler` | TipoManutencao · Criou/Atualizou/Excluiu | ✅ no update |
 | `UsuarioService.AtualizarPerfilAsync` | Usuario · Atualizou | ✅ nome, CPF e nascimento — o ator é também o objeto |
 | `UsuarioService.AlterarRoleAsync` | Usuario · AlterouPermissao | ✅ papel anterior → novo |
@@ -214,8 +262,9 @@ Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou 
 | GET | `/usuario` · PUT `/usuario/{id}/role` · `/{id}/ativo` | Admin |
 | GET/PUT | `/usuario/perfil` — o próprio cadastro (nome, CPF, nascimento); alvo pelo `sub` do token | **qualquer autenticado** (inclui Motorista) |
 | GET | `/auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` — **único endpoint paginado**; somente leitura | Admin |
-| GET | `/veiculo` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**) |
-| GET | `/manutencao?veiculoId=&status=` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**, sem `custo`) |
+| GET | `/veiculo` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**) — a resposta traz `emRota` derivado |
+| GET | `/manutencao?veiculoId=&status=&de=&ate=` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**, sem `custo`) |
+| GET/POST/PUT | `/abastecimento?veiculoId=&motoristaId=&de=&ate=` (+ `/{id}`) | qualquer autenticado — o Motorista só alcança o que é dele, e `motoristaId` é ignorado para ele |
 | GET | `/motorista` (+ `/{id}`) — **somente leitura**: os usuários com a role Motorista | Admin, Supervisor, Operador |
 | GET | `/rota`, `/tipomanutencao?apenasAtivos=` (+ `/{id}`) | Admin, Supervisor, Operador |
 | GET | `/rota/minhas` | **Motorista** (rotas do próprio, pelo `sub` do token) |

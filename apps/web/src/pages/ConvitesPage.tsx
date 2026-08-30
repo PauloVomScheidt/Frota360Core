@@ -17,6 +17,16 @@ function statusDoConvite(convite: ConviteResponse): StatusConvite {
   return new Date(convite.expiraEm).getTime() < Date.now() ? 'Expirado' : 'Pendente'
 }
 
+/**
+ * Os três estados têm cores próprias: um convite expirado falhou e pede reenvio, e
+ * antes ficava idêntico a um utilizado — os dois eram neutros.
+ */
+const CLASSE_STATUS: Record<StatusConvite, string> = {
+  Pendente: 'tag tag-accent',
+  Utilizado: 'tag tag-success',
+  Expirado: 'tag tag-warning',
+}
+
 export function ConvitesPage() {
   const queryClient = useQueryClient()
   const [email, setEmail] = useState('')
@@ -168,7 +178,7 @@ export function ConvitesPage() {
                   <td className="font-semibold">{convite.email}</td>
                   <td>{convite.role}</td>
                   <td>
-                    <span className={status === 'Pendente' ? 'tag tag-accent' : 'tag tag-neutral'}>{status}</span>
+                    <span className={CLASSE_STATUS[status]}>{status}</span>
                   </td>
                   <td>{formatDateTime(convite.expiraEm)}</td>
                   <td>{formatDateTime(convite.dataInclusao)}</td>

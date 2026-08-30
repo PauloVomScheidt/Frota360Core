@@ -105,7 +105,7 @@ export function VeiculosPage() {
 
   const veiculos = veiculosQuery.data ?? []
   const mostrarAcoes = podeCadastrar || podeExcluir
-  const colunas = mostrarAcoes ? 7 : 6
+  const colunas = mostrarAcoes ? 8 : 7
 
   return (
     <AppLayout>
@@ -207,6 +207,7 @@ export function VeiculosPage() {
               <th>Veículo</th>
               <th>Marca</th>
               <th>Placa</th>
+              <th>Situação</th>
               <th>Quilometragem</th>
               <th>Último motorista</th>
               <th>Cadastrado em</th>
@@ -228,6 +229,13 @@ export function VeiculosPage() {
                 <td className="font-semibold">{v.nomeVeiculo}</td>
                 <td>{v.marcaVeiculo}</td>
                 <td>{v.placa}</td>
+                <td>
+                  {/* `emRota` vem derivado da API: a lista de rotas é fechada para o
+                      motorista, que enxerga esta tela — cruzar aqui daria 403 para ele. */}
+                  <span className={v.emRota ? 'tag tag-accent' : 'tag tag-success'}>
+                    {v.emRota ? 'Em rota' : 'Disponível'}
+                  </span>
+                </td>
                 <td>{formatKm(v.quilometragem)}</td>
                 <td>{v.ultimoMotorista || '—'}</td>
                 <td>{formatDate(v.dataInclusao)}</td>

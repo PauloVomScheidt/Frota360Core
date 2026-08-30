@@ -1,4 +1,4 @@
-using Frota360.Application.Common;
+﻿using Frota360.Application.Common;
 using Frota360.Application.DTOs.Manutencao.Request;
 using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Manutencoes.Commands.ConcluirManutencao;
@@ -273,6 +273,39 @@ namespace Frota360.Tests.UseCases.Manutencoes
 
             Assert.Equal(2, resposta.Count);
             await _repository.Received(1).GetAllAsync(1, 1, StatusManutencao.Pendente);
+        }
+
+        [Fact]
+        public async Task GetAll_DeveRepassarOPeriodoAoRepositorio()
+        {
+            var de = new DateTime(2026, 8, 1);
+            var ate = new DateTime(2026, 8, 11);
+
+            _repository.GetAllAsync(1, null, null, de, ate).Returns([]);
+
+            var handler = new GetAllManutencoesHandler(_repository, _currentUser, NullLogger<GetAllManutencoesHandler>.Instance);
+
+            await handler.HandleAsync(new GetAllManutencoesQuery(De: de, Ate: ate));
+
+            await _repository.Received(1).GetAllAsync(1, null, null, de, ate);
+        }
+
+        /// <summary>
+        /// Intervalo invertido devolveria lista vazia sem explicar o porquê — vira 422 com
+        /// o texto que a tela mostra ao usuário.
+        /// </summary>
+        [Fact]
+        public async Task GetAll_ComPeriodoInvertido_DeveLancar()
+        {
+            var handler = new GetAllManutencoesHandler(_repository, _currentUser, NullLogger<GetAllManutencoesHandler>.Instance);
+
+            var erro = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                handler.HandleAsync(new GetAllManutencoesQuery(
+                    De: new DateTime(2026, 8, 11), Ate: new DateTime(2026, 8, 1))));
+
+            Assert.Equal("A data final do período não pode ser anterior à inicial.", erro.Message);
+            await _repository.DidNotReceive().GetAllAsync(
+                Arg.Any<int>(), Arg.Any<int?>(), Arg.Any<StatusManutencao?>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>());
         }
 
         [Fact]
