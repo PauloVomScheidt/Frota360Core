@@ -1,0 +1,112 @@
+# Stack de produção do Frota360 — EC2 única com Docker Compose.
+#
+# Sobe com:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Os segredos vêm de um arquivo .env ao lado deste, criado à mão na instância e FORA do git
+# (ver .env.example). Quando migrar para o SSM Parameter Store, basta um script de boot que
+# gere o mesmo .env — nada aqui muda.
+#
+# Superfície exposta ao host: apenas 80 e 443, do Caddy. O Postgres e a API não publicam
+# porta nenhuma; só existem dentro da rede interna. É isso que sustenta a confiança nos
+# headers X-Forwarded-* configurada no Program.cs.
+
+services:
+  db:
+    image: postgres:17
+    container_name: frota360-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # O da API já está fixo no Dockerfile; aqui alinha o log e o CURRENT_TIMESTAMP do banco.
+      TZ: America/Sao_Paulo
+    # SEM `ports:` de propósito. A EC2 tem IP público — publicar 5432 exporia o banco à
+    # internet. A API o alcança pelo nome do serviço na rede interna.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - interna
+    mem_limit: 1g
+    logging: &log-rotacionado
+      driver: json-file
+      options:
+        # O driver json-file NÃO tem limite por padrão: sem isto o log cresce sem teto em
+        # /var/lib/docker/containers e enche o disco da instância — causa clássica de EC2
+        # fora do ar. Em produção a aplicação loga só no stdout, então é aqui que o log vive.
+        max-size: "10m"
+        max-file: "5"
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: frota360-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        # Segura a primeira subida até o banco aceitar conexão. Não cobre um restart do
+        # Postgres mais tarde — para isso existe o retry em MigracaoDeBanco.
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # Precisa bater com a sub-rede declarada em `networks` abaixo. É o que o
+      # ForwardedHeaders usa como KnownNetworks; sem isso ele ignora os X-Forwarded-* em
+      # silêncio e a auditoria volta a gravar o IP do proxy.
+      ProxyReverso__RedeConfiavel: 172.28.0.0/16
+    env_file:
+      # Parametrizado porque o compose SOMA as listas de env_file dos arquivos de override
+      # em vez de substituí-las: sem isto, o ensaio local exigiria também um .env de
+      # produção presente na máquina. O padrão é .env, que é o que a EC2 usa.
+      - ${ARQUIVO_ENV:-.env}
+    # SEM `ports:`. O único caminho até a API é o Caddy.
+    networks:
+      - interna
+    mem_limit: 1g
+    logging: *log-rotacionado
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: frota360-caddy
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # caddy_data guarda os certificados. Sem persistir, cada redeploy pede certificado novo
+      # ao Let's Encrypt e você bate no limite de 5 emissões duplicadas por semana — ficando
+      # sem TLS por dias. É o volume mais fácil de esquecer e o que mais dói.
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMINIO_API: ${DOMINIO_API}
+      EMAIL_ACME: ${EMAIL_ACME}
+    networks:
+      - interna
+    mem_limit: 256m
+    logging: *log-rotacionado
+
+networks:
+  interna:
+    driver: bridge
+    ipam:
+      config:
+        # Sub-rede fixa porque o ForwardedHeaders precisa de um CIDR estável para confiar.
+        # Se mudar aqui, mude também ProxyReverso__RedeConfiavel no serviço `api`.
+        - subnet: 172.28.0.0/16
+
+volumes:
+  # Não use `external: true` aqui: numa EC2 nova o volume ainda não existe e o compose falha.
+  pgdata:
+  caddy_data:
+  caddy_config:

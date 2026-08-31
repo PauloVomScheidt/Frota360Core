@@ -22,7 +22,13 @@ apps/
     └── src/
 docs/
 ├── contexto-api.md        contexto profundo do backend
-└── contexto-web.md        contexto profundo do front (tela a tela, cache keys, endpoints)
+├── contexto-web.md        contexto profundo do front (tela a tela, cache keys, endpoints)
+└── deploy.md              roteiro de produção (EC2 + Docker Compose) e ensaio local
+docker-compose.yml         banco de desenvolvimento
+docker-compose.prod.yml    stack de produção (db + api + caddy)
+docker-compose.local.yml   override que ensaia a stack de produção sem domínio
+Caddyfile / Caddyfile.local  proxy reverso — produção e ensaio
+.env.example               modelo da configuração de produção
 ```
 
 Cada app é independente: comandos rodam de dentro dele, e os caminhos nos seus `CLAUDE.md`, `.slnx`, `.csproj` e `Dockerfile` são relativos à raiz do próprio app.
@@ -95,3 +101,21 @@ Num banco zerado não há usuários: provisione uma empresa pelo backoffice da A
 Para poupar esse passo em dev, `./scripts/seed-dev.ps1` faz o bootstrap inteiro (empresa + Admin + Motorista, senha `SenhaForte123`). É re-executável e não toca em outras empresas — só o `-Recriar` é destrutivo.
 
 Os demais comandos (build, testes, migrations, lint) estão no `CLAUDE.md` de cada app.
+
+## Produção
+
+O deploy é uma EC2 única com Docker Compose (API + Postgres + Caddy) e o front estático em
+S3/CloudFront. O roteiro está em [docs/deploy.md](docs/deploy.md); o **porquê** de cada decisão,
+em [docs/contexto-api.md](docs/contexto-api.md) (§ Deploy).
+
+Três coisas que valem para qualquer mudança:
+
+- **A stack de produção tem ensaio local.** `docker-compose.local.yml` sobe exatamente a mesma
+  configuração trocando só o Caddyfile, sem exigir domínio. Mexeu em compose, Dockerfile ou
+  pipeline de middleware? Ensaie antes.
+- **O `ForwardedHeaders` depende da sub-rede do compose.** Se mudar `172.28.0.0/16` em
+  `docker-compose.prod.yml`, mude `ProxyReverso__RedeConfiavel` junto — senão a auditoria volta
+  a gravar o IP do proxy, em silêncio.
+- **Nada de segredo em arquivo versionado.** `appsettings.json` é a base sem segredo e vai para
+  a imagem; os de ambiente são gitignored e excluídos pelo `.dockerignore`. Em produção tudo vem
+  do `.env` da instância (modelo em `.env.example`).

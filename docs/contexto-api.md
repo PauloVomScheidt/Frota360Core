@@ -302,6 +302,62 @@ Os defaults SQL das nove colunas de data usam `CURRENT_TIMESTAMP AT TIME ZONE 'A
 - `UpdateManutencaoValidator` não valida `DataPrevista`, embora o `Create` valide.
 - Hora local **não serve multi-região**. Se um dia houver cliente fora do Brasil, o caminho é separar instantes reais (→ `timestamptz` em UTC) de datas de calendário (→ `DateOnly`/`date`), o que atinge entidades, DTOs, validators e `types.ts`. Hoje o recorte é uma transportadora brasileira, e o Brasil não tem horário de verão desde 2019 — não há transição a tratar.
 
+### Deploy: EC2 única com Docker Compose
+
+Três serviços em `docker-compose.prod.yml`: `db` (postgres:17), `api` e `caddy`. O Caddy faz
+proxy reverso e termina o TLS com certificado automático do Let's Encrypt, substituindo um ALB.
+**Só as portas 80 e 443 são publicadas no host** — nem o banco nem a API expõem porta, e a rede
+`interna` tem sub-rede fixa (`172.28.0.0/16`).
+
+O roteiro de subida e as variáveis obrigatórias estão em [deploy.md](deploy.md); o modelo de
+configuração, em `.env.example` na raiz.
+
+**Quatro decisões que não são óbvias e têm motivo:**
+
+**1. A sub-rede é fixa porque o `ForwardedHeaders` depende dela.** Atrás do proxy, toda
+requisição chega com o IP do Caddy. Sem tratar os `X-Forwarded-*`, `LogAuditoria.IpOrigem`
+gravaria sempre o mesmo IP, o rate limiter transformaria o teto de 5/min da política `auth` num
+limite **compartilhado por todos os usuários**, e o `Location` das respostas 201 devolveria a
+URL interna do Docker. O `Program.cs` limpa `KnownNetworks`/`KnownProxies` — cujos padrões são
+só loopback, e por isso ignorariam o Caddy em silêncio — e declara a sub-rede vinda de
+`ProxyReverso__RedeConfiavel`. **Mudou a sub-rede no compose? Mude a variável junto.**
+A trava contra forja é dupla: o middleware só aceita os headers de `KnownNetworks`, e a porta
+8080 nunca é publicada, então o proxy é o único caminho até a API.
+
+**2. Log só no console, com rotação no compose.** O sink de arquivo do Serilog fica desativado
+em Production ([Program.cs](../apps/api/src/Api/Program.cs)) por dois motivos: em container o
+arquivo se perde a cada deploy, e sem escrita em disco a API pode rodar como o usuário `app`,
+sem privilégio. O log vai para o stdout, e **os três serviços declaram `max-size`/`max-file`** —
+o driver `json-file` do Docker não tem limite por padrão, e log sem teto enche o disco da
+instância, derrubando tudo.
+
+**3. Migrations no boot** (`MigracaoDeBanco`), só em Production e Staging, com retry de até 10
+tentativas e backoff. O `depends_on: service_healthy` cobre apenas a primeira subida; se o
+Postgres reiniciar depois, é o retry que evita o loop de reinício. A limitação é real e está
+documentada na própria classe: aplicação automática, sem revisão humana nem rollback.
+
+**4. `caddy_data` precisa ser persistido.** É onde ficam os certificados. Sem o volume, cada
+redeploy pede certificado novo e o Let's Encrypt corta em 5 emissões duplicadas por semana.
+
+### Dívida técnica
+
+**Backup do Postgres — não existe. É o maior risco isolado do deploy.** O banco roda em
+container numa instância única, com volume EBS e nenhum dump, snapshot ou réplica. Corrupção do
+volume ou um `DELETE` errado são irreversíveis. O caminho decidido é `pg_dump` diário
+comprimido para um bucket S3 com lifecycle, mais o roteiro de restauração **testado ao menos
+uma vez** — restore que nunca foi exercitado não é backup. Precisa estar resolvido **antes do
+primeiro dado real do cliente**, não antes da defesa.
+
+Outras pendências conhecidas:
+
+- **Sem CI.** Não há `.github/workflows`; build, push e `docker compose up` são manuais por SSH.
+- **Segredos em arquivo.** O `.env` na instância é o caminho da primeira fase; a migração para o
+  AWS SSM Parameter Store não muda o compose — basta um script de boot que gere o mesmo arquivo.
+- **Rate limiter em memória.** Zera a cada redeploy e não é compartilhado entre réplicas. Não é
+  problema com uma instância só.
+- Validators que congelam o "agora" na construção, e `UpdateManutencaoValidator` sem validação
+  de `DataPrevista` (ver a dívida de fuso acima).
+
 ## Testes
 
 Duas suítes, com papéis distintos.

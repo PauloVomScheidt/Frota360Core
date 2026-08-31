@@ -20,13 +20,20 @@ namespace Frota360.Infrastructure.DependencyInjection
         public static IServiceCollection AddInfrastructure(
         this IServiceCollection services, IConfiguration configuration)
         {
-            var connectionString = configuration.GetConnectionString("DefaultConnection")!;
+            var connectionString = configuration.GetConnectionString("DefaultConnection");
+            if (string.IsNullOrWhiteSpace(connectionString))
+                throw new InvalidOperationException(
+                    "ConnectionStrings:DefaultConnection não configurada. " +
+                    "Em desenvolvimento ela vem de appsettings.Development.json; em produção, da variável de ambiente " +
+                    "ConnectionStrings__DefaultConnection (formato: Host=...;Port=5432;Database=...;Username=...;Password=...).");
 
             var jwtKey = configuration["Jwt:Key"];
             if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey.Length < 32)
                 throw new InvalidOperationException(
                     "Jwt:Key não configurada ou muito curta (mínimo 32 caracteres). " +
                     "Em desenvolvimento use 'dotnet user-secrets set Jwt:Key <valor>'; em produção, variável de ambiente Jwt__Key.");
+
+            ValidarConfiguracaoDeProducao(configuration);
 
             services.AddDbContext<Frota360DbContext>(options =>
                 options.UseNpgsql(connectionString));
@@ -82,6 +89,47 @@ namespace Frota360.Infrastructure.DependencyInjection
                 });
 
             return services;
+        }
+
+        /// <summary>
+        /// Falha rápido, no boot, no que hoje falharia em silêncio depois.
+        ///
+        /// <c>Jwt:Key</c> e a connection string já derrubam a aplicação sozinhos, mas o resto
+        /// da configuração some sem alarme: CORS vazio bloqueia o front com um erro opaco no
+        /// navegador, <c>Frontend:BaseUrl</c> vazio gera link de convite quebrado, e
+        /// <c>Backoffice:ApiKey</c> ausente faz o provisionamento responder 401 para sempre —
+        /// tornando impossível cadastrar a primeira empresa, sem nada no log explicando.
+        ///
+        /// Só vale em Production: em desenvolvimento é normal rodar sem Resend e sem CORS
+        /// configurado, e travar o boot ali só atrapalharia.
+        /// </summary>
+        private static void ValidarConfiguracaoDeProducao(IConfiguration configuration)
+        {
+            var ambiente = configuration["ASPNETCORE_ENVIRONMENT"]
+                ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+
+            if (!string.Equals(ambiente, "Production", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var faltando = new List<string>();
+
+            if (configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() is not { Length: > 0 })
+                faltando.Add("Cors__AllowedOrigins__0 (origem do front; sem ela o navegador bloqueia toda chamada)");
+
+            if (string.IsNullOrWhiteSpace(configuration["Frontend:BaseUrl"]))
+                faltando.Add("Frontend__BaseUrl (base dos links de convite e reset de senha)");
+
+            if (string.IsNullOrWhiteSpace(configuration["Backoffice:ApiKey"]))
+                faltando.Add("Backoffice__ApiKey (sem ela não é possível provisionar a primeira empresa)");
+
+            if (faltando.Count > 0)
+                throw new InvalidOperationException(
+                    "Configuração de produção incompleta. Falta definir:" + Environment.NewLine +
+                    string.Join(Environment.NewLine, faltando.Select(f => "  - " + f)) + Environment.NewLine +
+                    "Consulte .env.example na raiz do repositório.");
+
+            // O aviso sobre Resend ausente fica no Program.cs: esta camada não conhece
+            // Serilog, e não vale acoplá-la ao logger só por causa de uma linha.
         }
 
         private static Task EscreverEnvelopeAsync(HttpResponse response, int statusCode, string mensagem)

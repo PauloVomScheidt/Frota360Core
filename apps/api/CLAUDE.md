@@ -27,7 +27,16 @@ Os `appsettings*.json` não são versionados — copie `src/Api/appsettings.exam
 
 `AddInfrastructure` lança na inicialização se `Jwt:Key` faltar ou tiver menos de 32 caracteres. Em produção: `Jwt__Key`, `Resend__ApiKey`, `Backoffice__ApiKey`, `ConnectionStrings__DefaultConnection` por variável de ambiente.
 
-O `Dockerfile` builda só a API e tem **`apps/api/` como contexto** — os `COPY` são relativos a esta pasta.
+O `Dockerfile` builda só a API e tem **`apps/api/` como contexto** — os `COPY` são relativos a esta pasta, e o `.dockerignore` ao lado dele é quem impede que `bin/`, `obj/` e os appsettings de ambiente entrem na imagem. A imagem roda como o usuário `app`, sem privilégio.
+
+## Produção
+
+Roteiro em [docs/deploy.md](../../docs/deploy.md), decisões em [docs/contexto-api.md](../../docs/contexto-api.md) (§ Deploy). O que muda no código:
+
+- **Fora de Development não há Scalar nem OpenAPI**, e o Serilog escreve só no console (é o que permite rodar sem privilégio). `UseHttpsRedirection` também só vale em Development — em produção quem termina o TLS é o Caddy.
+- **`UseForwardedHeaders` é o primeiro middleware do pipeline** e confia apenas na sub-rede de `ProxyReverso__RedeConfiavel`. Sem ele, `LogAuditoria.IpOrigem` grava o IP do proxy e o rate limiter vira um teto compartilhado por todos os usuários. Mexeu na ordem dos middlewares? Ele continua em primeiro.
+- **Configuração nova que seja obrigatória em produção entra em `ValidarConfiguracaoDeProducao`** (`InfrastructureExtensions`), que derruba o boot com mensagem dizendo o que falta — e no `.env.example`.
+- **Migrations rodam no boot** em Production/Staging (`MigracaoDeBanco`), com retry. Em Development continua sendo `dotnet ef database update` à mão.
 
 ## Banco: PostgreSQL
 

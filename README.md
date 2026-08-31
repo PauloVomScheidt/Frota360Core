@@ -30,6 +30,17 @@ docs/
 
 Este repositório substitui os antigos `Frota360`/`Rota360` (API) e `Frota360Web` (front) — o histórico de commits dos dois foi preservado aqui.
 
+## Deploy
+
+Produção é uma EC2 única com Docker Compose (API + PostgreSQL + Caddy com TLS automático) e o
+front estático em S3/CloudFront. O roteiro completo, incluindo o ensaio local da mesma stack
+sem precisar de domínio, está em [docs/deploy.md](docs/deploy.md).
+
+```powershell
+# ensaio local da stack de produção
+docker compose -f docker-compose.prod.yml -f docker-compose.local.yml --env-file .env.local up -d --build
+```
+
 ---
 
 ## Como rodar
