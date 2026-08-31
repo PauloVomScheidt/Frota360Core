@@ -1,7 +1,8 @@
-using Frota360.Application.Common;
+﻿using Frota360.Application.Common;
 using Frota360.Application.DTOs.Usuario.Request;
 using Frota360.Application.DTOs.Usuario.Response;
 using Frota360.Application.Interfaces;
+using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
 using Frota360.Domain.Interfaces.Services;
@@ -141,11 +142,11 @@ namespace Frota360.Application.Services
 
             var link = $"{frontendSettings.BaseUrl.TrimEnd('/')}/redefinir-senha?token={Uri.EscapeDataString(token)}";
 
-            await emailService.EnviarAsync(usuario.Email, "Redefinição de senha — Frota360", $"""
-                <p>Recebemos um pedido para redefinir a senha da sua conta no <strong>Frota360</strong>.</p>
-                <p><a href="{link}">Clique aqui para criar uma nova senha</a>. O link é válido por 30 minutos.</p>
-                <p>Se você não fez este pedido, ignore este e-mail — sua senha continua a mesma.</p>
-                """);
+            await emailService.EnviarAsync(usuario.Email, "Redefinição de senha — Frota360", CorpoDeEmail.ComLink(
+                chamada: "Recebemos um pedido para redefinir a senha da sua conta no Frota360.",
+                acao: "Criar uma nova senha (link válido por 30 minutos)",
+                link: link,
+                aviso: "Se você não fez este pedido, ignore este e-mail — sua senha continua a mesma."));
 
             logger.LogInformation("E-mail de reset de senha enviado. Id {Id}", usuario.Id);
         }

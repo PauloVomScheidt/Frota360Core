@@ -68,7 +68,7 @@ namespace Frota360.Tests.Services
                 c.TokenHash == HashDe("token-convite") &&
                 c.ExpiraEm > DateTime.Now));
             await _emailService.Received(1).EnviarAsync("nova@email.com",
-                Arg.Any<string>(), Arg.Is<string>(corpo => corpo.Contains("token-convite")));
+                Arg.Any<string>(), Arg.Is<CorpoDeEmail>(c => c.Html.Contains("token-convite") && c.Texto.Contains("token-convite")));
         }
 
         [Fact]
@@ -90,7 +90,7 @@ namespace Frota360.Tests.Services
             await _conviteRepository.Received(1).AddAsync(
                 Arg.Is<Convite>(c => c.Email == "fulano@empresa.com"));
             await _emailService.Received(1).EnviarAsync("fulano@empresa.com",
-                Arg.Any<string>(), Arg.Any<string>());
+                Arg.Any<string>(), Arg.Any<CorpoDeEmail>());
             Assert.Equal("fulano@empresa.com", resposta.Email);
         }
 
