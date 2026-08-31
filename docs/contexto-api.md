@@ -1,4 +1,4 @@
-# Contexto geral da API Frota360
+﻿# Contexto geral da API Frota360
 
 Panorama da aplicação: arquitetura, fluxos de negócio, endpoints e infraestrutura.
 
@@ -6,13 +6,11 @@ Panorama da aplicação: arquitetura, fluxos de negócio, endpoints e infraestru
 
 API REST .NET 10, multi-tenant por empresa, para gestão de frota: veículos, motoristas, rotas, catálogo de tipos de manutenção e manutenções. Clean Architecture em 4 projetos + testes.
 
-Panorama visual em [`docs/arquitetura.png`](docs/arquitetura.png) — as quatro camadas, o fluxo CQRS de um request e os cinco pontos de isolamento por `EmpresaId` num desenho só, com rótulos em inglês. Gerado por `python docs/arquitetura.py` (Pillow); **regenere o PNG sempre que a arquitetura mudar**.
-
 | Projeto | Papel |
 |---|---|
 | `Frota360.Domain` (`apps/api/src/Domain`) | Entidades, enums, `ApiResponse<T>`, `ResultadoPaginado<T>`, `Roles`, `AcoesAuditoria`/`EntidadesAuditadas`, interfaces de repositório/serviço. Zero pacotes. |
 | `Frota360.Application` (`apps/api/src/Application`) | CQRS manual (`UseCases/`), `Services/` (auth/convite/usuário/backoffice), DTOs, validators FluentValidation |
-| `Frota360.Infrastructure` (`apps/api/src/Infrastructure`) | EF Core + SQL Server, repositórios, JWT, e-mail (Resend), migrations |
+| `Frota360.Infrastructure` (`apps/api/src/Infrastructure`) | EF Core + PostgreSQL (Npgsql), repositórios, JWT, e-mail (Resend), migrations |
 | `Frota360.Api` (`apps/api/src/Api`) | Controllers, `ExceptionMiddleware`, `CurrentUserService`, Program |
 
 ## Pipeline de um request
@@ -278,8 +276,121 @@ Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou 
 
 Serilog (console + arquivo diário, 7 dias), rate limit global 200/min por IP + política `auth` 5/min, CORS por `Cors:AllowedOrigins`, health check do DbContext, Scalar em `/scalar/v1` com Bearer declarado. `AddInfrastructure` **derruba a inicialização** se `Jwt:Key` faltar ou tiver menos de 32 caracteres. Sem `Resend:ApiKey`, o e-mail cai no `LogEmailService` (imprime no console) — prático em dev.
 
+### Banco: PostgreSQL (migração de 30/08/2026)
+
+O banco era SQL Server e passou a ser **PostgreSQL 17** (provider `Npgsql.EntityFrameworkCore.PostgreSQL`), por custo e portabilidade: o Express tem teto de 10 GB, exige 2 GB de RAM e não roda em arm64, o que impedia uma instância Graviton menor na AWS. Não havia banco em produção, então as 12 migrations do SQL Server foram **apagadas e regeradas** como uma `Initial` única — o histórico antigo vive só no git. `docker compose up -d` na raiz sobe o banco de desenvolvimento.
+
+Três acoplamentos precisaram de decisão, e os três valem para quem for mexer aqui:
+
+**1. Fuso — hora local de Brasília, gravada sem fuso.** O Npgsql é estrito nos dois sentidos: `timestamptz` recusa `DateTimeKind.Unspecified` e `timestamp without time zone` recusa `Utc`, lançando exceção em vez de converter. O sistema grava **dois Kinds diferentes na mesma coluna** — `DateTime.Now` (`Local`) em `DataInclusao`/`DataHora`/`ExpiraEm`, e o `"aaaa-MM-dd"` que o front manda (desserializado como `Unspecified`) em `DataAbastecimento`/`DataInicio`/`DataPrevista`. `EncerrarRotaHandler` mistura os dois na mesma propriedade (`request.DataFim ?? DateTime.Now`), então nenhuma escolha de tipo de coluna resolve sozinha.
+
+A solução é o `DataSemFusoConverter` (`src/Infrastructure/Data/`), aplicado a **todo** `DateTime`/`DateTime?` via `ConfigureConventions` no `Frota360DbContext`: ele descarta o Kind na escrita e mapeia tudo para `timestamp without time zone`. A leitura devolve `Unspecified`, então a API serializa as datas **sem sufixo `Z`** e o front as exibe verbatim — é por isso que as telas mostram o horário certo sem nenhuma conversão no cliente.
+
+> **O fuso do processo faz parte da semântica dos dados.** Como tudo é `DateTime.Now`, o mesmo código grava BRT numa máquina brasileira e **UTC num container sem `TZ`** — sem erro nenhum, só 3 h de diferença. Por isso o `Dockerfile` fixa `ENV TZ=America/Sao_Paulo` (a imagem `aspnet:10.0` já traz o `tzdata`) e o `Program.cs` **registra o fuso efetivo na segunda linha do log**. Se aparecer `UTC` ali, o deploy está errado.
+
+**A única data em UTC** é o `expires` do JWT (`TokenService`), porque o claim `exp` é epoch UTC por definição do protocolo — é um instante que sai do sistema num formato UTC-nativo. Os demais campos de expiração (`RefreshTokenExpiraEm`, `ResetSenhaExpiraEm`, `Convite.ExpiraEm`) usam `Now`: são gravados e comparados com o mesmo relógio, e mudá-los reintroduziria semântica misturada no banco.
+
+Os defaults SQL das nove colunas de data usam `CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'`, e não `'UTC'`, pelo mesmo motivo — o container do Postgres roda em UTC, então `LOCALTIMESTAMP` ali **não** seria hora de Brasília. Na prática o default nunca dispara (todo insert seta a data no C#); manter a expressão coerente evita que ele se torne uma segunda semântica de fuso escondida.
+
+**2. Collation — e-mail é normalizado no código.** A collation padrão do SQL Server era case-insensitive e fazia `Email == email` casar `Fulano@X.com` com `fulano@x.com` por acidente, sem nada no código pedir isso. O PostgreSQL compara texto de forma case-sensitive, então a garantia sumiria em silêncio: quem digitasse outra caixa não logaria, e dois cadastros "iguais" passariam pelo índice único. `EmailNormalizado.De` (`src/Domain/Common/`) reduz o e-mail à forma canônica, aplicado na escrita (`ConviteService.CriarParaEmpresaAsync`, único ponto de entrada — o `Usuario` nasce copiando `convite.Email`) e na leitura (`UsuarioRepository.GetByEmailAsync`/`ExisteEmailAsync`, `ConviteRepository.GetPendentesByEmailAsync`). A normalização mora no código, e não em `citext` ou numa collation da coluna, para a regra ficar explícita e independente de fornecedor. **Todo lookup novo por e-mail passa por ela.** Os hashes de token são Base64 e seguem case-sensitive de verdade — comparação exata é o correto para eles.
+
+**3. Defaults e índices.** Os nove `HasDefaultValueSql("GETDATE()")` viraram `CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'` (ver o item 1). Os índices filtrados passaram de `[CPF] IS NOT NULL` para `"CPF" IS NOT NULL` (aspas duplas).
+
+**Dívida de fuso que sobra.** A política de hora local fechou os dois bugs de exibição de 3 h que existiam em `ConvitesPage.tsx` e `AuditoriaPage.tsx`. Continuam abertos:
+
+- Alguns validators (`CreateVeiculoValidator`, `UpdateVeiculoValidator`, `AceitarConviteValidator`, `AtualizarPerfilValidator`) avaliam `DateTime.Now`/`Today` na **construção** e não numa lambda, congelando o "agora" pelo tempo de vida da instância no DI.
+- `UpdateManutencaoValidator` não valida `DataPrevista`, embora o `Create` valide.
+- Hora local **não serve multi-região**. Se um dia houver cliente fora do Brasil, o caminho é separar instantes reais (→ `timestamptz` em UTC) de datas de calendário (→ `DateOnly`/`date`), o que atinge entidades, DTOs, validators e `types.ts`. Hoje o recorte é uma transportadora brasileira, e o Brasil não tem horário de verão desde 2019 — não há transição a tratar.
+
+### Deploy: EC2 única com Docker Compose
+
+Três serviços em `docker-compose.prod.yml`: `db` (postgres:17), `api` e `caddy`. O Caddy faz
+proxy reverso e termina o TLS com certificado automático do Let's Encrypt, substituindo um ALB.
+**Só as portas 80 e 443 são publicadas no host** — nem o banco nem a API expõem porta, e a rede
+`interna` tem sub-rede fixa (`172.28.0.0/16`).
+
+O roteiro de subida e as variáveis obrigatórias estão em [deploy.md](deploy.md); o modelo de
+configuração, em `.env.example` na raiz.
+
+**Quatro decisões que não são óbvias e têm motivo:**
+
+**1. A sub-rede é fixa porque o `ForwardedHeaders` depende dela.** Atrás do proxy, toda
+requisição chega com o IP do Caddy. Sem tratar os `X-Forwarded-*`, `LogAuditoria.IpOrigem`
+gravaria sempre o mesmo IP, o rate limiter transformaria o teto de 5/min da política `auth` num
+limite **compartilhado por todos os usuários**, e o `Location` das respostas 201 devolveria a
+URL interna do Docker. O `Program.cs` limpa `KnownNetworks`/`KnownProxies` — cujos padrões são
+só loopback, e por isso ignorariam o Caddy em silêncio — e declara a sub-rede vinda de
+`ProxyReverso__RedeConfiavel`. **Mudou a sub-rede no compose? Mude a variável junto.**
+A trava contra forja é dupla: o middleware só aceita os headers de `KnownNetworks`, e a porta
+8080 nunca é publicada, então o proxy é o único caminho até a API.
+
+**2. Log só no console, com rotação no compose.** O sink de arquivo do Serilog fica desativado
+em Production ([Program.cs](../apps/api/src/Api/Program.cs)) por dois motivos: em container o
+arquivo se perde a cada deploy, e sem escrita em disco a API pode rodar como o usuário `app`,
+sem privilégio. O log vai para o stdout, e **os três serviços declaram `max-size`/`max-file`** —
+o driver `json-file` do Docker não tem limite por padrão, e log sem teto enche o disco da
+instância, derrubando tudo.
+
+**3. Migrations no boot** (`MigracaoDeBanco`), só em Production e Staging, com retry de até 10
+tentativas e backoff. O `depends_on: service_healthy` cobre apenas a primeira subida; se o
+Postgres reiniciar depois, é o retry que evita o loop de reinício. A limitação é real e está
+documentada na própria classe: aplicação automática, sem revisão humana nem rollback.
+
+**4. `caddy_data` precisa ser persistido.** É onde ficam os certificados. Sem o volume, cada
+redeploy pede certificado novo e o Let's Encrypt corta em 5 emissões duplicadas por semana.
+
+### Dívida técnica
+
+**Backup do Postgres — não existe. É o maior risco isolado do deploy.** O banco roda em
+container numa instância única, com volume EBS e nenhum dump, snapshot ou réplica. Corrupção do
+volume ou um `DELETE` errado são irreversíveis. O caminho decidido é `pg_dump` diário
+comprimido para um bucket S3 com lifecycle, mais o roteiro de restauração **testado ao menos
+uma vez** — restore que nunca foi exercitado não é backup. Precisa estar resolvido **antes do
+primeiro dado real do cliente**, não antes da defesa.
+
+Outras pendências conhecidas:
+
+- **Sem CI.** Não há `.github/workflows`; build, push e `docker compose up` são manuais por SSH.
+- **Segredos em arquivo.** O `.env` na instância é o caminho da primeira fase; a migração para o
+  AWS SSM Parameter Store não muda o compose — basta um script de boot que gere o mesmo arquivo.
+- **Rate limiter em memória.** Zera a cada redeploy e não é compartilhado entre réplicas. Não é
+  problema com uma instância só.
+- Validators que congelam o "agora" na construção, e `UpdateManutencaoValidator` sem validação
+  de `DataPrevista` (ver a dívida de fuso acima).
+
 ## Testes
 
-xUnit + NSubstitute, sem banco. O projeto não referencia Infrastructure nem a API, então não há teste de repositório, DbContext ou endpoint — a cobertura é de handlers, mappings, validators e services.
+Duas suítes, com papéis distintos.
 
-Vale notar o recorte que isso impõe às regras novas: `VeiculoValidatorTests` cobre o **formato** da placa (RN09) e `VeiculoHandlersTests` cobre a **normalização** e a recusa da RN08, mas o índice único filtrado `(EmpresaId, CPF)` e a FK `Restrict` — as garantias que moram no banco — não têm teste automatizado; a checagem em `UsuarioService`/`DeleteVeiculoHandler` é o que se testa, e ela existe justamente para transformar a violação em 422 com mensagem antes de o banco estourar.
+### `tests/Frota360.Tests` — unitários, sem banco
+
+xUnit + NSubstitute. Referencia apenas Application e Domain, então cobre handlers, mappings, validators e services com repositório mockado. É a suíte rápida: roda em ~1 s e não precisa de Docker.
+
+O recorte que isso impõe: `VeiculoValidatorTests` cobre o **formato** da placa (RN09) e `VeiculoHandlersTests` cobre a **normalização** e a recusa da RN08, mas as garantias que moram no banco não aparecem aqui — a checagem em `UsuarioService`/`DeleteVeiculoHandler` é o que se testa, e ela existe justamente para transformar a violação em 422 com mensagem antes de o banco estourar.
+
+### `tests/Frota360.IntegrationTests` — contra PostgreSQL de verdade
+
+O único projeto que referencia Infrastructure. Sobe um `postgres:17` descartável por execução via **Testcontainers**, aplica as migrations com `MigrateAsync` (e não `EnsureCreated`, que pularia justamente o artefato sob teste) e roda os repositórios reais. Não usa o container de desenvolvimento nem os appsettings, então rodar os testes nunca mexe nos dados de quem está desenvolvendo.
+
+Existe porque `dotnet test` da suíte unitária **não prova nada** sobre provider, mapeamento de tipo, `DateTimeKind`, collation, índice filtrado ou tradução de query — tudo o que a migração para PostgreSQL mexeu. Cobre:
+
+| Arquivo | O que garante |
+|---|---|
+| `PoliticaDeDataTests` | os três Kinds (`Local` do `DateTime.Now`, `Unspecified` do front, `Utc` como regressão) gravam na mesma coluna; o relógio de parede sobrevive ao round-trip e volta `Unspecified`; a coluna é mesmo `timestamp without time zone` |
+| `SchemaERestricoesTests` | as migrations criam as 9 tabelas; lookup de e-mail ignora caixa; índice filtrado `(EmpresaId, CPF)` aceita vários nulos, barra duplicata e permite o mesmo CPF em empresas diferentes; `Usuario.Email` é único **global**; `numeric(10,2)` preserva centavo |
+| `TraducaoDeConsultaTests` | filtro `de`/`ate` inclui o próprio dia final; `Status` persiste como texto e volta como enum; o `OrderBy` com condicional traz pendentes primeiro apesar do texto; `GetAllAsync` recorta pela empresa |
+
+Dois detalhes de infraestrutura, ambos comentados no código: o **resource reaper do Testcontainers fica desligado** (no Docker Desktop em Windows ele falha ao baixar e derruba a suíte antes do primeiro teste — a fixture descarta o container por conta própria), e o gerador de valores únicos é **compartilhado entre as classes**, porque elas dividem o mesmo banco e contadores separados colidem no índice único de e-mail.
+
+Exige Docker no ar, que já é pré-requisito do projeto.
+
+### O que continua manual
+
+O que os testes de integração não alcançam é a jornada pela interface. Vale repetir à mão depois de mexer em `Frota360DbContext`, migration ou provider:
+
+| Passo | O que prova |
+|---|---|
+| `POST /backoffice/empresa` → abrir o `linkConvite` → criar o Admin (ou `./scripts/seed-dev.ps1`) | o bootstrap inteiro: sequence, seed dos 10 `TiposManutencaoPadrao`, envio do convite |
+| Lançar abastecimento com a data de hoje e conferir a data **exibida** | erro de um dia aqui significa que o mapeamento saiu como `timestamptz` |
+| Abrir `/auditoria` como Admin | `LogAuditoria.Id` como `bigint`, os 3 índices compostos e a paginação na tela |
+| `GET /health` | health check do `DbContext` contra o banco real |

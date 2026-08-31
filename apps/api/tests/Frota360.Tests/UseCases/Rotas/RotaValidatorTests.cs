@@ -88,7 +88,7 @@ namespace Frota360.Tests.UseCases.Rotas
         public void Encerrar_RequestValido_DevePassar()
         {
             var resultado = _encerrarValidator.Validate(
-                new EncerrarRotaRequest { KmFinal = 50_430, DataFim = DateTime.UtcNow });
+                new EncerrarRotaRequest { KmFinal = 50_430, DataFim = DateTime.Now });
 
             Assert.True(resultado.IsValid);
         }
@@ -120,7 +120,7 @@ namespace Frota360.Tests.UseCases.Rotas
             var request = new EncerrarRotaRequest
             {
                 KmFinal = 50_430,
-                DataFim = DateTime.UtcNow.AddDays(5)
+                DataFim = DateTime.Now.AddDays(5)
             };
 
             var resultado = _encerrarValidator.Validate(request);

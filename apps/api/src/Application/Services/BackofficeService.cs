@@ -23,7 +23,7 @@ namespace Frota360.Application.Services
                 Nome = request.NomeEmpresa,
                 CNPJ = string.IsNullOrWhiteSpace(request.CNPJ) ? null : request.CNPJ,
                 Ativo = true,
-                DataInclusao = DateTime.UtcNow
+                DataInclusao = DateTime.Now
             });
 
             await SemearTiposManutencaoAsync(empresa.Id);
@@ -49,7 +49,7 @@ namespace Frota360.Application.Services
         /// </summary>
         private async Task SemearTiposManutencaoAsync(int empresaId)
         {
-            var agora = DateTime.UtcNow;
+            var agora = DateTime.Now;
 
             await tipoManutencaoRepository.AddRangeAsync(
                 TiposManutencaoPadrao.Itens.Select(item => new TipoManutencao

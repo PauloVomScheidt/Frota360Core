@@ -1,0 +1,40 @@
+# Banco de desenvolvimento do Frota360.
+#
+# Equivalente versionado do container criado à mão na migração para PostgreSQL:
+#
+#   docker run --name pg-frota360 -e POSTGRES_PASSWORD=senha_local -e POSTGRES_DB=frota360 \
+#     -p 5432:5432 -v pgdata-frota360:/var/lib/postgresql/data -d postgres:17
+#
+# Os dois usam o MESMO volume nomeado, então os dados são os mesmos por qualquer caminho.
+# Como ambos publicam a porta 5432, só um pode estar de pé: pare o `pg-frota360`
+# (`docker stop pg-frota360`) antes de `docker compose up -d`.
+#
+# A API e o front continuam rodando fora do compose (`dotnet run` / `npm run dev`) —
+# aqui só está a dependência que não dá para versionar como código.
+
+services:
+  postgres:
+    # Imagem multi-arch: roda em amd64 e arm64 (Graviton), que foi um dos motivos da
+    # saída do SQL Server. Fixar a major evita upgrade silencioso do formato dos dados.
+    image: postgres:17
+    container_name: frota360-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: frota360
+      POSTGRES_USER: postgres
+      # Senha de desenvolvimento. Em produção NÃO se usa este arquivo: a connection string
+      # inteira vai por ConnectionStrings__DefaultConnection, com usuário dedicado.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-senha_local}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata-frota360:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d frota360"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata-frota360:
+    external: true

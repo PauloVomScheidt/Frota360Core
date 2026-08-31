@@ -52,7 +52,7 @@ namespace Frota360.Application.UseCases.Rotas.Commands.EncerrarRota
                 if (request.KmFinal < rota.KmInicial)
                     throw new InvalidOperationException("A quilometragem final não pode ser menor que a inicial.");
 
-                var dataFim = request.DataFim ?? DateTime.UtcNow;
+                var dataFim = request.DataFim ?? DateTime.Now;
 
                 if (dataFim < rota.DataInicio)
                     throw new InvalidOperationException("A data de fim não pode ser anterior à data de início.");

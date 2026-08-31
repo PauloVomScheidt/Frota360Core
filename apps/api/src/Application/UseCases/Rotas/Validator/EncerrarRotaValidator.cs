@@ -14,7 +14,7 @@ namespace Frota360.Application.UseCases.Rotas.Validator
             // Margem de um dia sobre o UTC: o operador lança no fuso dele e não pode
             // ser barrado por encerrar "hoje" antes de o UTC virar.
             RuleFor(x => x.DataFim)
-                .LessThanOrEqualTo(_ => DateTime.UtcNow.Date.AddDays(1))
+                .LessThanOrEqualTo(_ => DateTime.Now.Date.AddDays(1))
                 .WithMessage("Data de fim não pode estar no futuro.")
                 .When(x => x.DataFim.HasValue);
         }

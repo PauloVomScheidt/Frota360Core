@@ -25,7 +25,7 @@ namespace Frota360.Application.Services
                 EntidadeId = entidadeId,
                 Descricao = descricao,
                 Alteracoes = Serializar(alteracoes),
-                DataHora = DateTime.UtcNow,
+                DataHora = DateTime.Now,
                 IpOrigem = currentUser.IpOrigem
             });
 
@@ -44,7 +44,7 @@ namespace Frota360.Application.Services
                 EntidadeId = entidadeId,
                 Descricao = descricao,
                 Alteracoes = Serializar(alteracoes),
-                DataHora = DateTime.UtcNow,
+                DataHora = DateTime.Now,
                 IpOrigem = null // sem sessão: não há requisição autenticada de onde tirar o IP
             });
 

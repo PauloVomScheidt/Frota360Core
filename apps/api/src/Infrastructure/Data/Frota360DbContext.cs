@@ -15,6 +15,19 @@ namespace Frota360.Infrastructure.Data
         public DbSet<Abastecimento> Abastecimentos { get; set; }
         public DbSet<LogAuditoria> LogsAuditoria { get; set; }
 
+        /// <summary>
+        /// Toda data persistida é gravada sem fuso, guardando o relógio de parede de Brasília.
+        /// O <see cref="DataSemFusoConverter"/> explica por que o Kind precisa ser normalizado
+        /// em vez de simplesmente escolhermos um tipo de coluna. Vale para <c>DateTime</c> e
+        /// <c>DateTime?</c> de todas as entidades — não há exceção no modelo.
+        /// </summary>
+        protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+        {
+            configurationBuilder.Properties<DateTime>()
+                .HaveColumnType("timestamp without time zone")
+                .HaveConversion<DataSemFusoConverter>();
+        }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Empresa>(entity =>
@@ -23,9 +36,9 @@ namespace Frota360.Infrastructure.Data
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Nome).HasMaxLength(150).IsRequired();
                 entity.Property(e => e.CNPJ).HasMaxLength(14);
-                entity.HasIndex(e => e.CNPJ).IsUnique().HasFilter("[CNPJ] IS NOT NULL");
+                entity.HasIndex(e => e.CNPJ).IsUnique().HasFilter("\"CNPJ\" IS NOT NULL");
                 entity.Property(e => e.Ativo).HasDefaultValue(true);
-                entity.Property(e => e.DataInclusao).HasDefaultValueSql("GETDATE()");
+                entity.Property(e => e.DataInclusao).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
             });
 
             modelBuilder.Entity<Convite>(entity =>
@@ -36,7 +49,7 @@ namespace Frota360.Infrastructure.Data
                 entity.Property(c => c.Role).HasMaxLength(20).IsRequired();
                 entity.Property(c => c.TokenHash).HasMaxLength(100).IsRequired();
                 entity.HasIndex(c => c.TokenHash).IsUnique();
-                entity.Property(c => c.DataInclusao).HasDefaultValueSql("GETDATE()");
+                entity.Property(c => c.DataInclusao).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
 
                 entity.HasOne<Empresa>()
                       .WithMany()
@@ -59,7 +72,7 @@ namespace Frota360.Infrastructure.Data
                 entity.Property(v => v.Placa).HasMaxLength(10).IsRequired();
                 entity.Property(v => v.Quilometragem).HasDefaultValue(0);
                 entity.Property(v => v.UltimoMotorista).HasMaxLength(100);
-                entity.Property(v => v.DataInclusao).HasDefaultValueSql("GETDATE()");
+                entity.Property(v => v.DataInclusao).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
 
                 entity.HasOne<Empresa>()
                       .WithMany()
@@ -81,14 +94,14 @@ namespace Frota360.Infrastructure.Data
                 entity.HasIndex(u => u.RefreshTokenHash);
                 entity.Property(u => u.ResetSenhaTokenHash).HasMaxLength(100);
                 entity.HasIndex(u => u.ResetSenhaTokenHash);
-                entity.Property(u => u.DataInclusao).HasDefaultValueSql("GETDATE()");
+                entity.Property(u => u.DataInclusao).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
 
                 // Opcionais: quem não informou fica com nulo, e o índice filtrado deixa
                 // esses de fora — só barra dois CPFs iguais na mesma empresa.
                 entity.Property(u => u.CPF).HasMaxLength(11);
                 entity.HasIndex(u => new { u.EmpresaId, u.CPF })
                       .IsUnique()
-                      .HasFilter("[CPF] IS NOT NULL");
+                      .HasFilter("\"CPF\" IS NOT NULL");
 
                 entity.HasOne<Empresa>()
                       .WithMany()
@@ -103,7 +116,7 @@ namespace Frota360.Infrastructure.Data
                 entity.Property(r => r.Origem).HasMaxLength(100).IsRequired();
                 entity.Property(r => r.Destino).HasMaxLength(150).IsRequired();
                 entity.Property(r => r.Ativo).HasDefaultValue(true);
-                entity.Property(r => r.DataInclusao).HasDefaultValueSql("GETDATE()");
+                entity.Property(r => r.DataInclusao).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
 
                 // "Quais veiculos estao rodando" roda em toda listagem de veiculo e no
                 // dashboard. Substitui o indice de FK (EmpresaId) que o EF criava sozinho:
@@ -133,7 +146,7 @@ namespace Frota360.Infrastructure.Data
                 entity.HasKey(t => t.Id);
                 entity.Property(t => t.Nome).HasMaxLength(100).IsRequired();
                 entity.Property(t => t.Ativo).HasDefaultValue(true);
-                entity.Property(t => t.DataInclusao).HasDefaultValueSql("GETDATE()");
+                entity.Property(t => t.DataInclusao).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
 
                 // Nome unico por empresa: cada transportadora nomeia seus tipos como quiser
                 entity.HasIndex(t => new { t.EmpresaId, t.Nome }).IsUnique();
@@ -150,7 +163,7 @@ namespace Frota360.Infrastructure.Data
                 entity.HasKey(m => m.Id);
                 entity.Property(m => m.Observacao).HasMaxLength(500);
                 entity.Property(m => m.Custo).HasPrecision(10, 2);
-                entity.Property(m => m.DataInclusao).HasDefaultValueSql("GETDATE()");
+                entity.Property(m => m.DataInclusao).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
 
                 // Persistido como texto: o banco fica legivel e novos status nao dependem da ordem do enum
                 entity.Property(m => m.Status)
@@ -184,7 +197,7 @@ namespace Frota360.Infrastructure.Data
 
                 entity.Property(a => a.Valor).HasPrecision(10, 2);
                 entity.Property(a => a.Observacao).HasMaxLength(500);
-                entity.Property(a => a.DataInclusao).HasDefaultValueSql("GETDATE()");
+                entity.Property(a => a.DataInclusao).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
 
                 // Consulta dominante da tela: historico de um veiculo em ordem de data.
                 entity.HasIndex(a => new { a.EmpresaId, a.VeiculoId, a.DataAbastecimento });
@@ -234,7 +247,7 @@ namespace Frota360.Infrastructure.Data
                 entity.Property(l => l.Acao).HasMaxLength(30).IsRequired();
                 entity.Property(l => l.Descricao).HasMaxLength(300).IsRequired();
                 entity.Property(l => l.IpOrigem).HasMaxLength(45); // comporta IPv6
-                entity.Property(l => l.DataHora).HasDefaultValueSql("GETDATE()");
+                entity.Property(l => l.DataHora).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
 
                 // Um índice por consulta real da tela: a listagem, o histórico de um
                 // registro e o histórico de uma pessoa.

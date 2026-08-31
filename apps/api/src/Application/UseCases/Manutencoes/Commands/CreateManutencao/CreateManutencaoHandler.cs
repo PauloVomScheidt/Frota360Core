@@ -51,7 +51,7 @@ namespace Frota360.Application.UseCases.Manutencoes.Commands.CreateManutencao
                     DataPrevista = request.DataPrevista,
                     Status = StatusManutencao.Pendente,
                     Observacao = request.Observacao,
-                    DataInclusao = DateTime.UtcNow
+                    DataInclusao = DateTime.Now
                 };
 
                 var criada = await repository.AddAsync(manutencao);

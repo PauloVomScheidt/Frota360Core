@@ -1,10 +1,10 @@
-# CLAUDE.md
+﻿# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Monorepo do **Frota360** — sistema de gestão de frotas multi-tenant por empresa. Reúne a API REST .NET 10 e o front-end React que a consome, que antes viviam em repositórios separados (`Frota360`/`Rota360` e `Frota360Web`).
 
-**Escreva tudo em português**: classes, métodos, DTOs, comentários, logs, textos de UI e mensagens de resposta. A única exceção está registrada em [Diagrama de arquitetura](#diagrama-de-arquitetura).
+**Escreva tudo em português**: classes, métodos, DTOs, comentários, logs, textos de UI e mensagens de resposta.
 
 ## Mapa do repositório
 
@@ -23,7 +23,12 @@ apps/
 docs/
 ├── contexto-api.md        contexto profundo do backend
 ├── contexto-web.md        contexto profundo do front (tela a tela, cache keys, endpoints)
-└── arquitetura.py         gera docs/arquitetura.png
+└── deploy.md              roteiro de produção (EC2 + Docker Compose) e ensaio local
+docker-compose.yml         banco de desenvolvimento
+docker-compose.prod.yml    stack de produção (db + api + caddy)
+docker-compose.local.yml   override que ensaia a stack de produção sem domínio
+Caddyfile / Caddyfile.local  proxy reverso — produção e ensaio
+.env.example               modelo da configuração de produção
 ```
 
 Cada app é independente: comandos rodam de dentro dele, e os caminhos nos seus `CLAUDE.md`, `.slnx`, `.csproj` e `Dockerfile` são relativos à raiz do próprio app.
@@ -46,12 +51,6 @@ Vale para os dois apps.
 Após todas as alterações realizadas, atualizar as documentações de contexto, `CLAUDE.md` e README para refletir as mudanças. Documentação de contexto é obrigatória para qualquer alteração estrutural, regra de negócio ou endpoint novo.
 
 O aprofundamento vive em `docs/contexto-api.md` e `docs/contexto-web.md` — atualize o lado correspondente, e **os dois** quando a mudança atravessa a fronteira (endpoint, envelope, papel, regra de negócio visível na tela).
-
-### Diagrama de arquitetura
-
-O diagrama vive em `docs/arquitetura.png` e é **gerado** por `docs/arquitetura.py` (Pillow). Não edite o PNG à mão: altere o script e rode `python docs/arquitetura.py` a partir da raiz. Regenere sempre que mudar camada, pipeline de request ou ponto de isolamento por `EmpresaId`.
-
-O diagrama é a **única exceção à regra do português**: seus rótulos são em inglês, para circular fora do time. Paleta monocromática (tons de cinza + preto), sem cor de destaque — os pontos de isolamento por `EmpresaId` são marcados por contorno preto e selo numerado, não por cor. Mantenha isso ao editar o script.
 
 ## O contrato entre API e front
 
@@ -78,6 +77,12 @@ O motivo de os dois viverem no mesmo repositório: mudança de um lado quase sem
 
 ## Subir o sistema
 
+O banco é **PostgreSQL 17** e roda em container — suba antes dos dois terminais:
+
+```powershell
+docker compose up -d             # postgres:17 na 5432, banco `frota360`
+```
+
 Dois terminais:
 
 ```powershell
@@ -93,4 +98,24 @@ npm run dev                      # http://localhost:5173 (porta fixa — origem 
 
 Num banco zerado não há usuários: provisione uma empresa pelo backoffice da API (`POST /backoffice/empresa`) e abra o `linkConvite` retornado — ele cai em `/convite?token=...`.
 
+Para poupar esse passo em dev, `./scripts/seed-dev.ps1` faz o bootstrap inteiro (empresa + Admin + Motorista, senha `SenhaForte123`). É re-executável e não toca em outras empresas — só o `-Recriar` é destrutivo.
+
 Os demais comandos (build, testes, migrations, lint) estão no `CLAUDE.md` de cada app.
+
+## Produção
+
+O deploy é uma EC2 única com Docker Compose (API + Postgres + Caddy) e o front estático em
+S3/CloudFront. O roteiro está em [docs/deploy.md](docs/deploy.md); o **porquê** de cada decisão,
+em [docs/contexto-api.md](docs/contexto-api.md) (§ Deploy).
+
+Três coisas que valem para qualquer mudança:
+
+- **A stack de produção tem ensaio local.** `docker-compose.local.yml` sobe exatamente a mesma
+  configuração trocando só o Caddyfile, sem exigir domínio. Mexeu em compose, Dockerfile ou
+  pipeline de middleware? Ensaie antes.
+- **O `ForwardedHeaders` depende da sub-rede do compose.** Se mudar `172.28.0.0/16` em
+  `docker-compose.prod.yml`, mude `ProxyReverso__RedeConfiavel` junto — senão a auditoria volta
+  a gravar o IP do proxy, em silêncio.
+- **Nada de segredo em arquivo versionado.** `appsettings.json` é a base sem segredo e vai para
+  a imagem; os de ambiente são gitignored e excluídos pelo `.dockerignore`. Em produção tudo vem
+  do `.env` da instância (modelo em `.env.example`).

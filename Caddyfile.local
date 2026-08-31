@@ -1,0 +1,24 @@
+# Caddyfile do ensaio local, sem domínio e sem TLS.
+#
+# Existe para provar a fiação do proxy — em especial que os X-Forwarded-* chegam à API e que
+# a auditoria passa a gravar o IP do cliente em vez do IP do Caddy. É o único jeito de testar
+# isso antes de ter domínio.
+#
+# Uso:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.local.yml up -d --build
+#   curl http://localhost/health
+#
+# `http://` explícito desliga o TLS automático: sem isso o Caddy tentaria emitir certificado
+# para "localhost" e falharia.
+
+http://localhost {
+	encode gzip
+
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		-Server
+	}
+
+	reverse_proxy api:8080
+}
