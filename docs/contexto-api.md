@@ -382,7 +382,11 @@ Existe porque `dotnet test` da suíte unitária **não prova nada** sobre provid
 
 Dois detalhes de infraestrutura, ambos comentados no código: o **resource reaper do Testcontainers fica desligado** (no Docker Desktop em Windows ele falha ao baixar e derruba a suíte antes do primeiro teste — a fixture descarta o container por conta própria), e o gerador de valores únicos é **compartilhado entre as classes**, porque elas dividem o mesmo banco e contadores separados colidem no índice único de e-mail.
 
-Exige Docker no ar, que já é pré-requisito do projeto.
+Exige Docker no ar, que já é pré-requisito do projeto — inclusive **no CI**, e é por isso que o
+job `api` do workflow roda em `ubuntu-latest` (runner Linux, com daemon Docker) e **não** declara
+um bloco `services: postgres:`. O container é gerenciado pela própria `BancoFixture`; um service
+do GitHub Actions ficaria de pé sem ninguém usar. As duas suítes são passos separados no job
+para o log dizer de imediato se quebrou lógica ou banco.
 
 ### O que continua manual
 

@@ -93,6 +93,30 @@ Detalhes de configuração, endpoints, papéis e regras de negócio: [`apps/api/
 
 ---
 
+## CI
+
+`.github/workflows/ci.yml` roda em pull request e push para `main` e `develop`. Três jobs em
+paralelo, e os três nomes abaixo são exatamente os checks obrigatórios no branch protection:
+
+| Check | O que roda |
+|---|---|
+| `api` | `dotnet restore`/`build -c Release` da solução, depois as duas suítes em passos separados — a unitária e a de integração (que sobe um `postgres:17` via Testcontainers) |
+| `web` | `npm ci`, `npm run build` (`tsc -b && vite build`) e `npm run lint` |
+| `docker` | build da imagem da API **sem push**, mais a prova de que o `.dockerignore` segura os arquivos com segredo |
+
+Sem filtro de path de propósito: `on.<evento>.paths` impede o workflow de rodar, e um required
+check que nunca reporta deixa o PR travado esperando um status que não vem.
+
+O job `docker` planta iscas (`appsettings.Development.json` e `.env` com um texto canário)
+antes do build, porque num clone limpo esses arquivos não existem e a verificação passaria
+vazia. Depois confere que eles **não** entraram na imagem e que o `appsettings.json` base
+**entrou** — ele é versionado e a aplicação depende dele para `Jwt:Issuer`/`Audience`.
+
+Ainda não há CD: nada de AWS, ECR ou deploy. O roteiro de produção continua manual, em
+[docs/deploy.md](docs/deploy.md).
+
+---
+
 ## Convenções
 
 O projeto é escrito **inteiramente em português** — classes, métodos, DTOs, comentários, logs, textos de UI e mensagens de resposta.
