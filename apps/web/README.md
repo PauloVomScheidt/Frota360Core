@@ -59,10 +59,10 @@ O estado recolhido/expandido fica em `localStorage`.
 ```
 src/
 ├── api/            # camada de acesso à API
-│   ├── http.ts         # axios + Bearer + refresh automático em 401 (single-flight)
+│   ├── http.ts         # axios + cookie HttpOnly (withCredentials) + refresh automático em 401 (single-flight)
 │   ├── errors.ts       # mensagensDeErro(): extrai texto do envelope em qualquer status
 │   ├── types.ts        # envelope, Role e DTOs
-│   ├── tokenStorage.ts # tokens + identidade (nome/email/role) no localStorage
+│   ├── tokenStorage.ts # só identidade (nome/email/role) no localStorage — tokens vêm em cookie HttpOnly
 │   ├── auth.ts, convites.ts, usuarios.ts
 │   └── motoristas.ts, veiculos.ts, rotas.ts
 ├── auth/           # sessão e permissões

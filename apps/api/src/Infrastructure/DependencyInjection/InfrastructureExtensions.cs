@@ -74,6 +74,19 @@ namespace Frota360.Infrastructure.DependencyInjection
                     // 401/403 no mesmo envelope ApiResponse do resto da API
                     options.Events = new JwtBearerEvents
                     {
+                        // O front não envia mais Authorization: o token vive só no cookie
+                        // HttpOnly setado no login/refresh. O header continua funcionando
+                        // (Scalar, curl, um cliente externo) — o cookie é só um segundo
+                        // caminho para quando ele não vem.
+                        OnMessageReceived = context =>
+                        {
+                            if (string.IsNullOrEmpty(context.Token) &&
+                                context.Request.Cookies.TryGetValue(CookiesDeSessao.Token, out var token))
+                            {
+                                context.Token = token;
+                            }
+                            return Task.CompletedTask;
+                        },
                         OnChallenge = context =>
                         {
                             context.HandleResponse();

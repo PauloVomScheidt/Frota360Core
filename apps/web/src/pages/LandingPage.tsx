@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { LogoMark, Wordmark } from '../components/Logo'
 import { CheckIcon, SearchIcon, WhatsappIcon, XIcon } from '../components/icons'
@@ -132,6 +132,10 @@ const TIPOS_MOCK = [
   { nome: 'Filtro de ar-condicionado', intervalo: '50.000 km' },
 ]
 
+// Mesma ordem das colunas do <thead> da matriz — é o que dá a cada coluna uma
+// identidade estável (o nome do papel), em vez de depender da posição no array.
+const PAPEIS_DA_MATRIZ = ['admin', 'supervisor', 'operador'] as const
+
 const MATRIZ = [
   { acao: 'Ver tudo da empresa', admin: true, supervisor: true, operador: true },
   { acao: 'Lançar e editar rotas', admin: true, supervisor: true, operador: true },
@@ -234,26 +238,34 @@ function useOdometro() {
   // Quem pediu menos movimento já começa no valor final — nem chega a ver a
   // contagem, em vez de vê-la saltar depois do primeiro render.
   const [km, setKm] = useState(() => (prefereMenosMovimento() ? KM_FINAL : KM_INICIAL))
+  // O id do interval mora numa ref (não numa variável local do effect) porque quem o
+  // encerra é um SEGUNDO effect, que só sabe que chegou a hora depois de reagir à
+  // mudança de `km` — precisa achar o mesmo interval que o primeiro effect criou.
+  const intervaloRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (prefereMenosMovimento()) return
-    let passo = 0
     const inicio = window.setTimeout(() => {
-      passo = window.setInterval(() => {
-        setKm((atual) => {
-          if (atual >= KM_FINAL) {
-            window.clearInterval(passo)
-            return KM_FINAL
-          }
-          return Math.min(atual + 4, KM_FINAL)
-        })
+      intervaloRef.current = window.setInterval(() => {
+        // Atualizador puro: só calcula o próximo valor. Antes ele também decidia e
+        // executava o clearInterval aqui dentro — um efeito colateral escondido num
+        // updater, que o React pode reexecutar mais de uma vez para o mesmo passo.
+        setKm((atual) => Math.min(atual + 4, KM_FINAL))
       }, 90)
     }, 700)
     return () => {
       window.clearTimeout(inicio)
-      window.clearInterval(passo)
+      if (intervaloRef.current !== null) window.clearInterval(intervaloRef.current)
     }
   }, [])
+
+  // O clearInterval mora aqui agora: reage ao `km` já commitado, fora do updater.
+  useEffect(() => {
+    if (km >= KM_FINAL && intervaloRef.current !== null) {
+      window.clearInterval(intervaloRef.current)
+      intervaloRef.current = null
+    }
+  }, [km])
 
   return km
 }
@@ -271,6 +283,13 @@ function Digito({ valor }: { valor: string }) {
   )
 }
 
+// A casa de cada dígito (centena de milhar → unidade) é a identidade estável dele:
+// o km sobe, mas a casa das centenas continua sendo a casa das centenas do início ao
+// fim da contagem — é o que permite o dígito deslizar de um valor para o outro em vez
+// de trocar de elemento (índice do array faria a mesma coisa aqui, mas nomear a casa
+// deixa explícito por que é seguro, em vez de depender implicitamente da posição).
+const CASAS_DO_ODOMETRO = ['cem-mil', 'dez-mil', 'mil', 'cem', 'dez', 'um'] as const
+
 /**
  * Odômetro de 6 casas, sem separador de milhar — é assim que o instrumento
  * real mostra, e a largura fica fixa enquanto conta. O rótulo acessível traz o
@@ -281,7 +300,7 @@ function Odometro({ km }: { km: number }) {
   return (
     <div className="lp-odo" role="img" aria-label={`Quilometragem atual: ${km.toLocaleString('pt-BR')} quilômetros`}>
       {casas.map((c, i) => (
-        <Digito key={i} valor={c} />
+        <Digito key={CASAS_DO_ODOMETRO[i]} valor={c} />
       ))}
       <span className="lp-odo-unidade" aria-hidden="true">
         km
@@ -328,10 +347,55 @@ function Rolagem({ rotulo, children }: { rotulo: string; children: ReactNode }) 
   )
 }
 
-// ── página ──────────────────────────────────────────────────────────────────
+// ── seções ──────────────────────────────────────────────────────────────────
+// Cada `Faixa` da página é só HTML + os arrays de conteúdo lá em cima — nenhuma
+// delas guarda estado próprio (a única exceção, o odômetro, chega pronta via
+// prop). Extraídas para módulo por serem, juntas, o motivo de `LandingPage`
+// passar de 300 linhas sem nenhuma delas ter lógica que justifique inline.
 
-export function LandingPage() {
-  const km = useOdometro()
+function CabecalhoLanding() {
+  return (
+    <header className="lp-nav">
+      <div className="lp-nav-inner">
+        <Link to="/" className="lp-brand" aria-label="Frota 360 — início">
+          <Marca />
+        </Link>
+        <nav className="lp-nav-links" aria-label="Seções da página">
+          {ANCORAS.map((a) => (
+            <a key={a.href} href={a.href}>
+              {a.texto}
+            </a>
+          ))}
+        </nav>
+        <div className="lp-nav-acoes">
+          <Link to="/login" className="lp-btn lp-btn-discreto lp-btn-p lp-nav-entrar">
+            Entrar
+          </Link>
+          <a href={LINK_WHATS} className="lp-btn lp-btn-primario lp-btn-p">
+            Falar com a gente
+          </a>
+          <details className="lp-menu">
+            <summary aria-label="Abrir as seções da página">Seções</summary>
+            <nav className="lp-menu-lista" aria-label="Seções da página">
+              {ANCORAS.map((a) => (
+                <a key={a.href} href={a.href}>
+                  {a.texto}
+                </a>
+              ))}
+              {/* Abaixo de 560px "Entrar" some da barra; aqui é o caminho dele. */}
+              <Link to="/login" className="lp-menu-entrar">
+                Entrar
+              </Link>
+            </nav>
+          </details>
+        </div>
+      </div>
+    </header>
+  )
+}
+
+/** Hero: o odômetro conta até a revisão avisar — é a mecânica do produto inteira, sem texto. */
+function HeroLanding({ km }: { km: number }) {
   const faltam = KM_PREVISTO - km
   const estado = faltam <= 0 ? 'atrasada' : faltam <= FAIXA_AVISO ? 'vencendo' : 'ok'
   const textoEstado =
@@ -342,400 +406,425 @@ export function LandingPage() {
         : `Faltam ${faltam.toLocaleString('pt-BR')} km`
 
   return (
-    <div className="lp">
-      <header className="lp-nav">
-        <div className="lp-nav-inner">
-          <Link to="/" className="lp-brand" aria-label="Frota 360 — início">
-            <Marca />
-          </Link>
-          <nav className="lp-nav-links" aria-label="Seções da página">
-            {ANCORAS.map((a) => (
-              <a key={a.href} href={a.href}>
-                {a.texto}
+    // Os números são ilustrativos e vêm marcados assim.
+    <section className="lp-faixa-forte">
+      <div className="lp-wrap lp-hero">
+        <div className="lp-hero-grade">
+          <div className="lp-hero-texto">
+            <span className="lp-campo lp-campo-painel">Manutenção preventiva por quilometragem</span>
+            <h1 className="lp-h1">A revisão avisa antes de virar oficina.</h1>
+            <p className="lp-hero-sub">
+              Você agenda a manutenção na quilometragem prevista. Conforme o veículo roda, o painel recalcula sozinho
+              quantos quilômetros faltam — e põe no topo da lista o que está vencendo.
+            </p>
+            <div className="lp-hero-ctas">
+              <a href={LINK_WHATS} className="lp-btn lp-btn-primario lp-btn-g">
+                <WhatsappIcon size={17} />
+                Falar no WhatsApp
               </a>
+              <a href="#demonstracao" className="lp-btn lp-btn-contorno lp-btn-g">
+                Pedir uma demonstração
+              </a>
+            </div>
+            <p className="lp-miudo">
+              Implantação assistida · sem cartão de crédito · <Link to="/login">já é cliente?</Link>
+            </p>
+          </div>
+
+          <div className="lp-instrumento">
+            <div className="lp-instrumento-topo">
+              <span className="lp-instrumento-placa">MJU-5F71</span>
+              <span className="lp-instrumento-modelo">VW Saveiro</span>
+              <span className="lp-instrumento-selo">Demonstração</span>
+            </div>
+            <div className="lp-instrumento-corpo">
+              <Odometro km={km} />
+              <div className="lp-servico">
+                <span className="lp-servico-nome">Troca de óleo</span>
+                <span className="lp-servico-prev">Prevista para {KM_PREVISTO.toLocaleString('pt-BR')} km</span>
+                {/* Sem `aria-live`: o texto muda a cada tique da contagem e
+                    viraria dezenas de anúncios. O estado final fica no DOM
+                    como texto normal, que é o que importa ler. */}
+                <span className={`lp-servico-estado${estado === 'ok' ? '' : ` is-${estado}`}`}>
+                  <span className="lp-farol" aria-hidden="true" />
+                  {textoEstado}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** Mock do painel: dados ilustrativos, não vêm da API. */
+function PainelMockFaixa() {
+  return (
+    <Faixa>
+      <span className="lp-campo">O painel</span>
+      <div className="lp-mock">
+        <aside className="lp-mock-aside">
+          <div className="lp-brand" style={{ padding: '0 8px', marginRight: 0 }}>
+            <Marca tamanho={20} />
+          </div>
+          <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }} aria-hidden="true">
+            {MENU_MOCK.map((item) => (
+              <div key={item} className={`lp-mock-item${item === MENU_ATIVO ? ' is-ativo' : ''}`}>
+                <span className="lp-mock-quad" />
+                {item}
+              </div>
             ))}
           </nav>
-          <div className="lp-nav-acoes">
-            <Link to="/login" className="lp-btn lp-btn-discreto lp-btn-p lp-nav-entrar">
-              Entrar
-            </Link>
-            <a href={LINK_WHATS} className="lp-btn lp-btn-primario lp-btn-p">
-              Falar com a gente
-            </a>
-            <details className="lp-menu">
-              <summary aria-label="Abrir as seções da página">Seções</summary>
-              <nav className="lp-menu-lista" aria-label="Seções da página">
-                {ANCORAS.map((a) => (
-                  <a key={a.href} href={a.href}>
-                    {a.texto}
-                  </a>
-                ))}
-                {/* Abaixo de 560px "Entrar" some da barra; aqui é o caminho dele. */}
-                <Link to="/login" className="lp-menu-entrar">
-                  Entrar
-                </Link>
-              </nav>
-            </details>
-          </div>
-        </div>
-      </header>
-
-      {/* Hero: o odômetro conta até a revisão avisar — é a mecânica do produto
-          inteira, sem texto. Os números são ilustrativos e vêm marcados assim. */}
-      <section className="lp-faixa-forte">
-        <div className="lp-wrap lp-hero">
-          <div className="lp-hero-grade">
-            <div className="lp-hero-texto">
-              <span className="lp-campo lp-campo-painel">Manutenção preventiva por quilometragem</span>
-              <h1 className="lp-h1">A revisão avisa antes de virar oficina.</h1>
-              <p className="lp-hero-sub">
-                Você agenda a manutenção na quilometragem prevista. Conforme o veículo roda, o painel recalcula sozinho
-                quantos quilômetros faltam — e põe no topo da lista o que está vencendo.
-              </p>
-              <div className="lp-hero-ctas">
-                <a href={LINK_WHATS} className="lp-btn lp-btn-primario lp-btn-g">
-                  <WhatsappIcon size={17} />
-                  Falar no WhatsApp
-                </a>
-                <a href="#demonstracao" className="lp-btn lp-btn-contorno lp-btn-g">
-                  Pedir uma demonstração
-                </a>
-              </div>
-              <p className="lp-miudo">
-                Implantação assistida · sem cartão de crédito · <Link to="/login">já é cliente?</Link>
-              </p>
-            </div>
-
-            <div className="lp-instrumento">
-              <div className="lp-instrumento-topo">
-                <span className="lp-instrumento-placa">MJU-5F71</span>
-                <span className="lp-instrumento-modelo">VW Saveiro</span>
-                <span className="lp-instrumento-selo">Demonstração</span>
-              </div>
-              <div className="lp-instrumento-corpo">
-                <Odometro km={km} />
-                <div className="lp-servico">
-                  <span className="lp-servico-nome">Troca de óleo</span>
-                  <span className="lp-servico-prev">Prevista para {KM_PREVISTO.toLocaleString('pt-BR')} km</span>
-                  {/* Sem `aria-live`: o texto muda a cada tique da contagem e
-                      viraria dezenas de anúncios. O estado final fica no DOM
-                      como texto normal, que é o que importa ler. */}
-                  <span className={`lp-servico-estado${estado === 'ok' ? '' : ` is-${estado}`}`}>
-                    <span className="lp-farol" aria-hidden="true" />
-                    {textoEstado}
-                  </span>
-                </div>
-              </div>
+          <div className="lp-mock-user">
+            <span className="lp-avatar">PD</span>
+            <div>
+              Paulo D.
+              <div style={{ color: 'var(--tinta-fraca)' }}>Admin</div>
             </div>
           </div>
-        </div>
-      </section>
+        </aside>
 
-      {/* Mock do painel: dados ilustrativos, não vêm da API. */}
-      <Faixa>
-        <span className="lp-campo">O painel</span>
-        <div className="lp-mock">
-          <aside className="lp-mock-aside">
-            <div className="lp-brand" style={{ padding: '0 8px', marginRight: 0 }}>
-              <Marca tamanho={20} />
-            </div>
-            <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }} aria-hidden="true">
-              {MENU_MOCK.map((item) => (
-                <div key={item} className={`lp-mock-item${item === MENU_ATIVO ? ' is-ativo' : ''}`}>
-                  <span className="lp-mock-quad" />
-                  {item}
-                </div>
-              ))}
-            </nav>
-            <div className="lp-mock-user">
-              <span className="lp-avatar">PD</span>
-              <div>
-                Paulo D.
-                <div style={{ color: 'var(--tinta-fraca)' }}>Admin</div>
-              </div>
-            </div>
-          </aside>
-
-          <div>
-            <div className="lp-mock-cab">
-              <span className="lp-mock-titulo">Veículos</span>
-              <span className="lp-contagem">42 cadastrados</span>
-              <div className="lp-direita">
-                <span className="lp-mock-busca" aria-hidden="true">
-                  <SearchIcon size={14} />
-                  Buscar placa ou modelo
-                </span>
-                <span className="lp-mock-btn" aria-hidden="true">
-                  Novo veículo
-                </span>
-              </div>
-            </div>
-            <Rolagem rotulo="Exemplo da lista de veículos">
-              <table className="lp-tabela">
-                <thead>
-                  <tr>
-                    <th>Placa</th>
-                    <th>Modelo</th>
-                    <th className="lp-numero-dir">Quilometragem</th>
-                    <th>Último motorista</th>
-                    <th>Situação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {VEICULOS_MOCK.map((v) => (
-                    <tr key={v.placa}>
-                      <td className="lp-forte">{v.placa}</td>
-                      <td>{v.modelo}</td>
-                      <td className="lp-numero lp-numero-dir">{v.km}</td>
-                      <td>{v.motorista}</td>
-                      <td>
-                        <span className={CLASSE_ETIQ[v.tom]}>{v.situacao}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Rolagem>
-            <div className="lp-mock-rodape">Última atualização hoje, 14:20 — por Ana Ribeiro</div>
-          </div>
-        </div>
-      </Faixa>
-
-      <Faixa>
-        <span className="lp-campo">O que a planilha perde</span>
-        <h2 className="lp-h2" style={{ maxWidth: '22ch' }}>
-          Planilha não avisa quando a revisão passou do ponto
-        </h2>
-        <div className="lp-grade lp-grade-2" style={{ marginTop: 40 }}>
-          {FALHAS.map((f) => (
-            <div key={f.campo}>
-              <span className="lp-falha-rotulo">{f.campo}</span>
-              <p className="lp-falha-texto">{f.texto}</p>
-            </div>
-          ))}
-        </div>
-      </Faixa>
-
-      <Faixa>
-        <span className="lp-campo">Planilha × Frota360</span>
-        <h2 className="lp-h2" style={{ maxWidth: '20ch' }}>
-          O que muda quando sai da planilha
-        </h2>
-        <Rolagem rotulo="Comparativo entre a planilha e o Frota360">
-          <div className="lp-compara" style={{ marginTop: 40 }}>
-            <div className="lp-compara-linha lp-compara-cab">
-              <div>Dado</div>
-              <div>Na planilha</div>
-              <div className="is-app">No Frota360</div>
-            </div>
-            {COMPARATIVO.map((c) => (
-              <div key={c.item} className="lp-compara-linha">
-                <div className="lp-compara-item">{c.item}</div>
-                <div className="lp-compara-antes">{c.planilha}</div>
-                <div className="lp-compara-depois">{c.app}</div>
-              </div>
-            ))}
-          </div>
-        </Rolagem>
-      </Faixa>
-
-      <Faixa id="recursos">
-        <span className="lp-campo lp-campo-painel">Recursos</span>
-        <h2 className="lp-h2" style={{ maxWidth: '24ch' }}>
-          Quatro cadastros, uma operação inteira sob controle
-        </h2>
-        <div className="lp-grade lp-grade-2" style={{ marginTop: 40 }}>
-          {RECURSOS.map((r) => (
-            <div key={r.titulo}>
-              <div className="lp-recurso-marca">{r.inicial}</div>
-              <h3 className="lp-h3">{r.titulo}</h3>
-              <p className="lp-recurso-texto">{r.texto}</p>
-              <ul className="lp-lista">
-                {r.itens.map((it) => (
-                  <li key={it}>
-                    <CheckIcon size={15} />
-                    <span>{it}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </Faixa>
-
-      <Faixa id="manutencao">
-        <span className="lp-campo lp-campo-painel">Manutenção</span>
-        <h2 className="lp-h2" style={{ maxWidth: '22ch' }}>
-          O que está vencendo sobe para o topo
-        </h2>
-        <p className="lp-lead">
-          O painel compara a quilometragem prevista de cada manutenção com a km atual do veículo. Quando concluir, você
-          informa a km real e o custo — e a quilometragem do veículo sobe junto, sem atualizar em dois lugares.
-        </p>
-
-        <div className="lp-mock" style={{ marginTop: 40, gridTemplateColumns: '1fr' }}>
-          <div>
-            <div className="lp-mock-cab">
-              <span className="lp-mock-titulo">Manutenções</span>
-              <span className="lp-contagem">4 em aberto</span>
-              <div className="lp-direita">
-                <span className="lp-mock-btn" aria-hidden="true">
-                  Nova manutenção
-                </span>
-              </div>
-            </div>
-            <Rolagem rotulo="Exemplo da lista de manutenções">
-              <table className="lp-tabela">
-                <thead>
-                  <tr>
-                    <th>Veículo</th>
-                    <th>Tipo</th>
-                    <th className="lp-numero-dir">Prevista</th>
-                    <th>Andamento</th>
-                    <th>Situação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {MANUTENCOES_MOCK.map((m) => (
-                    <tr key={`${m.placa}-${m.tipo}`}>
-                      <td>
-                        <span className="lp-forte">{m.placa}</span>
-                        <div className="lp-sub">{m.modelo}</div>
-                      </td>
-                      <td>{m.tipo}</td>
-                      <td className="lp-numero lp-numero-dir">{m.km}</td>
-                      <td className="lp-numero">{m.andamento}</td>
-                      <td>
-                        <span className={CLASSE_ETIQ[m.tom]}>{m.situacao}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Rolagem>
-            <div className="lp-mock-rodape">
-              Catálogo da empresa:{' '}
-              {TIPOS_MOCK.map((t) => `${t.nome} a cada ${t.intervalo}`).join(' · ')}
+        <div>
+          <div className="lp-mock-cab">
+            <span className="lp-mock-titulo">Veículos</span>
+            <span className="lp-contagem">42 cadastrados</span>
+            <div className="lp-direita">
+              <span className="lp-mock-busca" aria-hidden="true">
+                <SearchIcon size={14} />
+                Buscar placa ou modelo
+              </span>
+              <span className="lp-mock-btn" aria-hidden="true">
+                Novo veículo
+              </span>
             </div>
           </div>
-        </div>
-      </Faixa>
-
-      <Faixa id="permissoes">
-        <span className="lp-campo lp-campo-painel">Acesso</span>
-        <div className="lp-split" style={{ marginTop: 8 }}>
-          <div>
-            <h2 className="lp-h2">Cada pessoa vê e faz exatamente o que deve</h2>
-            <p className="lp-lead">
-              Três papéis prontos, sem tela de configuração complicada. Quem entra por convite já chega com o papel
-              certo.
-            </p>
-            <div style={{ marginTop: 32 }}>
-              {GARANTIAS.map((g) => (
-                <div key={g.titulo} className="lp-garantia">
-                  <span className="lp-garantia-titulo">{g.titulo}</span>
-                  <p>{g.texto}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          <Rolagem rotulo="Matriz de permissões por papel">
-            <table className="lp-matriz">
+          <Rolagem rotulo="Exemplo da lista de veículos">
+            <table className="lp-tabela">
               <thead>
                 <tr>
-                  <th>Ação</th>
-                  <th>Admin</th>
-                  <th>Supervisor</th>
-                  <th>Operador</th>
+                  <th>Placa</th>
+                  <th>Modelo</th>
+                  <th className="lp-numero-dir">Quilometragem</th>
+                  <th>Último motorista</th>
+                  <th>Situação</th>
                 </tr>
               </thead>
               <tbody>
-                {MATRIZ.map((m) => (
-                  <tr key={m.acao}>
-                    <td>{m.acao}</td>
-                    {/* O ícone é visual; a palavra continua no DOM para quem
-                        usa leitor de tela — um ✓ sozinho não se lê. */}
-                    {[m.admin, m.supervisor, m.operador].map((pode, i) => (
-                      <td key={i} className={pode ? 'lp-sim' : 'lp-nao'}>
-                        {pode ? <CheckIcon size={17} /> : <XIcon size={16} />}
-                        <span className="lp-oculto">{pode ? 'Sim' : 'Não'}</span>
-                      </td>
-                    ))}
+                {VEICULOS_MOCK.map((v) => (
+                  <tr key={v.placa}>
+                    <td className="lp-forte">{v.placa}</td>
+                    <td>{v.modelo}</td>
+                    <td className="lp-numero lp-numero-dir">{v.km}</td>
+                    <td>{v.motorista}</td>
+                    <td>
+                      <span className={CLASSE_ETIQ[v.tom]}>{v.situacao}</span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </Rolagem>
+          <div className="lp-mock-rodape">Última atualização hoje, 14:20 — por Ana Ribeiro</div>
         </div>
-      </Faixa>
+      </div>
+    </Faixa>
+  )
+}
 
-      <Faixa id="implantacao">
-        <span className="lp-campo">Implantação</span>
-        <h2 className="lp-h2" style={{ maxWidth: '22ch' }}>
-          Do primeiro contato ao painel rodando em uma semana
-        </h2>
-        <div className="lp-grade lp-grade-3" style={{ marginTop: 40 }}>
-          {PASSOS.map((p) => (
-            <div key={p.num} className="lp-passo">
-              <span className="lp-passo-num">{p.num}</span>
-              <h3 className="lp-h3">{p.titulo}</h3>
-              <p>{p.texto}</p>
+function FalhasFaixa() {
+  return (
+    <Faixa>
+      <span className="lp-campo">O que a planilha perde</span>
+      <h2 className="lp-h2" style={{ maxWidth: '22ch' }}>
+        Planilha não avisa quando a revisão passou do ponto
+      </h2>
+      <div className="lp-grade lp-grade-2" style={{ marginTop: 40 }}>
+        {FALHAS.map((f) => (
+          <div key={f.campo}>
+            <span className="lp-falha-rotulo">{f.campo}</span>
+            <p className="lp-falha-texto">{f.texto}</p>
+          </div>
+        ))}
+      </div>
+    </Faixa>
+  )
+}
+
+function ComparativoFaixa() {
+  return (
+    <Faixa>
+      <span className="lp-campo">Planilha × Frota360</span>
+      <h2 className="lp-h2" style={{ maxWidth: '20ch' }}>
+        O que muda quando sai da planilha
+      </h2>
+      <Rolagem rotulo="Comparativo entre a planilha e o Frota360">
+        <div className="lp-compara" style={{ marginTop: 40 }}>
+          <div className="lp-compara-linha lp-compara-cab">
+            <div>Dado</div>
+            <div>Na planilha</div>
+            <div className="is-app">No Frota360</div>
+          </div>
+          {COMPARATIVO.map((c) => (
+            <div key={c.item} className="lp-compara-linha">
+              <div className="lp-compara-item">{c.item}</div>
+              <div className="lp-compara-antes">{c.planilha}</div>
+              <div className="lp-compara-depois">{c.app}</div>
             </div>
           ))}
         </div>
-      </Faixa>
+      </Rolagem>
+    </Faixa>
+  )
+}
 
-      <Faixa id="duvidas" estreito>
-        <span className="lp-campo">Dúvidas</span>
-        <h2 className="lp-h2">O que a gente mais escuta na primeira conversa</h2>
-        <div style={{ marginTop: 36 }}>
-          {DUVIDAS.map((d) => (
-            <details key={d.p} className="lp-faq">
-              <summary>
-                {d.p}
-                <span className="lp-faq-sinal" aria-hidden="true">
-                  +
-                </span>
-              </summary>
-              <p className="lp-faq-resposta">{d.r}</p>
-            </details>
-          ))}
-        </div>
-      </Faixa>
+function RecursosFaixa() {
+  return (
+    <Faixa id="recursos">
+      <span className="lp-campo lp-campo-painel">Recursos</span>
+      <h2 className="lp-h2" style={{ maxWidth: '24ch' }}>
+        Quatro cadastros, uma operação inteira sob controle
+      </h2>
+      <div className="lp-grade lp-grade-2" style={{ marginTop: 40 }}>
+        {RECURSOS.map((r) => (
+          <div key={r.titulo}>
+            <div className="lp-recurso-marca">{r.inicial}</div>
+            <h3 className="lp-h3">{r.titulo}</h3>
+            <p className="lp-recurso-texto">{r.texto}</p>
+            <ul className="lp-lista">
+              {r.itens.map((it) => (
+                <li key={it}>
+                  <CheckIcon size={15} />
+                  <span>{it}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </Faixa>
+  )
+}
 
-      <section id="demonstracao" className="lp-cta" style={{ scrollMarginTop: 72 }}>
-        <div className="lp-wrap">
-          <div className="lp-cta-grade">
-            <div>
-              <span className="lp-campo">Demonstração</span>
-              <h2 className="lp-h2">Mostre sua frota. A gente mostra o painel.</h2>
-              <p className="lp-cta-sub">
-                Uma conversa de 20 minutos: você conta como controla a frota hoje e sai com a empresa já configurada
-                para testar.
-              </p>
-              <div className="lp-cta-acoes">
-                <a href={LINK_WHATS} className="lp-btn lp-btn-claro lp-btn-g">
-                  <WhatsappIcon size={17} />
-                  Prefiro o WhatsApp
-                </a>
-                <a href={LINK_EMAIL} className="lp-cta-mail">
-                  {EMAIL}
-                </a>
-              </div>
+function ManutencaoFaixa() {
+  return (
+    <Faixa id="manutencao">
+      <span className="lp-campo lp-campo-painel">Manutenção</span>
+      <h2 className="lp-h2" style={{ maxWidth: '22ch' }}>
+        O que está vencendo sobe para o topo
+      </h2>
+      <p className="lp-lead">
+        O painel compara a quilometragem prevista de cada manutenção com a km atual do veículo. Quando concluir, você
+        informa a km real e o custo — e a quilometragem do veículo sobe junto, sem atualizar em dois lugares.
+      </p>
+
+      <div className="lp-mock" style={{ marginTop: 40, gridTemplateColumns: '1fr' }}>
+        <div>
+          <div className="lp-mock-cab">
+            <span className="lp-mock-titulo">Manutenções</span>
+            <span className="lp-contagem">4 em aberto</span>
+            <div className="lp-direita">
+              <span className="lp-mock-btn" aria-hidden="true">
+                Nova manutenção
+              </span>
             </div>
-            <FormularioDemonstracao />
+          </div>
+          <Rolagem rotulo="Exemplo da lista de manutenções">
+            <table className="lp-tabela">
+              <thead>
+                <tr>
+                  <th>Veículo</th>
+                  <th>Tipo</th>
+                  <th className="lp-numero-dir">Prevista</th>
+                  <th>Andamento</th>
+                  <th>Situação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {MANUTENCOES_MOCK.map((m) => (
+                  <tr key={`${m.placa}-${m.tipo}`}>
+                    <td>
+                      <span className="lp-forte">{m.placa}</span>
+                      <div className="lp-sub">{m.modelo}</div>
+                    </td>
+                    <td>{m.tipo}</td>
+                    <td className="lp-numero lp-numero-dir">{m.km}</td>
+                    <td className="lp-numero">{m.andamento}</td>
+                    <td>
+                      <span className={CLASSE_ETIQ[m.tom]}>{m.situacao}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Rolagem>
+          <div className="lp-mock-rodape">
+            Catálogo da empresa:{' '}
+            {TIPOS_MOCK.map((t) => `${t.nome} a cada ${t.intervalo}`).join(' · ')}
           </div>
         </div>
-      </section>
+      </div>
+    </Faixa>
+  )
+}
 
-      <footer className="lp-rodape">
-        <Link to="/" className="lp-brand" aria-label="Frota 360 — início">
-          <Marca tamanho={18} />
-        </Link>
-        <Link to="/login">Entrar</Link>
-        <a href={LINK_EMAIL}>{EMAIL}</a>
-        <span>© {new Date().getFullYear()} Frota 360</span>
-      </footer>
+function PermissoesFaixa() {
+  return (
+    <Faixa id="permissoes">
+      <span className="lp-campo lp-campo-painel">Acesso</span>
+      <div className="lp-split" style={{ marginTop: 8 }}>
+        <div>
+          <h2 className="lp-h2">Cada pessoa vê e faz exatamente o que deve</h2>
+          <p className="lp-lead">
+            Três papéis prontos, sem tela de configuração complicada. Quem entra por convite já chega com o papel
+            certo.
+          </p>
+          <div style={{ marginTop: 32 }}>
+            {GARANTIAS.map((g) => (
+              <div key={g.titulo} className="lp-garantia">
+                <span className="lp-garantia-titulo">{g.titulo}</span>
+                <p>{g.texto}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <Rolagem rotulo="Matriz de permissões por papel">
+          <table className="lp-matriz">
+            <thead>
+              <tr>
+                <th>Ação</th>
+                <th>Admin</th>
+                <th>Supervisor</th>
+                <th>Operador</th>
+              </tr>
+            </thead>
+            <tbody>
+              {MATRIZ.map((m) => (
+                <tr key={m.acao}>
+                  <td>{m.acao}</td>
+                  {/* O ícone é visual; a palavra continua no DOM para quem
+                      usa leitor de tela — um ✓ sozinho não se lê. Mapeia pelo nome do
+                      papel (a mesma ordem do <thead> acima), não por posição: a coluna
+                      "Admin" é sempre a coluna "Admin", com ou sem índice de array. */}
+                  {PAPEIS_DA_MATRIZ.map((papel) => (
+                    <td key={papel} className={m[papel] ? 'lp-sim' : 'lp-nao'}>
+                      {m[papel] ? <CheckIcon size={17} /> : <XIcon size={16} />}
+                      <span className="lp-oculto">{m[papel] ? 'Sim' : 'Não'}</span>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Rolagem>
+      </div>
+    </Faixa>
+  )
+}
+
+function ImplantacaoFaixa() {
+  return (
+    <Faixa id="implantacao">
+      <span className="lp-campo">Implantação</span>
+      <h2 className="lp-h2" style={{ maxWidth: '22ch' }}>
+        Do primeiro contato ao painel rodando em uma semana
+      </h2>
+      <div className="lp-grade lp-grade-3" style={{ marginTop: 40 }}>
+        {PASSOS.map((p) => (
+          <div key={p.num} className="lp-passo">
+            <span className="lp-passo-num">{p.num}</span>
+            <h3 className="lp-h3">{p.titulo}</h3>
+            <p>{p.texto}</p>
+          </div>
+        ))}
+      </div>
+    </Faixa>
+  )
+}
+
+function DuvidasFaixa() {
+  return (
+    <Faixa id="duvidas" estreito>
+      <span className="lp-campo">Dúvidas</span>
+      <h2 className="lp-h2">O que a gente mais escuta na primeira conversa</h2>
+      <div style={{ marginTop: 36 }}>
+        {DUVIDAS.map((d) => (
+          <details key={d.p} className="lp-faq">
+            <summary>
+              {d.p}
+              <span className="lp-faq-sinal" aria-hidden="true">
+                +
+              </span>
+            </summary>
+            <p className="lp-faq-resposta">{d.r}</p>
+          </details>
+        ))}
+      </div>
+    </Faixa>
+  )
+}
+
+function CtaSection() {
+  return (
+    <section id="demonstracao" className="lp-cta" style={{ scrollMarginTop: 72 }}>
+      <div className="lp-wrap">
+        <div className="lp-cta-grade">
+          <div>
+            <span className="lp-campo">Demonstração</span>
+            <h2 className="lp-h2">Mostre sua frota. A gente mostra o painel.</h2>
+            <p className="lp-cta-sub">
+              Uma conversa de 20 minutos: você conta como controla a frota hoje e sai com a empresa já configurada
+              para testar.
+            </p>
+            <div className="lp-cta-acoes">
+              <a href={LINK_WHATS} className="lp-btn lp-btn-claro lp-btn-g">
+                <WhatsappIcon size={17} />
+                Prefiro o WhatsApp
+              </a>
+              <a href={LINK_EMAIL} className="lp-cta-mail">
+                {EMAIL}
+              </a>
+            </div>
+          </div>
+          <FormularioDemonstracao />
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function RodapeLanding() {
+  return (
+    <footer className="lp-rodape">
+      <Link to="/" className="lp-brand" aria-label="Frota 360 — início">
+        <Marca tamanho={18} />
+      </Link>
+      <Link to="/login">Entrar</Link>
+      <a href={LINK_EMAIL}>{EMAIL}</a>
+      <span>© {new Date().getFullYear()} Frota 360</span>
+    </footer>
+  )
+}
+
+// ── página ──────────────────────────────────────────────────────────────────
+
+export function LandingPage() {
+  const km = useOdometro()
+
+  return (
+    <div className="lp">
+      <CabecalhoLanding />
+      <HeroLanding km={km} />
+      <PainelMockFaixa />
+      <FalhasFaixa />
+      <ComparativoFaixa />
+      <RecursosFaixa />
+      <ManutencaoFaixa />
+      <PermissoesFaixa />
+      <ImplantacaoFaixa />
+      <DuvidasFaixa />
+      <CtaSection />
+      <RodapeLanding />
     </div>
   )
 }

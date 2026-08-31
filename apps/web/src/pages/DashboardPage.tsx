@@ -141,23 +141,28 @@ export function DashboardPage() {
         ))}
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <h3 style={{ margin: 0 }}>Veículos</h3>
-        <div className="relative w-[260px]">
-          <span
-            className="absolute top-0 bottom-0 left-2.5 flex items-center"
-            style={{ color: 'color-mix(in srgb, var(--color-text) 50%, transparent)' }}
-          >
-            <SearchIcon size={14} />
-          </span>
-          <input
-            className="input"
-            type="text"
-            placeholder="Buscar veículo ou motorista"
-            style={{ borderRadius: 0, paddingLeft: 32 }}
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-          />
+        <div className="field w-[260px]">
+          {/* O placeholder some ao digitar — sozinho não serve de rótulo. */}
+          <label htmlFor="buscaDashboard">Buscar veículo ou motorista</label>
+          <div className="relative">
+            <span
+              className="absolute top-0 bottom-0 left-2.5 flex items-center"
+              style={{ color: 'color-mix(in srgb, var(--color-text) 50%, transparent)' }}
+            >
+              <SearchIcon size={14} />
+            </span>
+            <input
+              id="buscaDashboard"
+              className="input"
+              type="text"
+              placeholder="Placa, modelo ou motorista"
+              style={{ borderRadius: 0, paddingLeft: 32 }}
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 

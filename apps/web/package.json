@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "gen:api": "npx -y openapi-typescript http://localhost:5062/openapi/v1.json -o src/api/schema.d.ts"
+    "gen:api": "npx -y openapi-typescript http://localhost:5062/openapi/v1.json -o src/api/schema.d.ts",
+    "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

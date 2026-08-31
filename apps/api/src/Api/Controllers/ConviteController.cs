@@ -1,5 +1,6 @@
 using Asp.Versioning;
 using FluentValidation;
+using Frota360.Api.Services;
 using Frota360.Application.DTOs.Convite.Request;
 using Frota360.Application.DTOs.Convite.Response;
 using Frota360.Application.DTOs.Usuario.Response;
@@ -77,7 +78,7 @@ namespace Frota360.Api.Controllers
         [AllowAnonymous]
         [HttpPost("aceitar")]
         [EnableRateLimiting("auth")]
-        [ProducesResponseType<ApiResponse<AuthResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<SessaoResponse>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Aceitar([FromBody] AceitarConviteRequest request)
         {
@@ -94,7 +95,9 @@ namespace Frota360.Api.Controllers
             if (response is null)
                 return BadRequest(ApiResponse<object>.Fail("Convite inválido ou expirado."));
 
-            return Ok(ApiResponse<AuthResponse>.Ok(response, "Conta criada com sucesso."));
+            // Token e refresh token, assim como no login, saem em cookie HttpOnly — não no corpo.
+            SessaoCookies.Emitir(Response, response.Token, response.RefreshToken);
+            return Ok(ApiResponse<SessaoResponse>.Ok(response.ToSessaoResponse(), "Conta criada com sucesso."));
         }
     }
 }

@@ -66,13 +66,13 @@ Definido em [`apps/web/src/App.tsx`](apps/web/src/App.tsx). Qualquer rota descon
 
 "Gestão" significa **todos os papéis menos `Motorista`**. Ele tem `/minhas-rotas` como home e mais duas telas em leitura: veículos e manutenções — saber o estado do caminhão faz parte do trabalho.
 
-Os guardas estão em [`apps/web/src/components/RequireAuth.tsx`](apps/web/src/components/RequireAuth.tsx) e são **dois**: `RequireAuth`, que redireciona para `/login` quando não há token (guardando a origem em `location.state.from`), e `RequirePode`, que recebe um predicado de `auth/permissions.ts`.
+Os guardas estão em [`apps/web/src/components/RequireAuth.tsx`](apps/web/src/components/RequireAuth.tsx) e são **dois**: `RequireAuth`, que redireciona para `/login` quando não há sessão (guardando a origem em `location.state.from`), e `RequirePode`, que recebe um predicado de `auth/permissions.ts`. Como o JWT vive num cookie `HttpOnly` invisível ao JS, `RequireAuth` decide pela identidade em cache (`useSession`), não por um token lido do storage — o 401 do servidor cobre o caso de cookie ausente/expirado que o guard não vê.
 
 Cada rota declara a própria permissão (`<RequirePode permitido={pode.verVeiculos} />`). Um guarda por bloco de papéis deixou de fazer sentido quando o motorista passou a enxergar parte do painel: quem manda é a tela, não o papel.
 
 **`/perfil` é a exceção**: fica dentro de `RequireAuth` e fora de qualquer `RequirePode`. Editar o próprio cadastro é direito de quem está autenticado, seja qual for o papel — e envolvê-la num predicado seria criar um `pode.verPerfil` que devolve `true` para todo mundo.
 
-**Todo redirecionamento de guarda usa `rotaInicial(role)`** de `auth/permissions.ts` (`/minhas-rotas` para motorista, `/dashboard` para o resto), nunca `/dashboard` fixo — para o motorista o dashboard é justamente uma tela bloqueada, e o par de guardas entraria em pingue-pongue. Os destinos pós-login (`LoginPage`) e pós-aceite de convite (`AcceptInvitePage`) usam a mesma função, a partir do `role` que vem no `AuthResponse`.
+**Todo redirecionamento de guarda usa `rotaInicial(role)`** de `auth/permissions.ts` (`/minhas-rotas` para motorista, `/dashboard` para o resto), nunca `/dashboard` fixo — para o motorista o dashboard é justamente uma tela bloqueada, e o par de guardas entraria em pingue-pongue. Os destinos pós-login (`LoginPage`) e pós-aceite de convite (`AcceptInvitePage`) usam a mesma função, a partir do `role` que vem na `SessaoResponse`.
 
 O servidor continua sendo a autoridade — os guardas só evitam telas que resultariam em 401/403.
 
@@ -117,7 +117,7 @@ Seções, na ordem: barra fixa reta (âncoras, "Entrar", CTA de WhatsApp, menu `
 Divide a tela em painel de marca (escondido abaixo de `md`) e formulário.
 
 - Campos: e-mail e senha, com botão de mostrar/ocultar senha.
-- `POST /auth/login` → grava token, refreshToken e identidade; navega para `location.state.from` ou `/dashboard`.
+- `POST /auth/login` → token e refreshToken chegam em cookie `HttpOnly` (o front nunca os lê); `tokenStorage.setSession` grava só a identidade; navega para `location.state.from` ou `/dashboard`.
 - Erros da API aparecem acima do botão; link para "Esqueci minha senha".
 - A logo do painel esquerdo é um link para a landing page.
 - Não existe link de cadastro: contas nascem por convite.
@@ -346,8 +346,8 @@ Formulário único, sem tabela: **nome, CPF e data de nascimento** do próprio u
 
 ### 6.1 `apps/web/src/api/http.ts`
 
-- `baseURL` = `VITE_API_URL`; interceptor de request injeta `Authorization: Bearer`.
-- Interceptor de response: em **401**, dispara um único refresh (`refreshInFlight` como lock — a rotação do refresh token invalida o anterior, então dois refreshes paralelos quebrariam o segundo), refaz a requisição original uma vez e, se o refresh falhar, limpa a sessão e força `/login`.
+- `baseURL` = `VITE_API_URL`; `withCredentials: true` — o JWT e o refresh token viajam em cookie `HttpOnly; Secure; SameSite=None` setado pelo servidor, nunca em `localStorage`/header `Authorization`. Sem `withCredentials` o navegador não anexaria o cookie numa chamada cross-origin (front e API vivem em portas/domínios diferentes).
+- Interceptor de response: em **401**, dispara um único refresh (`refreshInFlight` como lock — a rotação do refresh token invalida o anterior, então dois refreshes paralelos quebrariam o segundo), refaz a requisição original uma vez e, se o refresh falhar, limpa a sessão e força `/login`. `POST /auth/refresh` não leva corpo: o refresh token vai no cookie, anexado sozinho pelo navegador — o refresh renova esse mesmo cookie, e a requisição original é só repetida.
 - Rotas anônimas (`/auth/login`, `/auth/refresh`, `/auth/esqueci-senha`, `/auth/redefinir-senha`, `/convite/aceitar`) são isentas: 401 ali é credencial inválida, não sessão expirada.
 - `unwrap()` desembrulha o envelope `{ sucesso, mensagem, dados, erros }` e lança `ApiError` quando `sucesso: false`.
 
@@ -357,7 +357,7 @@ Formulário único, sem tabela: **nome, CPF e data de nascimento** do próprio u
 
 ### 6.3 Sessão
 
-- [`tokenStorage`](apps/web/src/api/tokenStorage.ts) guarda `frota360.token`, `frota360.refreshToken` e `frota360.user` (nome, e-mail, role) no `localStorage`.
+- [`tokenStorage`](apps/web/src/api/tokenStorage.ts) guarda só `frota360.user` (nome, e-mail, role) no `localStorage` — puramente para a UI exibir quem está logado. Token e refresh token não passam por aqui: chegam do servidor em cookie `HttpOnly`, invisível a JavaScript (mitiga exfiltração por XSS — era o achado do React Doctor `auth-token-in-web-storage`), e nenhum código do front os lê ou escreve.
 - [`useSession`](apps/web/src/auth/useSession.ts) expõe o usuário logado de forma reativa via `useSyncExternalStore`, ouvindo o evento `storage` (outras abas) e um evento próprio `frota360:sessao` (esta aba — `localStorage` não notifica quem escreveu).
 - O papel usado pela UI vem desse cache local; ele só é atualizado quando o token renova. Mudança de papel pode levar até 1 h para refletir na interface — o servidor, porém, já recusa a ação antes disso.
 

@@ -1,8 +1,9 @@
-import type { AuthResponse, Role } from './types'
+import type { Role, SessaoResponse } from './types'
 
-const TOKEN_KEY = 'frota360.token'
-const REFRESH_KEY = 'frota360.refreshToken'
-const USER_KEY = 'frota360.user'
+// O ":v1" existe para o dia em que o formato do StoredUser mudar: uma chave sem versão faria
+// o JSON.parse de uma sessão salva no formato antigo quebrar (ou, pior, "funcionar" com campos
+// errados). Bastando trocar para ":v2" nesse dia, sessões antigas somem em vez de crashar.
+const USER_KEY = 'frota360.user:v1'
 
 export interface StoredUser {
   nome: string
@@ -10,17 +11,14 @@ export interface StoredUser {
   role: Role
 }
 
+// Token e refresh token não passam por aqui: o servidor os entrega em cookie HttpOnly, fora
+// do alcance do JavaScript — só identidade (para exibição na UI) fica no localStorage.
 export const tokenStorage = {
-  getToken: () => localStorage.getItem(TOKEN_KEY),
-  getRefreshToken: () => localStorage.getItem(REFRESH_KEY),
-
-  /** Grava tokens + identidade a partir do AuthResponse (login, refresh, aceite de convite). */
-  setSession(auth: AuthResponse) {
-    localStorage.setItem(TOKEN_KEY, auth.token)
-    localStorage.setItem(REFRESH_KEY, auth.refreshToken)
+  /** Grava a identidade a partir da SessaoResponse (login, refresh, aceite de convite). */
+  setSession(sessao: SessaoResponse) {
     localStorage.setItem(
       USER_KEY,
-      JSON.stringify({ nome: auth.nome, email: auth.email, role: auth.role } satisfies StoredUser),
+      JSON.stringify({ nome: sessao.nome, email: sessao.email, role: sessao.role } satisfies StoredUser),
     )
   },
 
@@ -46,8 +44,6 @@ export const tokenStorage = {
   },
 
   clear() {
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(REFRESH_KEY)
     localStorage.removeItem(USER_KEY)
   },
 }

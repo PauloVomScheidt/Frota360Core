@@ -1,5 +1,6 @@
 using Asp.Versioning;
 using FluentValidation;
+using Frota360.Api.Services;
 using Frota360.Application.DTOs.Usuario.Request;
 using Frota360.Application.DTOs.Usuario.Response;
 using Frota360.Application.Interfaces;
@@ -20,12 +21,12 @@ namespace Frota360.Api.Controllers
                             IValidator<EsqueciSenhaRequest> esqueciSenhaValidator,
                             IValidator<RedefinirSenhaRequest> redefinirSenhaValidator) : ControllerBase
     {
-        /// <summary>Autentica um usuário e retorna o token JWT e o refresh token.</summary>
+        /// <summary>Autentica um usuário. Token JWT e refresh token saem em cookie HttpOnly, não no corpo.</summary>
         /// <response code="200">Login realizado com sucesso</response>
         /// <response code="401">Credenciais inválidas</response>
         [HttpPost("login")]
         [EnableRateLimiting("auth")]
-        [ProducesResponseType<ApiResponse<AuthResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<SessaoResponse>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
@@ -42,18 +43,25 @@ namespace Frota360.Api.Controllers
             if (response is null)
                 return Unauthorized(ApiResponse<object>.Fail("E-mail ou senha inválidos."));
 
-            return Ok(ApiResponse<AuthResponse>.Ok(response, "Login realizado com sucesso."));
+            SessaoCookies.Emitir(Response, response.Token, response.RefreshToken);
+            return Ok(ApiResponse<SessaoResponse>.Ok(response.ToSessaoResponse(), "Login realizado com sucesso."));
         }
 
-        /// <summary>Renova o token JWT a partir de um refresh token válido (rotaciona o refresh token).</summary>
+        /// <summary>Renova o token JWT a partir do refresh token do cookie (rotaciona o refresh token).</summary>
         /// <response code="200">Token renovado com sucesso</response>
         /// <response code="401">Refresh token inválido ou expirado</response>
         [HttpPost("refresh")]
         [EnableRateLimiting("auth")]
-        [ProducesResponseType<ApiResponse<AuthResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<SessaoResponse>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status401Unauthorized)]
-        public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequest request)
+        public async Task<IActionResult> Refresh()
         {
+            // O refresh token nunca chega por JavaScript: só o navegador o conhece, via
+            // cookie HttpOnly, e o anexa sozinho nesta requisição.
+            if (!Request.Cookies.TryGetValue(CookiesDeSessao.Refresh, out var refreshTokenCookie))
+                return Unauthorized(ApiResponse<object>.Fail("Refresh token inválido ou expirado."));
+
+            var request = new RefreshTokenRequest { RefreshToken = refreshTokenCookie };
             var validation = await refreshValidator.ValidateAsync(request);
 
             if (!validation.IsValid)
@@ -67,7 +75,8 @@ namespace Frota360.Api.Controllers
             if (response is null)
                 return Unauthorized(ApiResponse<object>.Fail("Refresh token inválido ou expirado."));
 
-            return Ok(ApiResponse<AuthResponse>.Ok(response, "Token renovado com sucesso."));
+            SessaoCookies.Emitir(Response, response.Token, response.RefreshToken);
+            return Ok(ApiResponse<SessaoResponse>.Ok(response.ToSessaoResponse(), "Token renovado com sucesso."));
         }
 
         /// <summary>Solicita o reset de senha; se o e-mail estiver cadastrado, envia o link por e-mail.</summary>
@@ -133,6 +142,7 @@ namespace Frota360.Api.Controllers
                 return Unauthorized(ApiResponse<object>.Fail("Não autorizado."));
 
             await authService.LogoutAsync(usuarioId);
+            SessaoCookies.Limpar(Response);
 
             return Ok(ApiResponse<object>.Ok(null!, "Logout realizado com sucesso."));
         }

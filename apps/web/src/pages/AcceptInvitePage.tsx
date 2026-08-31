@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { aceitarConvite } from '../api/convites'
 import { mensagensDeErro } from '../api/errors'
 import { validarSenha } from '../auth/senha'
@@ -18,6 +18,7 @@ export function AcceptInvitePage() {
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token') ?? ''
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const [nome, setNome] = useState('')
   // Opcionais: hoje é o único lugar onde CPF e nascimento entram (não há tela de perfil).
@@ -31,6 +32,11 @@ export function AcceptInvitePage() {
   const aceitarMutation = useMutation({
     mutationFn: aceitarConvite,
     onSuccess: (auth) => {
+      // Mesmo motivo do LoginPage: /convite também é alcançável já autenticado (outra
+      // conta aceitando um segundo convite na mesma aba), e as chaves do React Query
+      // não carregam a empresa — sem isto, dado de outra empresa poderia sobreviver
+      // no cache até o staleTime vencer.
+      queryClient.clear()
       notificarMudancaDeSessao()
       // O papel vem do convite: motorista cai direto em "Minhas rotas".
       navigate(rotaInicial(auth.role), { replace: true })
