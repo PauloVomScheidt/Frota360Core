@@ -1,4 +1,4 @@
-# CLAUDE.md
+﻿# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with the **backend** of the Frota360 monorepo (`apps/api/`).
 
@@ -23,9 +23,30 @@ dotnet ef database update --project src/Infrastructure --startup-project src/Api
 dotnet user-secrets set "Jwt:Key" "<32+ caracteres>" --project src/Api
 ```
 
+Os `appsettings*.json` não são versionados — copie `src/Api/appsettings.example.json` para `appsettings.json` e `appsettings.Development.json` ao clonar. Segredos ficam em user-secrets, nunca no arquivo.
+
 `AddInfrastructure` lança na inicialização se `Jwt:Key` faltar ou tiver menos de 32 caracteres. Em produção: `Jwt__Key`, `Resend__ApiKey`, `Backoffice__ApiKey`, `ConnectionStrings__DefaultConnection` por variável de ambiente.
 
-O `Dockerfile` builda só a API e tem **`apps/api/` como contexto** — os `COPY` são relativos a esta pasta.
+O `Dockerfile` builda só a API e tem **`apps/api/` como contexto** — os `COPY` são relativos a esta pasta, e o `.dockerignore` ao lado dele é quem impede que `bin/`, `obj/` e os appsettings de ambiente entrem na imagem. A imagem roda como o usuário `app`, sem privilégio.
+
+## Produção
+
+Roteiro em [docs/deploy.md](../../docs/deploy.md), decisões em [docs/contexto-api.md](../../docs/contexto-api.md) (§ Deploy). O que muda no código:
+
+- **Fora de Development não há Scalar nem OpenAPI**, e o Serilog escreve só no console (é o que permite rodar sem privilégio). `UseHttpsRedirection` também só vale em Development — em produção quem termina o TLS é o Caddy.
+- **`UseForwardedHeaders` é o primeiro middleware do pipeline** e confia apenas na sub-rede de `ProxyReverso__RedeConfiavel`. Sem ele, `LogAuditoria.IpOrigem` grava o IP do proxy e o rate limiter vira um teto compartilhado por todos os usuários. Mexeu na ordem dos middlewares? Ele continua em primeiro.
+- **Configuração nova que seja obrigatória em produção entra em `ValidarConfiguracaoDeProducao`** (`InfrastructureExtensions`), que derruba o boot com mensagem dizendo o que falta — e no `.env.example`.
+- **Migrations rodam no boot** em Production/Staging (`MigracaoDeBanco`), com retry. Em Development continua sendo `dotnet ef database update` à mão.
+
+## Banco: PostgreSQL
+
+O banco é **PostgreSQL 17** (provider Npgsql) desde 30/08/2026 — `docker compose up -d` na raiz do monorepo sobe o de desenvolvimento. Três regras que decorrem disso e que valem para código novo:
+
+- **Data**: use **`DateTime.Now`** em tudo que é persistido — o sistema grava **hora local de Brasília**, e o front exibe o valor verbatim. A única exceção é o `expires` do JWT em `TokenService`, que é `UtcNow` porque o claim `exp` é epoch UTC por protocolo. Não use `HasColumnType` em `DateTime`: a convenção global no `Frota360DbContext` já mapeia todo `DateTime`/`DateTime?` para `timestamp without time zone` e aplica o `DataSemFusoConverter`, que descarta o `DateTimeKind` na escrita.
+- **E-mail**: todo lookup ou gravação de e-mail passa por `EmailNormalizado.De` (`src/Domain/Common`). O PostgreSQL compara texto case-sensitive; sem isso, quem digitar outra caixa não loga. Hashes de token são Base64 e continuam com comparação exata.
+- **Default SQL**: use `CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'`, não `GETDATE()` nem `'UTC'` — o container do Postgres roda em UTC. Índice filtrado usa aspas duplas (`"CPF" IS NOT NULL`), não colchetes.
+
+O aprofundamento — inclusive a dívida de fuso deixada para depois — está em [docs/contexto-api.md](../../docs/contexto-api.md) (§ Banco: PostgreSQL).
 
 ## Camadas
 
@@ -123,9 +144,13 @@ Não há query filter global no EF — o filtro é responsabilidade de cada mét
 
 ## Testes
 
-`tests/Frota360.Tests/`, espelhando a Application: `UseCases/<Agregado>/<Agregado>HandlersTests.cs`, `<Agregado>MappingsTests.cs`, `<X>ValidatorTests.cs`; `Services/<Servico>Tests.cs`; `Abstractions/DispatcherTests.cs`. O projeto referencia Application e Domain — **não referencia Infrastructure nem a API**, então não há teste de repositório, DbContext ou endpoint.
+Duas suítes, com papéis distintos — veja [docs/contexto-api.md](../../docs/contexto-api.md) (§ Testes).
 
-Padrão: xUnit + NSubstitute, sem banco.
+**`tests/Frota360.Tests/`** — unitários, espelhando a Application: `UseCases/<Agregado>/<Agregado>HandlersTests.cs`, `<Agregado>MappingsTests.cs`, `<X>ValidatorTests.cs`; `Services/<Servico>Tests.cs`; `Abstractions/DispatcherTests.cs`. Referencia Application e Domain — **não referencia Infrastructure nem a API**. É aqui que vai teste de handler, mapping, validator e service.
+
+**`tests/Frota360.IntegrationTests/`** — o único que referencia Infrastructure. Sobe um `postgres:17` descartável com Testcontainers e roda os repositórios de verdade. É aqui que vai o que só o banco prova: mapeamento de tipo, `DateTimeKind`, collation, índice, tradução de query. Exige Docker no ar. **Mexeu em `Frota360DbContext`, migration ou provider? O teste vai neste projeto.**
+
+Padrão dos unitários: xUnit + NSubstitute, sem banco.
 
 ```csharp
 private readonly IVeiculoRepository _repository = Substitute.For<IVeiculoRepository>();

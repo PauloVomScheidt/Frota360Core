@@ -15,7 +15,7 @@ namespace Frota360.Application.UseCases.Manutencoes.Validator
             // ser barrado por lançar "hoje" antes de o UTC virar.
             RuleFor(x => x.DataRealizacao)
                 .NotEmpty().WithMessage("Data de realização é obrigatória.")
-                .LessThanOrEqualTo(_ => DateTime.UtcNow.Date.AddDays(1))
+                .LessThanOrEqualTo(_ => DateTime.Now.Date.AddDays(1))
                 .WithMessage("Data de realização não pode estar no futuro.");
 
             RuleFor(x => x.Custo)

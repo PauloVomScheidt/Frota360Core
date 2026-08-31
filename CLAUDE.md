@@ -1,10 +1,10 @@
-# CLAUDE.md
+﻿# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Monorepo do **Frota360** — sistema de gestão de frotas multi-tenant por empresa. Reúne a API REST .NET 10 e o front-end React que a consome, que antes viviam em repositórios separados (`Frota360`/`Rota360` e `Frota360Web`).
 
-**Escreva tudo em português**: classes, métodos, DTOs, comentários, logs, textos de UI e mensagens de resposta. A única exceção está registrada em [Diagrama de arquitetura](#diagrama-de-arquitetura).
+**Escreva tudo em português**: classes, métodos, DTOs, comentários, logs, textos de UI e mensagens de resposta.
 
 ## Mapa do repositório
 
@@ -23,12 +23,22 @@ apps/
 docs/
 ├── contexto-api.md        contexto profundo do backend
 ├── contexto-web.md        contexto profundo do front (tela a tela, cache keys, endpoints)
-└── arquitetura.py         gera docs/arquitetura.png
+└── deploy.md              roteiro de produção (EC2 + Docker Compose) e ensaio local
+.github/workflows/ci.yml   CI — jobs `api`, `web` e `docker` (sem CD)
+docker-compose.yml         banco de desenvolvimento
+docker-compose.prod.yml    stack de produção (db + api + caddy)
+docker-compose.local.yml   override que ensaia a stack de produção sem domínio
+Caddyfile / Caddyfile.local  proxy reverso — produção e ensaio
+.env.example               modelo da configuração de produção
 ```
 
 Cada app é independente: comandos rodam de dentro dele, e os caminhos nos seus `CLAUDE.md`, `.slnx`, `.csproj` e `Dockerfile` são relativos à raiz do próprio app.
 
 **Antes de mexer em código, leia o `CLAUDE.md` do app**: [apps/api/CLAUDE.md](apps/api/CLAUDE.md) ou [apps/web/CLAUDE.md](apps/web/CLAUDE.md). Este arquivo cobre só o que é transversal aos dois — e as três seções abaixo (navegação, documentação, contrato) valem para os dois lados, não estão repetidas lá.
+
+## Convenções de Codigo
+
+Incluir a menor quantidade possivel de comentarios, o codigo de ser autoexplicativo, limpo e facil de entender, somente quando for essencial para o entendimento de alguma configuração ou regra de negocio não explicita
 
 ## Commits
 
@@ -47,12 +57,6 @@ Após todas as alterações realizadas, atualizar as documentações de contexto
 
 O aprofundamento vive em `docs/contexto-api.md` e `docs/contexto-web.md` — atualize o lado correspondente, e **os dois** quando a mudança atravessa a fronteira (endpoint, envelope, papel, regra de negócio visível na tela).
 
-### Diagrama de arquitetura
-
-O diagrama vive em `docs/arquitetura.png` e é **gerado** por `docs/arquitetura.py` (Pillow). Não edite o PNG à mão: altere o script e rode `python docs/arquitetura.py` a partir da raiz. Regenere sempre que mudar camada, pipeline de request ou ponto de isolamento por `EmpresaId`.
-
-O diagrama é a **única exceção à regra do português**: seus rótulos são em inglês, para circular fora do time. Paleta monocromática (tons de cinza + preto), sem cor de destaque — os pontos de isolamento por `EmpresaId` são marcados por contorno preto e selo numerado, não por cor. Mantenha isso ao editar o script.
-
 ## O contrato entre API e front
 
 O motivo de os dois viverem no mesmo repositório: mudança de um lado quase sempre exige mexer no outro **no mesmo commit**.
@@ -69,7 +73,7 @@ O motivo de os dois viverem no mesmo repositório: mudança de um lado quase sem
 | Motorista | **é o próprio `Usuario`** com `Role = Motorista` (não há entidade `Motorista`); `Rota.CodigoMotorista` referencia `Usuario`, e o escopo de `/rota/minhas` sai do `sub` do token. Lê veículos e manutenções (sem `Custo`) | as entradas `pode.ver*` são **por tela** e o guarda `RequirePode` as aplica na rota; `rotaInicial(role)` é o destino de todo redirecionamento |
 | Multi-tenant | `EmpresaId` vem da claim `empresaId` do JWT | transparente — o cliente nunca envia id de empresa |
 | Erro de regra de negócio | `throw new InvalidOperationException("texto ao usuário")` → 422 | mensagem exibida literalmente via `mensagensDeErro()` |
-| URL da API | `https://localhost:7271` / `http://localhost:5062` (`src/Api/Properties/launchSettings.json`) | `VITE_API_URL` em `.env.development` — hoje aponta para `https://localhost:7271/api/v1` |
+| URL da API | dev: `https://localhost:7271` / `http://localhost:5062`; prod: `api.frota360app.com.br` atrás do Caddy | `VITE_API_URL` — **sempre terminando em `/api/v1`**, porque os módulos de `src/api` chamam caminhos relativos sobre o `baseURL`. Vazio, o `http.ts` lança no boot |
 | CORS | origem liberada: `http://localhost:5173` | `npm run dev` usa porta fixa 5173 por causa disso |
 
 **Ao criar ou alterar um endpoint, o roteiro completo é:** controller + handler + validator + teste → `docs/contexto-api.md` → `apps/web/src/api/<recurso>.ts` e `types.ts` → `docs/contexto-web.md` (mapa de endpoints §6.5 e cross-invalidation §6.4) → tela.
@@ -77,6 +81,12 @@ O motivo de os dois viverem no mesmo repositório: mudança de um lado quase sem
 `npm run gen:api` (em `apps/web/`) regenera só `src/api/schema.d.ts` a partir do OpenAPI e **exige a API rodando** — ele não atualiza `types.ts`.
 
 ## Subir o sistema
+
+O banco é **PostgreSQL 17** e roda em container — suba antes dos dois terminais:
+
+```powershell
+docker compose up -d             # postgres:17 na 5432, banco `frota360`
+```
 
 Dois terminais:
 
@@ -93,4 +103,40 @@ npm run dev                      # http://localhost:5173 (porta fixa — origem 
 
 Num banco zerado não há usuários: provisione uma empresa pelo backoffice da API (`POST /backoffice/empresa`) e abra o `linkConvite` retornado — ele cai em `/convite?token=...`.
 
+Para poupar esse passo em dev, `./scripts/seed-dev.ps1` faz o bootstrap inteiro (empresa + Admin + Motorista, senha `SenhaForte123`). É re-executável e não toca em outras empresas — só o `-Recriar` é destrutivo.
+
 Os demais comandos (build, testes, migrations, lint) estão no `CLAUDE.md` de cada app.
+
+## CI
+
+`.github/workflows/ci.yml`, em PR e push para `main`/`develop`. Três jobs — `api`, `web` e
+`docker` —, e os ids dos jobs são os nomes dos required checks. Duas coisas a lembrar ao mexer:
+
+- **Não adicione filtro de path.** `on.<evento>.paths` impede o workflow de rodar, e um required
+  check que nunca reporta trava o PR para sempre. Se algum dia precisar pular job, use um job de
+  detecção + `if:` — job pulado por `if:` conta como satisfeito; workflow que não roda, não.
+- **O job `docker` planta iscas antes do build.** Num clone limpo os arquivos que o
+  `.dockerignore` exclui não existem, então a verificação passaria vazia. Mexeu no
+  `.dockerignore` ou no `Dockerfile`? Confira que a asserção ainda reprova quando deve — a
+  receita está no README.
+
+Detalhe do lado da API (por que não há `services: postgres`) em
+[docs/contexto-api.md](docs/contexto-api.md) (§ Testes).
+
+## Produção
+
+O deploy é uma EC2 única com Docker Compose (API + Postgres + Caddy) e o front estático em
+S3/CloudFront. O roteiro está em [docs/deploy.md](docs/deploy.md); o **porquê** de cada decisão,
+em [docs/contexto-api.md](docs/contexto-api.md) (§ Deploy).
+
+Três coisas que valem para qualquer mudança:
+
+- **A stack de produção tem ensaio local.** `docker-compose.local.yml` sobe exatamente a mesma
+  configuração trocando só o Caddyfile, sem exigir domínio. Mexeu em compose, Dockerfile ou
+  pipeline de middleware? Ensaie antes.
+- **O `ForwardedHeaders` depende da sub-rede do compose.** Se mudar `172.28.0.0/16` em
+  `docker-compose.prod.yml`, mude `ProxyReverso__RedeConfiavel` junto — senão a auditoria volta
+  a gravar o IP do proxy, em silêncio.
+- **Nada de segredo em arquivo versionado.** `appsettings.json` é a base sem segredo e vai para
+  a imagem; os de ambiente são gitignored e excluídos pelo `.dockerignore`. Em produção tudo vem
+  do `.env` da instância (modelo em `.env.example`).

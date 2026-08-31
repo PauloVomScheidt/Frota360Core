@@ -28,6 +28,10 @@ namespace Frota360.Application.Services
 
         public async Task<ConviteCriadoResponse> CriarParaEmpresaAsync(int empresaId, int? criadoPorUsuarioId, string email, string role)
         {
+            // Único ponto em que um e-mail entra no sistema: o convite. O Usuario nasce em
+            // AceitarAsync copiando convite.Email, então normalizar aqui cobre os dois.
+            email = EmailNormalizado.De(email);
+
             if (await usuarioRepository.ExisteEmailAsync(email))
                 throw new InvalidOperationException("Já existe um usuário com este e-mail.");
 
@@ -43,14 +47,14 @@ namespace Frota360.Application.Services
                 Email = email,
                 Role = role,
                 TokenHash = TokenHelper.Hash(token),
-                ExpiraEm = DateTime.UtcNow.Add(ValidadeConvite),
+                ExpiraEm = DateTime.Now.Add(ValidadeConvite),
                 CriadoPorUsuarioId = criadoPorUsuarioId,
-                DataInclusao = DateTime.UtcNow
+                DataInclusao = DateTime.Now
             });
 
             var link = MontarLink(token);
 
-            await emailService.EnviarAsync(email, "Convite para o Frota360", CorpoEmail(role, link));
+            await emailService.EnviarAsync(email, "Convite para o Frota360", CorpoDoConvite(role, link));
 
             logger.LogInformation("Convite criado para {Email} como {Role} na empresa {EmpresaId}", email, role, empresaId);
 
@@ -76,7 +80,7 @@ namespace Frota360.Application.Services
         {
             var convite = await conviteRepository.GetByTokenHashAsync(TokenHelper.Hash(request.Token));
 
-            if (convite is null || convite.UtilizadoEm is not null || convite.ExpiraEm < DateTime.UtcNow)
+            if (convite is null || convite.UtilizadoEm is not null || convite.ExpiraEm < DateTime.Now)
             {
                 logger.LogWarning("Tentativa de aceite de convite inválido, utilizado ou expirado");
                 return null;
@@ -99,11 +103,11 @@ namespace Frota360.Application.Services
                 DataNascimento = request.DataNascimento,
                 Ativo = true,
                 RefreshTokenHash = TokenHelper.Hash(refreshToken),
-                RefreshTokenExpiraEm = DateTime.UtcNow.Add(RefreshTokenValidade),
-                DataInclusao = DateTime.UtcNow
+                RefreshTokenExpiraEm = DateTime.Now.Add(RefreshTokenValidade),
+                DataInclusao = DateTime.Now
             });
 
-            convite.UtilizadoEm = DateTime.UtcNow;
+            convite.UtilizadoEm = DateTime.Now;
             await conviteRepository.UpdateAsync(convite);
 
             logger.LogInformation("Convite aceito. Usuário {Id} criado na empresa {EmpresaId} como {Role}",
@@ -163,10 +167,10 @@ namespace Frota360.Application.Services
         private string MontarLink(string token)
             => $"{frontendSettings.BaseUrl.TrimEnd('/')}/convite?token={Uri.EscapeDataString(token)}";
 
-        private static string CorpoEmail(string role, string link) => $"""
-            <p>Você foi convidado(a) para acessar o <strong>Frota360</strong> com o perfil <strong>{role}</strong>.</p>
-            <p><a href="{link}">Clique aqui para criar sua conta</a>. O link é válido por 7 dias.</p>
-            <p>Se você não esperava este convite, ignore este e-mail.</p>
-            """;
+        private static CorpoDeEmail CorpoDoConvite(string role, string link) => CorpoDeEmail.ComLink(
+            chamada: $"Você foi convidado(a) para acessar o Frota360 com o perfil {role}.",
+            acao: "Criar sua conta (link válido por 7 dias)",
+            link: link,
+            aviso: "Se você não esperava este convite, ignore este e-mail.");
     }
 }

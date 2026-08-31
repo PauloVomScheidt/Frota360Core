@@ -1,4 +1,4 @@
-# Frota360
+﻿# Frota360
 
 API REST de **gestão de frotas multi-tenant**, construída em .NET 10. Cada empresa cliente enxerga apenas os seus veículos, motoristas, rotas e manutenções — o isolamento é aplicado em cada acesso a dados, a partir da claim `empresaId` do JWT.
 
@@ -37,7 +37,8 @@ apps/api/
 │   ├── Infrastructure/    Frota360.Infrastructure
 │   └── Api/               Frota360.Api  ← ponto de entrada
 └── tests/
-    └── Frota360.Tests/    xUnit + NSubstitute
+    ├── Frota360.Tests/            xUnit + NSubstitute, sem banco
+    └── Frota360.IntegrationTests/ Testcontainers + PostgreSQL real
 ```
 
 Os `.csproj` mantêm o prefixo `Frota360.` (`src/Api/Frota360.Api.csproj`); só os diretórios são curtos. O contexto profundo de domínio está em [`docs/contexto-api.md`](../../docs/contexto-api.md), na raiz do monorepo.
@@ -62,7 +63,7 @@ Os `.csproj` mantêm o prefixo `Frota360.` (`src/Api/Frota360.Api.csproj`); só 
 ## Stack
 
 - **.NET 10** / ASP.NET Core
-- **Entity Framework Core 10** + SQL Server
+- **Entity Framework Core 10** + PostgreSQL (provider Npgsql)
 - **JWT Bearer** + BCrypt para senhas
 - **FluentValidation** para validação de entrada
 - **Serilog** (console + arquivo diário, retenção de 7 dias)
@@ -76,10 +77,6 @@ Os `.csproj` mantêm o prefixo `Frota360.` (`src/Api/Frota360.Api.csproj`); só 
 ## Arquitetura
 
 Clean Architecture em quatro projetos, com CQRS manual na camada de aplicação.
-
-![Frota360 API architecture — the four layers, the CQRS request flow and the five tenant-isolation points](../../docs/arquitetura.png)
-
-> O diagrama acima ([`docs/arquitetura.png`](../../docs/arquitetura.png)) mostra, num único desenho, as quatro camadas, o caminho de um request pelo pipeline CQRS e os cinco pontos onde o isolamento por `EmpresaId` é aplicado. Os rótulos estão em inglês, para circular fora do time. Ele é gerado por script — veja [Diagrama de arquitetura](#diagrama-de-arquitetura).
 
 ```
 src/Domain           Frota360.Domain — entidades, enums, ApiResponse<T>, Roles, interfaces
@@ -97,17 +94,6 @@ src/Api              Frota360.Api — Controllers, ExceptionMiddleware, CurrentU
 | `Frota360.Application` (`src/Application`) | Domain | Infrastructure, ASP.NET, `DbContext` |
 | `Frota360.Infrastructure` (`src/Infrastructure`) | Domain | Application |
 | `Frota360.Api` (`src/Api`) | Application + Infrastructure | — |
-
-### Diagrama de arquitetura
-
-O PNG em [`docs/arquitetura.png`](../../docs/arquitetura.png) é gerado por [`docs/arquitetura.py`](../../docs/arquitetura.py) — o desenho fica versionado junto com a fonte que o produz, então basta rodar o script depois de mudar a arquitetura:
-
-```powershell
-python -m pip install pillow
-python ../../docs/arquitetura.py
-```
-
-O script usa as fontes Segoe UI e Consolas (padrão do Windows).
 
 ### Fluxo de um request
 
@@ -137,7 +123,7 @@ Não há query filter global no EF; o filtro é responsabilidade explícita de c
 
 ## Como rodar
 
-Pré-requisitos: **.NET 10 SDK** e uma instância de **SQL Server** (LocalDB ou SQL Express servem).
+Pré-requisitos: **.NET 10 SDK** e uma instância de **PostgreSQL 17** (`docker compose up -d` na raiz do monorepo sobe uma).
 
 ```powershell
 # 1. Restaurar e compilar
@@ -181,9 +167,22 @@ Em desenvolvimento, sem `Resend:ApiKey`, o e-mail cai no `LogEmailService` e o l
 
 ## Configuração
 
+Os três `appsettings*.json` **não são versionados** (estão no `.gitignore`, porque carregam
+connection string e chaves). O que vai para o git é o template
+[`src/Api/appsettings.example.json`](src/Api/appsettings.example.json) — ao clonar o repo,
+copie-o e preencha:
+
+```powershell
+copy src/Api/appsettings.example.json src/Api/appsettings.json
+copy src/Api/appsettings.example.json src/Api/appsettings.Development.json
+```
+
+Os campos de segredo ficam **vazios** no template de propósito: eles não moram em arquivo,
+e sim em `dotnet user-secrets` (dev) ou variável de ambiente (produção).
+
 | Chave | Para que serve |
 |---|---|
-| `ConnectionStrings:DefaultConnection` | Conexão com o SQL Server |
+| `ConnectionStrings:DefaultConnection` | Conexão com o PostgreSQL (`Host=...;Port=5432;Database=...;Username=...;Password=...`) |
 | `Jwt:Key` | Assinatura do token — **32+ caracteres, obrigatória** |
 | `Jwt:Issuer` / `Jwt:Audience` | Emissor e audiência do JWT |
 | `Cors:AllowedOrigins` | Array de origens liberadas |
@@ -303,7 +302,12 @@ dotnet test --filter "FullyQualifiedName~ManutencaoHandlersTests"   # uma classe
 dotnet test --filter "DisplayName~Create_DevePersistir"             # um teste
 ```
 
-xUnit + NSubstitute, **sem banco**. O projeto de teste referencia apenas Application e Domain — não há teste de repositório, `DbContext` ou endpoint; a cobertura é de handlers, mappings, validators e services.
+Duas suítes:
+
+- **`tests/Frota360.Tests`** — xUnit + NSubstitute, **sem banco**. Referencia apenas Application e Domain; cobre handlers, mappings, validators e services. Roda em ~1 s, sem Docker.
+- **`tests/Frota360.IntegrationTests`** — sobe um `postgres:17` descartável com **Testcontainers**, aplica as migrations reais e exercita os repositórios. Cobre o que só o banco prova: política de `DateTimeKind`, collation de e-mail, índices únicos filtrados, precisão decimal e tradução de consulta. **Exige Docker no ar.**
+
+`dotnet test` roda as duas.
 
 Nomes em português, no padrão `Metodo_Cenario_DeveResultado`. Todo handler tem ao menos um teste que prova o escopo por empresa.
 
@@ -314,7 +318,7 @@ Nomes em português, no padrão `Metodo_Cenario_DeveResultado`. Todo handler tem
 ```powershell
 docker build -t frota360 .
 docker run -p 8080:8080 `
-  -e ConnectionStrings__DefaultConnection="Server=...;Database=Frota360;User Id=...;Password=...;TrustServerCertificate=True;" `
+  -e ConnectionStrings__DefaultConnection="Host=...;Port=5432;Database=frota360;Username=...;Password=..." `
   -e Jwt__Key="uma-chave-secreta-com-pelo-menos-32-caracteres" `
   frota360
 ```

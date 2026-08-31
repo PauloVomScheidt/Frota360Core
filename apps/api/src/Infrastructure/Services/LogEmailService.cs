@@ -1,3 +1,4 @@
+using Frota360.Domain.Common;
 using Frota360.Domain.Interfaces.Services;
 using Microsoft.Extensions.Logging;
 
@@ -9,9 +10,11 @@ namespace Frota360.Infrastructure.Services
     /// </summary>
     public class LogEmailService(ILogger<LogEmailService> logger) : IEmailService
     {
-        public Task EnviarAsync(string para, string assunto, string corpoHtml)
+        public Task EnviarAsync(string para, string assunto, CorpoDeEmail corpo)
         {
-            logger.LogWarning("[EMAIL DEV] Para: {Para} | Assunto: {Assunto} | Corpo: {Corpo}", para, assunto, corpoHtml);
+            // A versão em texto, e não a HTML: é ela que deixa o link legível no console.
+            logger.LogWarning("[EMAIL DEV] Para: {Para} | Assunto: {Assunto}{Quebra}{Corpo}",
+                para, assunto, Environment.NewLine, corpo.Texto);
             return Task.CompletedTask;
         }
     }

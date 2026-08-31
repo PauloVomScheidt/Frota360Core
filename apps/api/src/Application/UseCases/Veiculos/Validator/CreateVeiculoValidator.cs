@@ -33,7 +33,7 @@ namespace Frota360.Application.UseCases.Veiculos.Validator
                 .When(x => x.UltimoMotorista is not null);
 
             RuleFor(x => x.DataUltimaViagem)
-                .LessThanOrEqualTo(DateTime.UtcNow).WithMessage("Data da última viagem não pode ser futura.")
+                .LessThanOrEqualTo(DateTime.Now).WithMessage("Data da última viagem não pode ser futura.")
                 .When(x => x.DataUltimaViagem is not null);
         }
     }

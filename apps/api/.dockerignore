@@ -1,0 +1,42 @@
+# O contexto do build é apps/api/ (ver Dockerfile), então os caminhos aqui são relativos
+# a esta pasta. O Docker NÃO lê o .gitignore — sem este arquivo, o `COPY . .` do Dockerfile
+# levaria para dentro da imagem tudo o que está no disco, inclusive os appsettings de
+# ambiente, que são gitignored justamente por conterem connection string.
+
+# --- Artefatos de build da máquina host ---------------------------------------
+# Mais do que peso: o obj/ de uma máquina Windows carrega project.assets.json com caminhos
+# absolutos do Windows, e isso contamina o `dotnet restore` dentro do container Linux.
+**/bin/
+**/obj/
+**/out/
+**/publish/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+
+# --- Configuração com segredo -------------------------------------------------
+# O appsettings.json base é versionado e SOBE na imagem de propósito: ele carrega
+# Jwt:Issuer/Audience, níveis de log e AllowedHosts, que a aplicação precisa e não são
+# segredo. Os específicos de ambiente ficam de fora — em produção tudo vem por variável
+# de ambiente (ver .env.example na raiz do repositório).
+**/appsettings.Development.json
+**/appsettings.Production.json
+**/appsettings.Local.json
+**/appsettings.example.json
+**/*.user.json
+.env
+.env.*
+
+# --- Ruído --------------------------------------------------------------------
+**/logs/
+**/*.log
+**/TestResults/
+**/coverage*.json
+**/node_modules/
+.git/
+.gitignore
+**/.dockerignore
+Dockerfile
+*.md

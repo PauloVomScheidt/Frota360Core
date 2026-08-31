@@ -33,7 +33,7 @@ namespace Frota360.Application.UseCases.TiposManutencao.Commands.CreateTipoManut
                     Nome = nome,
                     IntervaloKm = request.IntervaloKm,
                     Ativo = true,
-                    DataInclusao = DateTime.UtcNow
+                    DataInclusao = DateTime.Now
                 });
 
                 logger.LogInformation("Tipo de manutenção cadastrado com sucesso. Id {Id} | Nome {Nome}", criado.Id, criado.Nome);

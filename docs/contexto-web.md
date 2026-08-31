@@ -1,4 +1,4 @@
-# Frota360 Web — Contexto do Front-end
+﻿# Frota360 Web — Contexto do Front-end
 
 > Documento **único** de referência do front-end (React + Vite): arquitetura, rotas, endpoints consumidos, o que cada tela faz e as armadilhas conhecidas.
 > Complementa [`contexto-api.md`](contexto-api.md): lá está o contrato do servidor, aqui está o que a aplicação faz com ele.
@@ -28,7 +28,7 @@ npm run lint     # oxlint
 npm run gen:api  # regenera tipos do OpenAPI (API precisa estar no ar)
 ```
 
-Base da API por ambiente: `VITE_API_URL` (`.env.development` aponta para `https://localhost:7271/api/v1`; `.env.production` está vazio e precisa ser preenchido no deploy). É a única variável de ambiente do projeto. A porta 5173 do `npm run dev` é fixa — é a origem liberada no CORS da API.
+Base da API por ambiente: `VITE_API_URL` (`.env.development` → `https://localhost:7271/api/v1`; `.env.production` → `https://api.frota360app.com.br/api/v1`). **O `/api/v1` faz parte do valor**: os módulos de `src/api` chamam caminhos relativos (`/veiculo`, `/auth/login`) sobre o `baseURL`. Se a variável estiver vazia, o `http.ts` lança na carga do módulo em vez de deixar o axios cair em URLs relativas à origem do front. É a única variável de ambiente do projeto. A porta 5173 do `npm run dev` é fixa — é a origem liberada no CORS da API.
 
 O `empresaId` **nunca** é enviado pelo cliente — vem do JWT. A multi-tenancy é transparente para o front.
 
@@ -516,3 +516,13 @@ Componentes reutilizados pelas telas:
 ## 10. Inconsistências conhecidas
 
 - `npm run gen:api` aponta para `http://localhost:5062/openapi/v1.json` ([package.json:10](package.json#L10)), enquanto a API roda em `https://localhost:7271` conforme o `.env.development`. O script provavelmente quebra como está.
+
+### Fuso horário — o front exibe verbatim, e isso é a política (30/08/2026)
+
+As datas chegam da API como ISO **sem sufixo `Z`** (`"2026-08-30T00:00:00"`), e `formatDate`/`formatDateTime` ([lib/format.ts](../apps/web/src/lib/format.ts)) as interpretam como hora local. **O front não converte fuso em lugar nenhum, de propósito.**
+
+Isso funciona porque o backend grava e devolve **hora local de Brasília**: o `DataSemFusoConverter` mapeia todo `DateTime` para `timestamp without time zone`, e o `Dockerfile` fixa `TZ=America/Sao_Paulo` para que o container concorde com a máquina de dev (detalhes em [contexto-api.md](contexto-api.md), § Banco: PostgreSQL). O valor que o usuário digita é o valor gravado e o valor exibido, sem intermediários.
+
+Se o backend algum dia passar a mandar `Z`, `new Date("2026-08-30T00:00:00Z").toLocaleDateString('pt-BR')` exibiria **29/08/2026** no Brasil — erro de um dia em toda tela com data. **Este arquivo e `lib/format.ts` mudam junto com aquela decisão, nunca depois dela.**
+
+Isso fechou dois bugs que este documento listava como conhecidos: o status "Expirado" de [ConvitesPage.tsx:17](../apps/web/src/pages/ConvitesPage.tsx#L17), que aparecia ~3 h antes do prazo real, e a `dataHora` de [AuditoriaPage.tsx:276](../apps/web/src/pages/AuditoriaPage.tsx#L276), que era gravada em UTC e exibida como local. Ambos eram a mesma causa — valor UTC lido como local — e sumiram quando o valor gravado passou a ser local de verdade.

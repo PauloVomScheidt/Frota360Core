@@ -13,7 +13,7 @@ namespace Frota360.Application.UseCases.Abastecimentos.Validator
 
             RuleFor(x => x.DataAbastecimento)
                 .NotEmpty().WithMessage("Data do abastecimento é obrigatória.")
-                .LessThanOrEqualTo(_ => DateTime.UtcNow.Date.AddDays(1))
+                .LessThanOrEqualTo(_ => DateTime.Now.Date.AddDays(1))
                 .WithMessage("Data do abastecimento não pode estar no futuro.");
 
             RuleFor(x => x.Observacao)

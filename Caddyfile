@@ -1,0 +1,44 @@
+# Proxy reverso de produção do Frota360.
+#
+# Substitui um ALB (~US$ 17/mês) e cuida do TLS sozinho: na primeira subida o Caddy pede o
+# certificado ao Let's Encrypt e o renova antes de vencer, desde que o volume caddy_data
+# esteja persistido (ver docker-compose.prod.yml).
+#
+# O domínio vem do .env (DOMINIO_API=api.frota360app.com.br) em vez de fixo aqui, para o mesmo
+# arquivo servir a um ambiente de staging depois.
+#
+# Pré-requisitos do TLS, os dois obrigatórios:
+#   - registro A de api. apontando para o IP elástico da EC2, em DNS-only no Cloudflare
+#     (proxiado, o Cloudflare intercepta 80/443 e o desafio HTTP-01 nunca chega ao servidor);
+#   - security group liberando 80 e 443. A porta 80 não é opcional: é por onde passa a
+#     validação do Let's Encrypt e o redirect para HTTPS.
+#
+# Enquanto o DNS não apontar, use Caddyfile.local — subir este aqui só gasta tentativas
+# falhas no limite do Let's Encrypt.
+
+{
+	email {$EMAIL_ACME}
+}
+
+{$DOMINIO_API} {
+	encode gzip zstd
+
+	header {
+		# HSTS: comece curto. Um max-age longo antes de o domínio estar estável tranca os
+		# navegadores em HTTPS pelo período inteiro, mesmo que você precise voltar atrás.
+		# Depois de algumas semanas estável, suba para 31536000 e considere o preload.
+		Strict-Transport-Security "max-age=86400"
+
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+
+		# Não anuncie o servidor.
+		-Server
+	}
+
+	# O Caddy já envia X-Forwarded-For, X-Forwarded-Proto e X-Forwarded-Host por padrão. A
+	# API só confia neles porque vêm da sub-rede declarada em ProxyReverso__RedeConfiavel —
+	# e porque a porta 8080 não é publicada no host, então não há outro caminho até ela.
+	reverse_proxy api:8080
+}

@@ -66,10 +66,71 @@ namespace Frota360.Tests.Services
                 c.EmpresaId == 1 &&
                 c.CriadoPorUsuarioId == 10 &&
                 c.TokenHash == HashDe("token-convite") &&
-                c.ExpiraEm > DateTime.UtcNow));
+                c.ExpiraEm > DateTime.Now));
             await _emailService.Received(1).EnviarAsync("nova@email.com",
-                Arg.Any<string>(), Arg.Is<string>(corpo => corpo.Contains("token-convite")));
+                Arg.Any<string>(), Arg.Is<CorpoDeEmail>(c => c.Html.Contains("token-convite") && c.Texto.Contains("token-convite")));
         }
+
+        [Fact]
+        public async Task Criar_DeveNormalizarEmailAntesDeConsultarEPersistir()
+        {
+            // No SQL Server a collation case-insensitive fazia esta garantia sozinha; no
+            // PostgreSQL ela precisa ser explícita, senão o convite nasce com uma caixa e o
+            // login não acha o usuário. Ver EmailNormalizado.
+            _usuarioRepository.ExisteEmailAsync(Arg.Any<string>()).Returns(false);
+            _tokenService.GerarRefreshToken().Returns("token-convite");
+
+            var service = CriarServico();
+
+            var resposta = await service.CriarAsync(
+                new CriarConviteRequest { Email = "  Fulano@Empresa.COM  ", Role = "Operador" });
+
+            await _usuarioRepository.Received(1).ExisteEmailAsync("fulano@empresa.com");
+            await _conviteRepository.Received(1).GetPendentesByEmailAsync("fulano@empresa.com", 1);
+            await _conviteRepository.Received(1).AddAsync(
+                Arg.Is<Convite>(c => c.Email == "fulano@empresa.com"));
+            await _emailService.Received(1).EnviarAsync("fulano@empresa.com",
+                Arg.Any<string>(), Arg.Any<CorpoDeEmail>());
+            Assert.Equal("fulano@empresa.com", resposta.Email);
+        }
+
+        [Fact]
+        public async Task Aceitar_DeveCriarUsuarioComOEmailNormalizadoDoConvite()
+        {
+            var convite = new Convite
+            {
+                Id = 5,
+                EmpresaId = 1,
+                Email = "fulano@empresa.com",
+                Role = Roles.Operador,
+                TokenHash = HashDe("token-aceite"),
+                ExpiraEm = DateTime.Now.AddDays(1)
+            };
+            _conviteRepository.GetByTokenHashAsync(HashDe("token-aceite")).Returns(convite);
+            _usuarioRepository.ExisteEmailAsync(Arg.Any<string>()).Returns(false);
+            _tokenService.GerarRefreshToken().Returns("refresh");
+
+            var service = CriarServico();
+
+            var resposta = await service.AceitarAsync(new AceitarConviteRequest
+            {
+                Token = "token-aceite",
+                Nome = "Fulano",
+                Senha = "SenhaForte123"
+            });
+
+            Assert.NotNull(resposta);
+            Assert.Equal("fulano@empresa.com", resposta!.Email);
+            await _usuarioRepository.Received(1).AddAsync(
+                Arg.Is<Usuario>(u => u.Email == "fulano@empresa.com"));
+        }
+
+        [Theory]
+        [InlineData("fulano@empresa.com", "fulano@empresa.com")]
+        [InlineData("Fulano@Empresa.COM", "fulano@empresa.com")]
+        [InlineData("  FULANO@EMPRESA.COM  ", "fulano@empresa.com")]
+        public void EmailNormalizado_DeveReduzirVariacoesDeCaixaEEspacoAMesmaForma(string entrada, string esperado)
+            => Assert.Equal(esperado, EmailNormalizado.De(entrada));
 
         [Fact]
         public async Task Criar_EmailJaCadastrado_DeveLancar()
@@ -108,7 +169,7 @@ namespace Frota360.Tests.Services
                 Email = "convidada@email.com",
                 Role = "Supervisor",
                 TokenHash = HashDe("token-convite"),
-                ExpiraEm = DateTime.UtcNow.AddDays(1)
+                ExpiraEm = DateTime.Now.AddDays(1)
             };
             _conviteRepository.GetByTokenHashAsync(HashDe("token-convite")).Returns(convite);
             _usuarioRepository.ExisteEmailAsync("convidada@email.com").Returns(false);
@@ -153,7 +214,7 @@ namespace Frota360.Tests.Services
             var convite = new Convite
             {
                 TokenHash = HashDe("expirado"),
-                ExpiraEm = DateTime.UtcNow.AddMinutes(-1)
+                ExpiraEm = DateTime.Now.AddMinutes(-1)
             };
             _conviteRepository.GetByTokenHashAsync(HashDe("expirado")).Returns(convite);
 
@@ -171,8 +232,8 @@ namespace Frota360.Tests.Services
             var convite = new Convite
             {
                 TokenHash = HashDe("usado"),
-                ExpiraEm = DateTime.UtcNow.AddDays(1),
-                UtilizadoEm = DateTime.UtcNow.AddHours(-1)
+                ExpiraEm = DateTime.Now.AddDays(1),
+                UtilizadoEm = DateTime.Now.AddHours(-1)
             };
             _conviteRepository.GetByTokenHashAsync(HashDe("usado")).Returns(convite);
 
@@ -194,7 +255,7 @@ namespace Frota360.Tests.Services
             Email = "convidada@email.com",
             Role = "Motorista",
             TokenHash = HashDe(token),
-            ExpiraEm = DateTime.UtcNow.AddDays(1)
+            ExpiraEm = DateTime.Now.AddDays(1)
         };
 
         [Fact]
@@ -245,7 +306,7 @@ namespace Frota360.Tests.Services
         [Fact]
         public async Task Cancelar_ConviteJaUtilizado_DeveLancar()
         {
-            var convite = new Convite { Id = 4, EmpresaId = 1, UtilizadoEm = DateTime.UtcNow };
+            var convite = new Convite { Id = 4, EmpresaId = 1, UtilizadoEm = DateTime.Now };
             _conviteRepository.GetByIdAsync(4, 1).Returns(convite);
 
             var service = CriarServico();
@@ -267,7 +328,7 @@ namespace Frota360.Tests.Services
                 EmpresaId = 1,
                 Email = "novo@email.com",
                 Role = "Operador",
-                ExpiraEm = DateTime.UtcNow.AddDays(1)
+                ExpiraEm = DateTime.Now.AddDays(1)
             });
             _usuarioRepository.ExisteEmailAsync("novo@email.com").Returns(false);
 

@@ -20,9 +20,12 @@ namespace Frota360.Infrastructure.Repositories
             => await context.Convites.FirstOrDefaultAsync(c => c.TokenHash == tokenHash);
 
         public async Task<IEnumerable<Convite>> GetPendentesByEmailAsync(string email, int empresaId)
-            => await context.Convites
-                .Where(c => c.Email == email && c.EmpresaId == empresaId && c.UtilizadoEm == null)
+        {
+            var normalizado = Domain.Common.EmailNormalizado.De(email);
+            return await context.Convites
+                .Where(c => c.Email == normalizado && c.EmpresaId == empresaId && c.UtilizadoEm == null)
                 .ToListAsync();
+        }
 
         public async Task<Convite> AddAsync(Convite convite)
         {

@@ -1,7 +1,8 @@
-using Frota360.Application.Common;
+﻿using Frota360.Application.Common;
 using Frota360.Application.DTOs.Usuario.Request;
 using Frota360.Application.DTOs.Usuario.Response;
 using Frota360.Application.Interfaces;
+using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
 using Frota360.Domain.Interfaces.Services;
@@ -76,7 +77,7 @@ namespace Frota360.Application.Services
                     return null;
                 }
 
-                if (usuario.RefreshTokenExpiraEm is null || usuario.RefreshTokenExpiraEm < DateTime.UtcNow)
+                if (usuario.RefreshTokenExpiraEm is null || usuario.RefreshTokenExpiraEm < DateTime.Now)
                 {
                     logger.LogWarning("Tentativa de refresh com token expirado. Id {Id}", usuario.Id);
                     return null;
@@ -136,16 +137,16 @@ namespace Frota360.Application.Services
             var token = tokenService.GerarRefreshToken();
 
             usuario.ResetSenhaTokenHash = TokenHelper.Hash(token);
-            usuario.ResetSenhaExpiraEm = DateTime.UtcNow.Add(ResetSenhaValidade);
+            usuario.ResetSenhaExpiraEm = DateTime.Now.Add(ResetSenhaValidade);
             await repository.UpdateAsync(usuario);
 
             var link = $"{frontendSettings.BaseUrl.TrimEnd('/')}/redefinir-senha?token={Uri.EscapeDataString(token)}";
 
-            await emailService.EnviarAsync(usuario.Email, "Redefinição de senha — Frota360", $"""
-                <p>Recebemos um pedido para redefinir a senha da sua conta no <strong>Frota360</strong>.</p>
-                <p><a href="{link}">Clique aqui para criar uma nova senha</a>. O link é válido por 30 minutos.</p>
-                <p>Se você não fez este pedido, ignore este e-mail — sua senha continua a mesma.</p>
-                """);
+            await emailService.EnviarAsync(usuario.Email, "Redefinição de senha — Frota360", CorpoDeEmail.ComLink(
+                chamada: "Recebemos um pedido para redefinir a senha da sua conta no Frota360.",
+                acao: "Criar uma nova senha (link válido por 30 minutos)",
+                link: link,
+                aviso: "Se você não fez este pedido, ignore este e-mail — sua senha continua a mesma."));
 
             logger.LogInformation("E-mail de reset de senha enviado. Id {Id}", usuario.Id);
         }
@@ -154,7 +155,7 @@ namespace Frota360.Application.Services
         {
             var usuario = await repository.GetByResetSenhaTokenHashAsync(TokenHelper.Hash(request.Token));
 
-            if (usuario is null || usuario.ResetSenhaExpiraEm is null || usuario.ResetSenhaExpiraEm < DateTime.UtcNow)
+            if (usuario is null || usuario.ResetSenhaExpiraEm is null || usuario.ResetSenhaExpiraEm < DateTime.Now)
             {
                 logger.LogWarning("Tentativa de redefinição com token inválido ou expirado");
                 return false;
@@ -187,7 +188,7 @@ namespace Frota360.Application.Services
             var refreshToken = tokenService.GerarRefreshToken();
 
             usuario.RefreshTokenHash = TokenHelper.Hash(refreshToken);
-            usuario.RefreshTokenExpiraEm = DateTime.UtcNow.Add(RefreshTokenValidade);
+            usuario.RefreshTokenExpiraEm = DateTime.Now.Add(RefreshTokenValidade);
             await repository.UpdateAsync(usuario);
 
             return refreshToken;
