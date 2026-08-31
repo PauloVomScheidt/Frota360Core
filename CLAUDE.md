@@ -24,6 +24,7 @@ docs/
 ├── contexto-api.md        contexto profundo do backend
 ├── contexto-web.md        contexto profundo do front (tela a tela, cache keys, endpoints)
 └── deploy.md              roteiro de produção (EC2 + Docker Compose) e ensaio local
+.github/workflows/ci.yml   CI — jobs `api`, `web` e `docker` (sem CD)
 docker-compose.yml         banco de desenvolvimento
 docker-compose.prod.yml    stack de produção (db + api + caddy)
 docker-compose.local.yml   override que ensaia a stack de produção sem domínio
@@ -105,6 +106,22 @@ Num banco zerado não há usuários: provisione uma empresa pelo backoffice da A
 Para poupar esse passo em dev, `./scripts/seed-dev.ps1` faz o bootstrap inteiro (empresa + Admin + Motorista, senha `SenhaForte123`). É re-executável e não toca em outras empresas — só o `-Recriar` é destrutivo.
 
 Os demais comandos (build, testes, migrations, lint) estão no `CLAUDE.md` de cada app.
+
+## CI
+
+`.github/workflows/ci.yml`, em PR e push para `main`/`develop`. Três jobs — `api`, `web` e
+`docker` —, e os ids dos jobs são os nomes dos required checks. Duas coisas a lembrar ao mexer:
+
+- **Não adicione filtro de path.** `on.<evento>.paths` impede o workflow de rodar, e um required
+  check que nunca reporta trava o PR para sempre. Se algum dia precisar pular job, use um job de
+  detecção + `if:` — job pulado por `if:` conta como satisfeito; workflow que não roda, não.
+- **O job `docker` planta iscas antes do build.** Num clone limpo os arquivos que o
+  `.dockerignore` exclui não existem, então a verificação passaria vazia. Mexeu no
+  `.dockerignore` ou no `Dockerfile`? Confira que a asserção ainda reprova quando deve — a
+  receita está no README.
+
+Detalhe do lado da API (por que não há `services: postgres`) em
+[docs/contexto-api.md](docs/contexto-api.md) (§ Testes).
 
 ## Produção
 

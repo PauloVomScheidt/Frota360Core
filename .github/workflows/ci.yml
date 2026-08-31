@@ -1,0 +1,117 @@
+name: CI
+
+# Sem filtro de path de propósito: `on.<evento>.paths` impede o workflow de rodar, e um
+# required check que nunca reporta trava o PR em "Expected — Waiting for status" para sempre.
+# Se um dia valer a pena pular jobs, use um job de detecção + `if:` nos jobs de baixo — job
+# pulado por `if:` conta como satisfeito no branch protection; workflow que não roda, não.
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Só em PR: um push na main valida o commit já mergeado e não deve ser cancelado.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # O id do job é o nome do check no branch protection — `api`, `web` e `docker`.
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/api
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Cache à mão em vez de `cache: true` do setup-dotnet: aquele exige packages.lock.json,
+      # que o repositório não usa.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('apps/api/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - run: dotnet restore Frota360.slnx
+
+      - run: dotnet build Frota360.slnx -c Release --no-restore
+
+      - name: Testes unitários
+        run: dotnet test tests/Frota360.Tests/Frota360.Tests.csproj -c Release --no-build
+
+      # Separado dos unitários para o log dizer de imediato se quebrou lógica ou banco.
+      # Sobe um postgres:17 descartável via Testcontainers (ver BancoFixture) — por isso não
+      # há bloco `services:` aqui: o container é gerenciado pelo próprio teste.
+      - name: Testes de integração (Testcontainers)
+        run: dotnet test tests/Frota360.IntegrationTests/Frota360.IntegrationTests.csproj -c Release --no-build
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/web
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - run: npm ci
+
+      # Já é `tsc -b && vite build`. O vite build roda em mode=production e lê o
+      # .env.production, que é versionado — VITE_API_URL não precisa vir do workflow.
+      - name: Build (tsc + vite)
+        run: npm run build
+
+      # `always()` para o PR mostrar tsc e lint no mesmo run, em vez de um por vez.
+      - name: Lint
+        if: always()
+        run: npm run lint
+
+  docker:
+    runs-on: ubuntu-latest
+    # O Dockerfile instala curl via apt-get, então o build depende de rede.
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # Num clone limpo, os arquivos que o .dockerignore exclui NÃO EXISTEM — buildar e
+      # conferir que não estão na imagem não provaria nada. As iscas abaixo dão o que testar.
+      - name: Plantar iscas para provar o .dockerignore
+        run: |
+          echo '{"ConnectionStrings":{"DefaultConnection":"SEGREDO_CANARIO_CI"}}' > apps/api/src/Api/appsettings.Development.json
+          echo 'Jwt__Key=SEGREDO_CANARIO_CI' > apps/api/.env
+
+      # Contexto é apps/api (os COPY do Dockerfile são relativos a essa pasta). Sem push:
+      # o objetivo é pegar Dockerfile quebrado antes do deploy.
+      - name: Build da imagem
+        run: docker build -t frota360-api:ci apps/api
+
+      - name: Conferir o que entrou na imagem
+        run: |
+          docker run --rm --entrypoint sh frota360-api:ci -c '
+            set -e
+            test ! -e /app/appsettings.Development.json || { echo "FALHA: appsettings.Development.json vazou para a imagem"; exit 1; }
+            test ! -e /app/.env                         || { echo "FALHA: .env vazou para a imagem"; exit 1; }
+            # O base é versionado e SOBE de propósito: sem ele Jwt:Issuer fica nulo e a
+            # validação de token quebra em runtime.
+            test -e /app/appsettings.json               || { echo "FALHA: appsettings.json base ausente da imagem"; exit 1; }
+            test -e /app/Frota360.Api.dll               || { echo "FALHA: publish sem o assembly da API"; exit 1; }
+            echo "OK: .dockerignore respeitado e publish íntegro."
+          '
