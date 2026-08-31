@@ -5,7 +5,13 @@ import { motoristasApi } from '../api/motoristas'
 import { rotasApi } from '../api/rotas'
 import { veiculosApi } from '../api/veiculos'
 import { mensagensDeErro } from '../api/errors'
-import type { AbastecimentoFiltro, AbastecimentoResponse } from '../api/types'
+import type {
+  AbastecimentoFiltro,
+  AbastecimentoResponse,
+  MotoristaResponse,
+  RotaResponse,
+  VeiculoResponse,
+} from '../api/types'
 import { pode } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
@@ -21,6 +27,365 @@ const FORM_VAZIO = {
   valor: '',
   dataAbastecimento: '',
   observacao: '',
+}
+
+type FormularioAbastecimento = typeof FORM_VAZIO
+
+/**
+ * Painel de cadastro/edição — extraído à parte por ser, sozinho, o maior bloco de JSX
+ * da tela (as três variações de campo motorista/veículo conforme papel e estado de
+ * edição). Nenhuma regra muda de lugar: cada `onFormChange` chama o mesmo `setForm`
+ * que já existia aqui dentro.
+ */
+function AbastecimentoFormulario({
+  editando,
+  form,
+  onFormChange,
+  onSubmit,
+  pending,
+  erros,
+  veiculosDisponiveis,
+  veiculos,
+  motoristas,
+  motorista,
+  nomeUsuario,
+  rotaAtiva,
+}: {
+  editando: AbastecimentoResponse | null
+  form: FormularioAbastecimento
+  onFormChange: (form: FormularioAbastecimento) => void
+  onSubmit: (e: FormEvent) => void
+  pending: boolean
+  erros: string[]
+  veiculosDisponiveis: VeiculoResponse[]
+  veiculos: VeiculoResponse[]
+  motoristas: MotoristaResponse[]
+  motorista: boolean
+  nomeUsuario: string
+  rotaAtiva: RotaResponse | null
+}) {
+  return (
+    <InlineForm onSubmit={onSubmit}>
+      {editando && (
+        <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
+          Corrigindo o abastecimento do veículo{' '}
+          <strong style={{ color: 'var(--color-text)' }}>{editando.veiculoPlaca}</strong> de{' '}
+          {formatDate(editando.dataAbastecimento)}. Veículo e motorista não podem ser trocados
+          — para isso, exclua e lance de novo.
+        </p>
+      )}
+
+      {/* Trocar o veículo reatribuiria o gasto: só no cadastro. */}
+      {!editando && (
+        <div className="field w-[230px]">
+          <label htmlFor="veiculoId">Veículo</label>
+          <select
+            id="veiculoId"
+            className="input"
+            required
+            style={{ borderRadius: 0 }}
+            value={form.veiculoId}
+            onChange={(e) => onFormChange({ ...form, veiculoId: e.target.value })}
+          >
+            <option value="">Selecione…</option>
+            {veiculosDisponiveis.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.placa} — {v.nomeVeiculo}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* O motorista lança sempre em si mesmo — o campo existe para ele ver de quem é
+          o gasto, não para escolher. Quem escolhe é a gestão. */}
+      {!editando &&
+        (motorista ? (
+          <div className="field w-[200px]">
+            <label htmlFor="motoristaId">Motorista</label>
+            <input
+              id="motoristaId"
+              className="input"
+              disabled
+              style={{ borderRadius: 0 }}
+              value={nomeUsuario}
+            />
+          </div>
+        ) : (
+          <div className="field w-[200px]">
+            <label htmlFor="motoristaId">Motorista</label>
+            <select
+              id="motoristaId"
+              className="input"
+              required
+              style={{ borderRadius: 0 }}
+              value={form.motoristaId}
+              onChange={(e) => onFormChange({ ...form, motoristaId: e.target.value })}
+            >
+              <option value="">Selecione…</option>
+              {motoristas.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+
+      <div className="field w-[150px]">
+        <label htmlFor="valor">Valor (R$)</label>
+        <input
+          id="valor"
+          type="number"
+          className="input"
+          required
+          min={0.01}
+          step={0.01}
+          placeholder="0,00"
+          style={{ borderRadius: 0 }}
+          value={form.valor}
+          onChange={(e) => onFormChange({ ...form, valor: e.target.value })}
+        />
+      </div>
+
+      <div className="field w-[170px]">
+        <label htmlFor="dataAbastecimento">Data</label>
+        <input
+          id="dataAbastecimento"
+          type="date"
+          className="input"
+          required
+          max={hojeInputDate()}
+          style={{ borderRadius: 0 }}
+          value={form.dataAbastecimento}
+          onChange={(e) => onFormChange({ ...form, dataAbastecimento: e.target.value })}
+        />
+      </div>
+
+      <div className="field w-[260px]">
+        <label htmlFor="observacao">Observação</label>
+        <input
+          id="observacao"
+          className="input"
+          maxLength={500}
+          style={{ borderRadius: 0 }}
+          value={form.observacao}
+          onChange={(e) => onFormChange({ ...form, observacao: e.target.value })}
+        />
+      </div>
+
+      <button
+        type="submit"
+        className="btn btn-primary"
+        style={{ borderRadius: 0, padding: '10px 20px' }}
+        disabled={pending}
+      >
+        {pending ? 'Salvando…' : editando ? 'Salvar correção' : 'Lançar'}
+      </button>
+
+      {!editando && motorista && rotaAtiva && (
+        <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
+          Você está em rota com{' '}
+          <strong style={{ color: 'var(--color-text)' }}>
+            {veiculos.find((v) => v.id === rotaAtiva.codigoVeiculo)?.placa ?? 'o veículo da rota'}
+          </strong>{' '}
+          ({rotaAtiva.origem} → {rotaAtiva.destino}) — o lançamento vai para esse veículo e fica
+          vinculado à viagem.
+        </p>
+      )}
+
+      <div className="w-full">
+        <ErrorList mensagens={erros} />
+      </div>
+    </InlineForm>
+  )
+}
+
+/** Barra de filtros — veículo, motorista (fora do motorista) e período. */
+function FiltrosAbastecimento({
+  veiculos,
+  motoristas,
+  motorista,
+  filtroVeiculo,
+  filtroMotorista,
+  periodo,
+  temFiltro,
+  onFiltroVeiculoChange,
+  onFiltroMotoristaChange,
+  onPeriodoChange,
+  onLimpar,
+}: {
+  veiculos: VeiculoResponse[]
+  motoristas: MotoristaResponse[]
+  motorista: boolean
+  filtroVeiculo: string
+  filtroMotorista: string
+  periodo: Periodo
+  temFiltro: boolean
+  onFiltroVeiculoChange: (v: string) => void
+  onFiltroMotoristaChange: (v: string) => void
+  onPeriodoChange: (p: Periodo) => void
+  onLimpar: () => void
+}) {
+  return (
+    <div className="mb-5 flex flex-wrap items-end gap-4">
+      <div className="field w-[230px]">
+        <label htmlFor="filtroVeiculo">Filtrar por veículo</label>
+        <select
+          id="filtroVeiculo"
+          className="input"
+          style={{ borderRadius: 0 }}
+          value={filtroVeiculo}
+          onChange={(e) => onFiltroVeiculoChange(e.target.value)}
+        >
+          <option value="">Todos os veículos</option>
+          {veiculos.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.placa} — {v.nomeVeiculo}
+            </option>
+          ))}
+        </select>
+      </div>
+      {/* A lista do motorista já vem recortada: filtrar por pessoa não faria sentido lá. */}
+      {!motorista && (
+        <div className="field w-[200px]">
+          <label htmlFor="filtroMotorista">Filtrar por motorista</label>
+          <select
+            id="filtroMotorista"
+            className="input"
+            style={{ borderRadius: 0 }}
+            value={filtroMotorista}
+            onChange={(e) => onFiltroMotoristaChange(e.target.value)}
+          >
+            <option value="">Todos os motoristas</option>
+            {motoristas.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.nome}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <FiltroPeriodo valor={periodo} onMudar={onPeriodoChange} />
+      {temFiltro && (
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ borderRadius: 0, padding: '10px 18px' }}
+          onClick={onLimpar}
+        >
+          Limpar filtros
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** Tabela + rodapé de totais — a listagem propriamente dita. */
+function TabelaAbastecimentos({
+  abastecimentos,
+  motorista,
+  mostrarAcoes,
+  podeLancar,
+  podeExcluir,
+  temFiltro,
+  pending,
+  error,
+  isSuccess,
+  total,
+  onEditar,
+  onExcluir,
+}: {
+  abastecimentos: AbastecimentoResponse[]
+  motorista: boolean
+  mostrarAcoes: boolean
+  podeLancar: boolean
+  podeExcluir: boolean
+  temFiltro: boolean
+  pending: boolean
+  error: unknown
+  isSuccess: boolean
+  total: number
+  onEditar: (a: AbastecimentoResponse) => void
+  onExcluir: (a: AbastecimentoResponse) => void
+}) {
+  return (
+    <>
+      <div className="overflow-x-auto">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Veículo</th>
+              <th>Motorista</th>
+              {!motorista && <th>Quem lançou</th>}
+              <th>Valor</th>
+              <th>Observação</th>
+              {mostrarAcoes && <th style={{ width: 90 }}>Ações</th>}
+            </tr>
+          </thead>
+          <tbody>
+            <TableStates
+              colSpan={(motorista ? 5 : 6) + (mostrarAcoes ? 1 : 0)}
+              pending={pending}
+              error={error}
+              empty={isSuccess && abastecimentos.length === 0}
+              textoCarregando="Carregando abastecimentos…"
+              textoErro="Não foi possível carregar os abastecimentos."
+              textoVazio={
+                temFiltro
+                  ? 'Nenhum abastecimento encontrado com esses filtros.'
+                  : 'Nenhum abastecimento lançado ainda.'
+              }
+            />
+            {abastecimentos.map((a) => (
+              <tr key={a.id}>
+                <td style={{ whiteSpace: 'nowrap' }}>{formatDate(a.dataAbastecimento)}</td>
+                <td>
+                  <div>{a.veiculoPlaca}</div>
+                  <div className="text-[12px]" style={{ color: mutedText }}>
+                    {a.rotaDescricao ?? a.veiculoNome}
+                  </div>
+                </td>
+                <td>{a.motoristaNome}</td>
+                {!motorista && <td>{a.usuarioNome}</td>}
+                <td style={{ whiteSpace: 'nowrap' }}>{formatMoeda(a.valor)}</td>
+                <td style={{ color: a.observacao ? undefined : mutedText }}>
+                  {a.observacao ?? '—'}
+                </td>
+                {mostrarAcoes && (
+                  <td>
+                    <RowActions
+                      // A lista do motorista já vem recortada pelo servidor: toda linha
+                      // que ele enxerga é dele, então não há o que esconder aqui.
+                      onEditar={podeLancar ? () => onEditar(a) : undefined}
+                      onExcluir={podeExcluir ? () => onExcluir(a) : undefined}
+                      descricao={`o abastecimento do veículo ${a.veiculoPlaca} de ${formatDate(a.dataAbastecimento)}`}
+                    />
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {abastecimentos.length > 0 && (
+        <div
+          className="mt-4 flex flex-wrap items-center gap-6 py-3 text-[13px]"
+          style={{ borderTop: '1px solid var(--color-divider)', color: mutedText }}
+        >
+          <span>
+            <strong style={{ color: 'var(--color-text)' }}>{abastecimentos.length}</strong>{' '}
+            {abastecimentos.length === 1 ? 'lançamento' : 'lançamentos'}
+          </span>
+          <span>
+            Total: <strong style={{ color: 'var(--color-text)' }}>{formatMoeda(total)}</strong>
+          </span>
+        </div>
+      )}
+    </>
+  )
 }
 
 export function AbastecimentosPage() {
@@ -214,269 +579,54 @@ export function AbastecimentosPage() {
       />
 
       {aberto && podeLancar && (
-        <InlineForm onSubmit={handleSubmit}>
-          {editando && (
-            <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-              Corrigindo o abastecimento do veículo{' '}
-              <strong style={{ color: 'var(--color-text)' }}>{editando.veiculoPlaca}</strong> de{' '}
-              {formatDate(editando.dataAbastecimento)}. Veículo e motorista não podem ser trocados
-              — para isso, exclua e lance de novo.
-            </p>
-          )}
-
-          {/* Trocar o veículo reatribuiria o gasto: só no cadastro. */}
-          {!editando && (
-            <div className="field w-[230px]">
-              <label htmlFor="veiculoId">Veículo</label>
-              <select
-                id="veiculoId"
-                className="input"
-                required
-                style={{ borderRadius: 0 }}
-                value={form.veiculoId}
-                onChange={(e) => setForm({ ...form, veiculoId: e.target.value })}
-              >
-                <option value="">Selecione…</option>
-                {veiculosDisponiveis.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.placa} — {v.nomeVeiculo}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* O motorista lança sempre em si mesmo — o campo existe para ele ver de quem é
-              o gasto, não para escolher. Quem escolhe é a gestão. */}
-          {!editando &&
-            (motorista ? (
-              <div className="field w-[200px]">
-                <label htmlFor="motoristaId">Motorista</label>
-                <input
-                  id="motoristaId"
-                  className="input"
-                  disabled
-                  style={{ borderRadius: 0 }}
-                  value={user?.nome ?? ''}
-                />
-              </div>
-            ) : (
-              <div className="field w-[200px]">
-                <label htmlFor="motoristaId">Motorista</label>
-                <select
-                  id="motoristaId"
-                  className="input"
-                  required
-                  style={{ borderRadius: 0 }}
-                  value={form.motoristaId}
-                  onChange={(e) => setForm({ ...form, motoristaId: e.target.value })}
-                >
-                  <option value="">Selecione…</option>
-                  {motoristas.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.nome}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ))}
-
-          <div className="field w-[150px]">
-            <label htmlFor="valor">Valor (R$)</label>
-            <input
-              id="valor"
-              type="number"
-              className="input"
-              required
-              min={0.01}
-              step={0.01}
-              placeholder="0,00"
-              style={{ borderRadius: 0 }}
-              value={form.valor}
-              onChange={(e) => setForm({ ...form, valor: e.target.value })}
-            />
-          </div>
-
-          <div className="field w-[170px]">
-            <label htmlFor="dataAbastecimento">Data</label>
-            <input
-              id="dataAbastecimento"
-              type="date"
-              className="input"
-              required
-              max={hojeInputDate()}
-              style={{ borderRadius: 0 }}
-              value={form.dataAbastecimento}
-              onChange={(e) => setForm({ ...form, dataAbastecimento: e.target.value })}
-            />
-          </div>
-
-          <div className="field w-[260px]">
-            <label htmlFor="observacao">Observação</label>
-            <input
-              id="observacao"
-              className="input"
-              maxLength={500}
-              style={{ borderRadius: 0 }}
-              value={form.observacao}
-              onChange={(e) => setForm({ ...form, observacao: e.target.value })}
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="btn btn-primary"
-            style={{ borderRadius: 0, padding: '10px 20px' }}
-            disabled={salvarMutation.isPending}
-          >
-            {salvarMutation.isPending ? 'Salvando…' : editando ? 'Salvar correção' : 'Lançar'}
-          </button>
-
-          {!editando && motorista && rotaAtiva && (
-            <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-              Você está em rota com{' '}
-              <strong style={{ color: 'var(--color-text)' }}>
-                {veiculos.find((v) => v.id === rotaAtiva.codigoVeiculo)?.placa ?? 'o veículo da rota'}
-              </strong>{' '}
-              ({rotaAtiva.origem} → {rotaAtiva.destino}) — o lançamento vai para esse veículo e fica
-              vinculado à viagem.
-            </p>
-          )}
-
-          <div className="w-full">
-            <ErrorList mensagens={erros} />
-          </div>
-        </InlineForm>
+        <AbastecimentoFormulario
+          editando={editando}
+          form={form}
+          onFormChange={setForm}
+          onSubmit={handleSubmit}
+          pending={salvarMutation.isPending}
+          erros={erros}
+          veiculosDisponiveis={veiculosDisponiveis}
+          veiculos={veiculos}
+          motoristas={motoristas}
+          motorista={motorista}
+          nomeUsuario={user?.nome ?? ''}
+          rotaAtiva={rotaAtiva}
+        />
       )}
 
-      <div className="mb-5 flex flex-wrap items-end gap-4">
-        <div className="field w-[230px]">
-          <label htmlFor="filtroVeiculo">Filtrar por veículo</label>
-          <select
-            id="filtroVeiculo"
-            className="input"
-            style={{ borderRadius: 0 }}
-            value={filtroVeiculo}
-            onChange={(e) => setFiltroVeiculo(e.target.value)}
-          >
-            <option value="">Todos os veículos</option>
-            {veiculos.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.placa} — {v.nomeVeiculo}
-              </option>
-            ))}
-          </select>
-        </div>
-        {/* A lista do motorista já vem recortada: filtrar por pessoa não faria sentido lá. */}
-        {!motorista && (
-          <div className="field w-[200px]">
-            <label htmlFor="filtroMotorista">Filtrar por motorista</label>
-            <select
-              id="filtroMotorista"
-              className="input"
-              style={{ borderRadius: 0 }}
-              value={filtroMotorista}
-              onChange={(e) => setFiltroMotorista(e.target.value)}
-            >
-              <option value="">Todos os motoristas</option>
-              {motoristas.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.nome}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-        <FiltroPeriodo valor={periodo} onMudar={setPeriodo} />
-        {temFiltro && (
-          <button
-            type="button"
-            className="btn btn-secondary"
-            style={{ borderRadius: 0, padding: '10px 18px' }}
-            onClick={() => {
-              setFiltroVeiculo('')
-              setFiltroMotorista('')
-              setPeriodo('todos')
-            }}
-          >
-            Limpar filtros
-          </button>
-        )}
-      </div>
+      <FiltrosAbastecimento
+        veiculos={veiculos}
+        motoristas={motoristas}
+        motorista={motorista}
+        filtroVeiculo={filtroVeiculo}
+        filtroMotorista={filtroMotorista}
+        periodo={periodo}
+        temFiltro={temFiltro}
+        onFiltroVeiculoChange={setFiltroVeiculo}
+        onFiltroMotoristaChange={setFiltroMotorista}
+        onPeriodoChange={setPeriodo}
+        onLimpar={() => {
+          setFiltroVeiculo('')
+          setFiltroMotorista('')
+          setPeriodo('todos')
+        }}
+      />
 
-      <div className="overflow-x-auto">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Veículo</th>
-              <th>Motorista</th>
-              {!motorista && <th>Quem lançou</th>}
-              <th>Valor</th>
-              <th>Observação</th>
-              {mostrarAcoes && <th style={{ width: 90 }}>Ações</th>}
-            </tr>
-          </thead>
-          <tbody>
-            <TableStates
-              colSpan={(motorista ? 5 : 6) + (mostrarAcoes ? 1 : 0)}
-              pending={abastecimentosQuery.isPending}
-              error={abastecimentosQuery.error}
-              empty={abastecimentosQuery.isSuccess && abastecimentos.length === 0}
-              textoCarregando="Carregando abastecimentos…"
-              textoErro="Não foi possível carregar os abastecimentos."
-              textoVazio={
-                temFiltro
-                  ? 'Nenhum abastecimento encontrado com esses filtros.'
-                  : 'Nenhum abastecimento lançado ainda.'
-              }
-            />
-            {abastecimentos.map((a) => (
-              <tr key={a.id}>
-                <td style={{ whiteSpace: 'nowrap' }}>{formatDate(a.dataAbastecimento)}</td>
-                <td>
-                  <div>{a.veiculoPlaca}</div>
-                  <div className="text-[12px]" style={{ color: mutedText }}>
-                    {a.rotaDescricao ?? a.veiculoNome}
-                  </div>
-                </td>
-                <td>{a.motoristaNome}</td>
-                {!motorista && <td>{a.usuarioNome}</td>}
-                <td style={{ whiteSpace: 'nowrap' }}>{formatMoeda(a.valor)}</td>
-                <td style={{ color: a.observacao ? undefined : mutedText }}>
-                  {a.observacao ?? '—'}
-                </td>
-                {mostrarAcoes && (
-                  <td>
-                    <RowActions
-                      // A lista do motorista já vem recortada pelo servidor: toda linha
-                      // que ele enxerga é dele, então não há o que esconder aqui.
-                      onEditar={podeLancar ? () => abrirEdicao(a) : undefined}
-                      onExcluir={podeExcluir ? () => setParaExcluir(a) : undefined}
-                      descricao={`o abastecimento do veículo ${a.veiculoPlaca} de ${formatDate(a.dataAbastecimento)}`}
-                    />
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {abastecimentos.length > 0 && (
-        <div
-          className="mt-4 flex flex-wrap items-center gap-6 py-3 text-[13px]"
-          style={{ borderTop: '1px solid var(--color-divider)', color: mutedText }}
-        >
-          <span>
-            <strong style={{ color: 'var(--color-text)' }}>{abastecimentos.length}</strong>{' '}
-            {abastecimentos.length === 1 ? 'lançamento' : 'lançamentos'}
-          </span>
-          <span>
-            Total: <strong style={{ color: 'var(--color-text)' }}>{formatMoeda(total)}</strong>
-          </span>
-        </div>
-      )}
+      <TabelaAbastecimentos
+        abastecimentos={abastecimentos}
+        motorista={motorista}
+        mostrarAcoes={mostrarAcoes}
+        podeLancar={podeLancar}
+        podeExcluir={podeExcluir}
+        temFiltro={temFiltro}
+        pending={abastecimentosQuery.isPending}
+        error={abastecimentosQuery.error}
+        isSuccess={abastecimentosQuery.isSuccess}
+        total={total}
+        onEditar={abrirEdicao}
+        onExcluir={setParaExcluir}
+      />
 
       {paraExcluir && (
         <ConfirmDialog

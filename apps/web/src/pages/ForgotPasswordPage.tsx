@@ -11,6 +11,8 @@ export function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
 
   // A API responde 200 neutro mesmo para e-mail inexistente — a tela reflete isso.
+  // Sem invalidação de propósito: só dispara um e-mail, não muda nada em cache — não
+  // há sessão nem dado de empresa envolvido (rota 100% anônima).
   const enviarMutation = useMutation({ mutationFn: esqueciSenha })
 
   function handleSubmit(e: FormEvent) {

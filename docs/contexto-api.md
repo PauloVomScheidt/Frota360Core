@@ -76,12 +76,16 @@ Rota agora resolve motorista e veículo por `GetByIdAsync(id, currentUser.Empres
 `POST /backoffice/empresa` com header `X-Backoffice-Key` → cria `Empresa`, semeia os 10 `TiposManutencaoPadrao` e dispara convite de Admin. Sem `Backoffice:ApiKey` configurada, o endpoint responde 401 sempre.
 
 ### 2. Convite → conta
-Admin cria convite (token aleatório de 64 bytes, **só o hash SHA vai ao banco**, validade 7 dias, convites pendentes anteriores do mesmo e-mail são apagados) → e-mail com link `{Frontend}/convite?token=` → `POST /convite/aceitar` (anônimo) cria o `Usuario` já com role do convite e devolve token+refresh direto, sem exigir login.
+Admin cria convite (token aleatório de 64 bytes, **só o hash SHA vai ao banco**, validade 7 dias, convites pendentes anteriores do mesmo e-mail são apagados) → e-mail com link `{Frontend}/convite?token=` → `POST /convite/aceitar` (anônimo) cria o `Usuario` já com role do convite e devolve sessão autenticada — token e refresh token via cookie (ver §3), sem exigir login.
 
 **Convite de motorista não tem nada de especial:** é e-mail + `Role = Motorista`, como qualquer outra role. O aceite (`POST /convite/aceitar`) aceita ainda `CPF` e `DataNascimento` **opcionais**, que a própria pessoa informa. Em branco viram nulo, e não string vazia: o índice único filtrado `(EmpresaId, CPF)` depende disso para não colidir entre quem não informou. Depois do aceite, esses mesmos campos se corrigem em `PUT /usuario/perfil` (§4.2).
 
 ### 3. Auth
 Login BCrypt → JWT de 1h (claims `sub`, `email`, `name`, `jti`, `empresaId`, `role`) + refresh token de 7 dias rotacionado a cada uso (hash no banco). `esqueci-senha` responde neutro sempre (não revela se o e-mail existe), token de 30 min; redefinir senha **derruba o refresh token**. Todos esses endpoints têm rate limit de 5/min por IP.
+
+**Token e refresh token nunca chegam ao corpo da resposta nem a `localStorage`/`sessionStorage` do front** (mitiga exfiltração por XSS — era o achado do React Doctor `auth-token-in-web-storage`). `Login`, `Refresh` e `Convite.Aceitar` devolvem só `SessaoResponse` (nome/e-mail/role) no JSON; os dois segredos saem em cookie `HttpOnly; Secure; SameSite=None` (`Frota360.Api.Services.SessaoCookies`, nomes em `Domain.Common.CookiesDeSessao`), com validade espelhando a do próprio token (1h) e do refresh (7 dias). `SameSite=None` porque front e API vivem em origens diferentes (portas em dev, domínios em produção) — exige `Secure`, e as duas bindings de dev (7271/5062) e a de produção já falam HTTPS. `JwtBearerEvents.OnMessageReceived` lê o JWT do cookie quando não há header `Authorization` (que continua funcionando para Scalar/curl/clientes externos). `POST /auth/refresh` não recebe mais corpo: o refresh token vem só do cookie, que o navegador anexa sozinho — JavaScript nunca o vê. `Logout` limpa os dois cookies além de revogar o refresh token no banco.
+
+Internamente, `AuthService`/`ConviteService` continuam devolvendo o DTO `AuthResponse` (com `Token`/`RefreshToken`) como sempre — só o `AuthController`/`ConviteController` o convertem para `SessaoResponse` (`AuthResponseMappings.ToSessaoResponse()`) depois de mover os dois segredos para o cookie. Layers e testes de `AuthService`/`ConviteService` não mudaram.
 
 ### 4. Gestão de usuários (só Admin)
 Alterar role ou desativar. Ambos revogam a sessão (forçam novo login para o token refletir a mudança) e barram deixar a empresa sem admin ativo — `UsuarioService.cs`. `Motorista` é uma role como as outras: promover e rebaixar funcionam igual.

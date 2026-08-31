@@ -36,9 +36,8 @@ export interface LoginRequest {
   senha: string
 }
 
-export interface AuthResponse {
-  token: string
-  refreshToken: string
+/** Token e refreshToken não vêm mais aqui — o servidor os manda em cookie HttpOnly. */
+export interface SessaoResponse {
   nome: string
   email: string
   role: Role

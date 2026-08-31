@@ -66,6 +66,19 @@ interface ItemNav {
   end?: boolean
 }
 
+/** Só do motorista: as duas telas que ele alcança em leitura. */
+const ITENS_VISUALIZACAO: ItemNav[] = [
+  { to: '/veiculos', rotulo: 'Veículos', icone: <TruckIcon size={17} /> },
+  { to: '/manutencoes', rotulo: 'Manutenções', icone: <WrenchIcon size={17} /> },
+]
+
+// A categoria inteira já é admin-only, então nenhum item aqui precisa de guarda própria.
+const ITENS_CONTROLE: ItemNav[] = [
+  { to: '/usuarios', rotulo: 'Usuários', icone: <UsersIcon size={17} /> },
+  { to: '/convites', rotulo: 'Convites', icone: <MailIcon size={17} /> },
+  { to: '/auditoria', rotulo: 'Auditoria', icone: <HistoricoIcon size={17} /> },
+]
+
 function SidebarItem({ item, expanded }: { item: ItemNav; expanded: boolean }) {
   return (
     <NavLink
@@ -134,10 +147,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [catControle, setCatControle] = useState(true)
 
   function toggleSidebar() {
-    setExpanded((v) => {
-      gravarPreferencia(SIDEBAR_KEY, !v)
-      return !v
-    })
+    const proximo = !expanded
+    gravarPreferencia(SIDEBAR_KEY, proximo)
+    setExpanded(proximo)
   }
 
   async function handleLogout() {
@@ -167,19 +179,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
           ? [{ to: '/tipos-manutencao', rotulo: 'Tipos de manutenção', icone: <ClipboardIcon size={17} /> }]
           : []),
       ]
-
-  /** Só do motorista: as duas telas que ele alcança em leitura. */
-  const itensVisualizacao: ItemNav[] = [
-    { to: '/veiculos', rotulo: 'Veículos', icone: <TruckIcon size={17} /> },
-    { to: '/manutencoes', rotulo: 'Manutenções', icone: <WrenchIcon size={17} /> },
-  ]
-
-  // A categoria inteira já é admin-only, então nenhum item aqui precisa de guarda própria.
-  const itensControle: ItemNav[] = [
-    { to: '/usuarios', rotulo: 'Usuários', icone: <UsersIcon size={17} /> },
-    { to: '/convites', rotulo: 'Convites', icone: <MailIcon size={17} /> },
-    { to: '/auditoria', rotulo: 'Auditoria', icone: <HistoricoIcon size={17} /> },
-  ]
 
   return (
     <div className="flex min-h-screen">
@@ -228,7 +227,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           {motorista && (
             <SidebarCategoria
               titulo="Visualização"
-              itens={itensVisualizacao}
+              itens={ITENS_VISUALIZACAO}
               expanded={expanded}
               aberta={catVisualizacao}
               onToggle={() => setCatVisualizacao((v) => !v)}
@@ -237,7 +236,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           {admin && (
             <SidebarCategoria
               titulo="Controle"
-              itens={itensControle}
+              itens={ITENS_CONTROLE}
               expanded={expanded}
               aberta={catControle}
               onToggle={() => setCatControle((v) => !v)}

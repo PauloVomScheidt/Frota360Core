@@ -138,14 +138,6 @@ export const WhatsappIcon = (p: IconProps) => (
   </Icon>
 )
 
-export const InstagramIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <rect x={3} y={3} width={18} height={18} rx={0} />
-    <circle cx={12} cy={12} r={4.5} />
-    <circle cx={17} cy={7} r={0.7} fill="currentColor" />
-  </Icon>
-)
-
 export const PencilIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7.5 18.5 3 20l1.5-4.5 12-12Z" />
@@ -199,13 +191,5 @@ export const HistoricoIcon = (p: IconProps) => (
     <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
     <path d="M3 3v5h5" />
     <path d="M12 7v5l3 2" />
-  </Icon>
-)
-
-export const AlertIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <path d="M12 3 1.8 20.5h20.4L12 3Z" />
-    <path d="M12 10v4" />
-    <path d="M12 17.2v.1" />
   </Icon>
 )

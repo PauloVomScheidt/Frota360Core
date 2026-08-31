@@ -2,19 +2,19 @@ import { http, unwrap } from './http'
 import { tokenStorage } from './tokenStorage'
 import type {
   ApiResponse,
-  AuthResponse,
   EsqueciSenhaRequest,
   LoginRequest,
   RedefinirSenhaRequest,
+  SessaoResponse,
 } from './types'
 
 // Não existe registro público: contas nascem por convite (ver ./convites.ts).
 
-export async function login(body: LoginRequest): Promise<AuthResponse> {
-  const { data } = await http.post<ApiResponse<AuthResponse>>('/auth/login', body)
-  const auth = unwrap(data)
-  tokenStorage.setSession(auth)
-  return auth
+export async function login(body: LoginRequest): Promise<SessaoResponse> {
+  const { data } = await http.post<ApiResponse<SessaoResponse>>('/auth/login', body)
+  const sessao = unwrap(data)
+  tokenStorage.setSession(sessao)
+  return sessao
 }
 
 export async function logout(): Promise<void> {

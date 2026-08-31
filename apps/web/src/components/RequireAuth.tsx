@@ -1,13 +1,17 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
-import { tokenStorage } from '../api/tokenStorage'
 import type { Role } from '../api/types'
 import { rotaInicial } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
 
-/** Bloqueia rotas protegidas quando não há sessão; o 401 do servidor cobre o resto. */
+/**
+ * Bloqueia rotas protegidas quando não há sessão; o 401 do servidor cobre o resto.
+ * O JWT em si vive num cookie HttpOnly, invisível ao JS — quem sinaliza sessão aqui é a
+ * identidade (`useSession`), guardada à parte só para a UI exibir nome/e-mail/papel.
+ */
 export function RequireAuth() {
   const location = useLocation()
-  if (!tokenStorage.getToken()) {
+  const user = useSession()
+  if (!user) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />
   }
   return <Outlet />

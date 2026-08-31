@@ -1,4 +1,4 @@
-import { useEffect, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, type FormEvent, type ReactNode } from 'react'
 import { mensagensDeErro } from '../api/errors'
 import { ErrorList } from './AppLayout'
 import { PencilIcon, TrashIcon } from './icons'
@@ -6,15 +6,16 @@ import { PERIODOS, type Periodo } from '../lib/periodo'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
-/** Fecha o diálogo no Escape — todo modal da aplicação deve ter essa saída. */
-function useFecharComEscape(onFechar: () => void) {
+/**
+ * Abre o `<dialog>` nativo assim que ele é montado (todo diálogo da aplicação já nasce
+ * montado só quando deve aparecer — `{condicao && <ConfirmDialog ... />}`). `showModal()`
+ * dá de graça o que antes era escrito à mão: trava de foco (Tab não escapa mais para
+ * trás do diálogo), Escape para fechar e o backdrop.
+ */
+function useAbrirModalAoMontar(ref: React.RefObject<HTMLDialogElement | null>) {
   useEffect(() => {
-    function aoTeclar(e: KeyboardEvent) {
-      if (e.key === 'Escape') onFechar()
-    }
-    document.addEventListener('keydown', aoTeclar)
-    return () => document.removeEventListener('keydown', aoTeclar)
-  }, [onFechar])
+    ref.current?.showModal()
+  }, [ref])
 }
 
 /** Painel de cadastro que abre acima da tabela (padrão "Novo X" do design). */
@@ -159,46 +160,53 @@ export function ConfirmDialog({
   onConfirmar: () => void
   onCancelar: () => void
 }) {
-  useFecharComEscape(onCancelar)
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  useAbrirModalAoMontar(dialogRef)
 
   return (
-    <div className="dialog-backdrop" role="presentation" onClick={onCancelar}>
-      <div
-        className="dialog"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="dialog-titulo"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 id="dialog-titulo" className="dialog-title">
-          {titulo}
-        </h3>
-        <p className="dialog-body">{mensagem}</p>
-        <ErrorList mensagens={erros} />
-        <div className="dialog-actions">
-          {/* O foco inicial fica em Cancelar: Enter reflexo não pode excluir. */}
-          <button
-            type="button"
-            className="btn btn-secondary"
-            style={{ borderRadius: 0, padding: '10px 18px' }}
-            onClick={onCancelar}
-            disabled={pending}
-            autoFocus
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            className={variante === 'perigo' ? 'btn btn-danger' : 'btn btn-primary'}
-            style={{ borderRadius: 0, padding: '10px 18px' }}
-            onClick={onConfirmar}
-            disabled={pending}
-          >
-            {pending ? textoPendente : textoConfirmar}
-          </button>
-        </div>
+    <dialog
+      ref={dialogRef}
+      className="dialog"
+      role="alertdialog"
+      aria-labelledby="dialog-titulo"
+      // O Escape do navegador fecha o <dialog> sozinho; isto só avisa o componente pai
+      // (dono do estado "está aberto") para ele desmontar em vez de ficar dessincronizado.
+      //
+      // Sem clique-no-backdrop-fecha de propósito: um <dialog> não pode carregar um
+      // segundo handler de clique sem ganhar um role interativo (button/link/...) que
+      // brigaria com o role real dele (alertdialog) — daí o React Doctor apontar
+      // no-noninteractive-element-interactions se ele existisse aqui. Cancelar continua
+      // com dois caminhos totalmente acessíveis por teclado: Escape e o botão abaixo.
+      onClose={onCancelar}
+    >
+      <h3 id="dialog-titulo" className="dialog-title">
+        {titulo}
+      </h3>
+      <p className="dialog-body">{mensagem}</p>
+      <ErrorList mensagens={erros} />
+      <div className="dialog-actions">
+        {/* O foco inicial fica em Cancelar: Enter reflexo não pode excluir. */}
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ borderRadius: 0, padding: '10px 18px' }}
+          onClick={onCancelar}
+          disabled={pending}
+          autoFocus
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          className={variante === 'perigo' ? 'btn btn-danger' : 'btn btn-primary'}
+          style={{ borderRadius: 0, padding: '10px 18px' }}
+          onClick={onConfirmar}
+          disabled={pending}
+        >
+          {pending ? textoPendente : textoConfirmar}
+        </button>
       </div>
-    </div>
+    </dialog>
   )
 }
 
@@ -227,19 +235,24 @@ export function FormDialog({
   onCancelar: () => void
   children: ReactNode
 }) {
-  useFecharComEscape(onCancelar)
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  useAbrirModalAoMontar(dialogRef)
 
   return (
-    <div className="dialog-backdrop" role="presentation" onClick={onCancelar}>
-      <form
-        className="dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="form-dialog-titulo"
-        style={{ width: 'min(520px, 100%)' }}
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={onSubmit}
-      >
+    <dialog
+      ref={dialogRef}
+      className="dialog"
+      aria-labelledby="form-dialog-titulo"
+      style={{ width: 'min(520px, 100%)' }}
+      // Mesmo padrão do ConfirmDialog logo acima — sem clique-no-backdrop, ver o
+      // comentário lá para o motivo (no-noninteractive-element-interactions).
+      onClose={onCancelar}
+    >
+      {/* display: contents — o form não pode ser o próprio <dialog> (só <dialog> ganha
+          showModal/backdrop nativos), mas também não pode virar uma caixa própria: o
+          layout em coluna com gap é do .dialog no pai, e os filhos precisam continuar
+          participando dele como se estivessem soltos ali. */}
+      <form onSubmit={onSubmit} style={{ display: 'contents' }}>
         <h3 id="form-dialog-titulo" className="dialog-title">
           {titulo}
         </h3>
@@ -266,7 +279,7 @@ export function FormDialog({
           </button>
         </div>
       </form>
-    </div>
+    </dialog>
   )
 }
 
