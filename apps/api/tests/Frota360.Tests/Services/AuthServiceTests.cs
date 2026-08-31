@@ -1,6 +1,7 @@
-using Frota360.Application.Common;
+﻿using Frota360.Application.Common;
 using Frota360.Application.DTOs.Usuario.Request;
 using Frota360.Application.Services;
+using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
 using Frota360.Domain.Interfaces.Services;
@@ -205,7 +206,7 @@ namespace Frota360.Tests.Services
                 u.ResetSenhaTokenHash == HashDe("token-reset") &&
                 u.ResetSenhaExpiraEm > DateTime.Now));
             await _emailService.Received(1).EnviarAsync("ana@email.com",
-                Arg.Any<string>(), Arg.Is<string>(corpo => corpo.Contains("token-reset")));
+                Arg.Any<string>(), Arg.Is<CorpoDeEmail>(c => c.Html.Contains("token-reset") && c.Texto.Contains("token-reset")));
         }
 
         [Fact]
@@ -217,7 +218,7 @@ namespace Frota360.Tests.Services
 
             await service.EsqueciSenhaAsync(new EsqueciSenhaRequest { Email = "naoexiste@email.com" });
 
-            await _emailService.DidNotReceive().EnviarAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+            await _emailService.DidNotReceive().EnviarAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CorpoDeEmail>());
             await _repository.DidNotReceive().UpdateAsync(Arg.Any<Usuario>());
         }
 
@@ -231,7 +232,7 @@ namespace Frota360.Tests.Services
 
             await service.EsqueciSenhaAsync(new EsqueciSenhaRequest { Email = "ana@email.com" });
 
-            await _emailService.DidNotReceive().EnviarAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+            await _emailService.DidNotReceive().EnviarAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CorpoDeEmail>());
         }
 
         [Fact]

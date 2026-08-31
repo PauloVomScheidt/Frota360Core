@@ -2,9 +2,18 @@ import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import { tokenStorage } from './tokenStorage'
 import type { ApiResponse, AuthResponse } from './types'
 
-export const http = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
-})
+// Sem baseURL o axios cai em URLs relativas à origem do front, e o CloudFront responde o
+// index.html do SPA — o erro chega como falha de parse de JSON, sem nenhuma pista de que a
+// configuração está faltando. Melhor quebrar aqui.
+const baseURL = import.meta.env.VITE_API_URL
+if (!baseURL) {
+  throw new Error(
+    'VITE_API_URL não definida. Preencha .env.development ou .env.production antes do build ' +
+      '(o valor precisa terminar em /api/v1).',
+  )
+}
+
+export const http = axios.create({ baseURL })
 
 http.interceptors.request.use((config) => {
   const token = tokenStorage.getToken()
@@ -27,7 +36,7 @@ async function refreshTokens(): Promise<string> {
 
   // axios "cru" para não passar pelos interceptors deste cliente
   const { data } = await axios.post<ApiResponse<AuthResponse>>(
-    `${import.meta.env.VITE_API_URL}/auth/refresh`,
+    `${baseURL}/auth/refresh`,
     { refreshToken },
   )
   if (!data.dados) throw new Error('Refresh sem dados')

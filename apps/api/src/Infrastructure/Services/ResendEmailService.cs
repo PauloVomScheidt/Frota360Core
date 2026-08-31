@@ -1,3 +1,4 @@
+using Frota360.Domain.Common;
 using Frota360.Domain.Interfaces.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -11,25 +12,40 @@ namespace Frota360.Infrastructure.Services
                                     IConfiguration configuration,
                                     ILogger<ResendEmailService> logger) : IEmailService
     {
-        public async Task EnviarAsync(string para, string assunto, string corpoHtml)
+        private const string NomeExibicao = "Frota360";
+
+        public async Task EnviarAsync(string para, string assunto, CorpoDeEmail corpo)
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", configuration["Resend:ApiKey"]);
-            request.Content = JsonContent.Create(new
+            var payload = new Dictionary<string, object>
             {
-                from = configuration["Resend:From"],
-                to = new[] { para },
-                subject = assunto,
-                html = corpoHtml
-            });
+                // Nome de exibição junto do endereço: remetente sem nome pontua pior nos
+                // filtros e chega ao destinatário como um endereço cru.
+                ["from"] = $"{NomeExibicao} <{configuration["Resend:From"]}>",
+                ["to"] = new[] { para },
+                ["subject"] = assunto,
+                ["html"] = corpo.Html,
+                ["text"] = corpo.Texto,
+            };
+
+            // Opcional: um "não responda" sem destino de resposta é penalizado, mas exige
+            // uma caixa que alguém leia — enquanto não houver, é melhor omitir o campo.
+            var replyTo = configuration["Resend:ReplyTo"];
+            if (!string.IsNullOrWhiteSpace(replyTo))
+                payload["reply_to"] = replyTo;
+
+            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails")
+            {
+                Content = JsonContent.Create(payload)
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", configuration["Resend:ApiKey"]);
 
             var response = await httpClient.SendAsync(request);
 
             if (!response.IsSuccessStatusCode)
             {
-                var corpo = await response.Content.ReadAsStringAsync();
+                var corpoResposta = await response.Content.ReadAsStringAsync();
                 logger.LogError("Falha ao enviar e-mail via Resend. Status {Status} | Resposta: {Corpo}",
-                    (int)response.StatusCode, corpo);
+                    (int)response.StatusCode, corpoResposta);
                 throw new InvalidOperationException("Não foi possível enviar o e-mail. Tente novamente mais tarde.");
             }
 

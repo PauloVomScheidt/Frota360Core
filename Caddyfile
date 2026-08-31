@@ -4,11 +4,17 @@
 # certificado ao Let's Encrypt e o renova antes de vencer, desde que o volume caddy_data
 # esteja persistido (ver docker-compose.prod.yml).
 #
-# TODO — domínio ainda não registrado. Antes do deploy, defina no .env da instância:
-#   DOMINIO_API=api.SEU-DOMINIO.com.br
-#   EMAIL_ACME=voce@SEU-DOMINIO.com.br
-# e aponte um registro A do subdomínio para o IP elástico da EC2. Sem o DNS resolvendo, a
-# validação do Let's Encrypt falha e o Caddy fica tentando em loop.
+# O domínio vem do .env (DOMINIO_API=api.frota360app.com.br) em vez de fixo aqui, para o mesmo
+# arquivo servir a um ambiente de staging depois.
+#
+# Pré-requisitos do TLS, os dois obrigatórios:
+#   - registro A de api. apontando para o IP elástico da EC2, em DNS-only no Cloudflare
+#     (proxiado, o Cloudflare intercepta 80/443 e o desafio HTTP-01 nunca chega ao servidor);
+#   - security group liberando 80 e 443. A porta 80 não é opcional: é por onde passa a
+#     validação do Let's Encrypt e o redirect para HTTPS.
+#
+# Enquanto o DNS não apontar, use Caddyfile.local — subir este aqui só gasta tentativas
+# falhas no limite do Let's Encrypt.
 
 {
 	email {$EMAIL_ACME}

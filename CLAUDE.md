@@ -35,6 +35,10 @@ Cada app é independente: comandos rodam de dentro dele, e os caminhos nos seus 
 
 **Antes de mexer em código, leia o `CLAUDE.md` do app**: [apps/api/CLAUDE.md](apps/api/CLAUDE.md) ou [apps/web/CLAUDE.md](apps/web/CLAUDE.md). Este arquivo cobre só o que é transversal aos dois — e as três seções abaixo (navegação, documentação, contrato) valem para os dois lados, não estão repetidas lá.
 
+## Convenções de Codigo
+
+Incluir a menor quantidade possivel de comentarios, o codigo de ser autoexplicativo, limpo e facil de entender, somente quando for essencial para o entendimento de alguma configuração ou regra de negocio não explicita
+
 ## Commits
 
 Nunca commitar algo sem ser explicitamente pedido, somente efetuar as alterações e deixar para o usuario decidir o commit
@@ -68,7 +72,7 @@ O motivo de os dois viverem no mesmo repositório: mudança de um lado quase sem
 | Motorista | **é o próprio `Usuario`** com `Role = Motorista` (não há entidade `Motorista`); `Rota.CodigoMotorista` referencia `Usuario`, e o escopo de `/rota/minhas` sai do `sub` do token. Lê veículos e manutenções (sem `Custo`) | as entradas `pode.ver*` são **por tela** e o guarda `RequirePode` as aplica na rota; `rotaInicial(role)` é o destino de todo redirecionamento |
 | Multi-tenant | `EmpresaId` vem da claim `empresaId` do JWT | transparente — o cliente nunca envia id de empresa |
 | Erro de regra de negócio | `throw new InvalidOperationException("texto ao usuário")` → 422 | mensagem exibida literalmente via `mensagensDeErro()` |
-| URL da API | `https://localhost:7271` / `http://localhost:5062` (`src/Api/Properties/launchSettings.json`) | `VITE_API_URL` em `.env.development` — hoje aponta para `https://localhost:7271/api/v1` |
+| URL da API | dev: `https://localhost:7271` / `http://localhost:5062`; prod: `api.frota360app.com.br` atrás do Caddy | `VITE_API_URL` — **sempre terminando em `/api/v1`**, porque os módulos de `src/api` chamam caminhos relativos sobre o `baseURL`. Vazio, o `http.ts` lança no boot |
 | CORS | origem liberada: `http://localhost:5173` | `npm run dev` usa porta fixa 5173 por causa disso |
 
 **Ao criar ou alterar um endpoint, o roteiro completo é:** controller + handler + validator + teste → `docs/contexto-api.md` → `apps/web/src/api/<recurso>.ts` e `types.ts` → `docs/contexto-web.md` (mapa de endpoints §6.5 e cross-invalidation §6.4) → tela.

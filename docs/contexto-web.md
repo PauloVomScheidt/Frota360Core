@@ -1,4 +1,4 @@
-# Frota360 Web — Contexto do Front-end
+﻿# Frota360 Web — Contexto do Front-end
 
 > Documento **único** de referência do front-end (React + Vite): arquitetura, rotas, endpoints consumidos, o que cada tela faz e as armadilhas conhecidas.
 > Complementa [`contexto-api.md`](contexto-api.md): lá está o contrato do servidor, aqui está o que a aplicação faz com ele.
@@ -28,7 +28,7 @@ npm run lint     # oxlint
 npm run gen:api  # regenera tipos do OpenAPI (API precisa estar no ar)
 ```
 
-Base da API por ambiente: `VITE_API_URL` (`.env.development` aponta para `https://localhost:7271/api/v1`; `.env.production` está vazio e precisa ser preenchido no deploy). É a única variável de ambiente do projeto. A porta 5173 do `npm run dev` é fixa — é a origem liberada no CORS da API.
+Base da API por ambiente: `VITE_API_URL` (`.env.development` → `https://localhost:7271/api/v1`; `.env.production` → `https://api.frota360app.com.br/api/v1`). **O `/api/v1` faz parte do valor**: os módulos de `src/api` chamam caminhos relativos (`/veiculo`, `/auth/login`) sobre o `baseURL`. Se a variável estiver vazia, o `http.ts` lança na carga do módulo em vez de deixar o axios cair em URLs relativas à origem do front. É a única variável de ambiente do projeto. A porta 5173 do `npm run dev` é fixa — é a origem liberada no CORS da API.
 
 O `empresaId` **nunca** é enviado pelo cliente — vem do JWT. A multi-tenancy é transparente para o front.
 

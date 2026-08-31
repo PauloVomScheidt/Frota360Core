@@ -69,7 +69,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml logs -f api
 
 # 3. Provisionar a primeira empresa (não há usuário semeado)
-curl -X POST https://api.SEU-DOMINIO.com.br/api/v1/backoffice/empresa \
+curl -X POST https://api.frota360app.com.br/api/v1/backoffice/empresa \
   -H "Content-Type: application/json" \
   -H "X-Backoffice-Key: <Backoffice__ApiKey do .env>" \
   -d '{"nomeEmpresa":"...","cnpj":"...","emailAdmin":"..."}'
@@ -108,15 +108,36 @@ npm run build      # gera dist/
 mapeie **403 e 404 → `/index.html` com status 200** (403 porque um bucket privado com OAC
 devolve 403, não 404). Sem isso, todo link direto e todo F5 quebram.
 
-## TODO — dependem do domínio
+## DNS — `frota360app.com.br`
+
+Registrado no Registro.br, zona no Cloudflare.
+
+| Nome | Tipo | Destino | Proxy |
+|---|---|---|---|
+| `api` | A | IP elástico da EC2 | **DNS-only (cinza)** |
+| `app` | CNAME | distribuição do CloudFront | indiferente |
+| `send` | conforme o Resend | registros de verificação | DNS-only |
+| raiz | redirect | → `https://app.frota360app.com.br` | — |
+
+**`api.` precisa ficar em DNS-only.** Proxiado, o Cloudflare intercepta as portas 80 e 443 e o
+desafio HTTP-01 do Let's Encrypt nunca chega à instância: o Caddy fica em loop e o TLS nunca
+sobe. Uma API REST autenticada não é cacheável, então o proxy agregaria pouco ali.
+
+O **security group precisa liberar 80 e 443** para `0.0.0.0/0`. A porta 80 não é opcional — é
+por onde passa a validação do certificado.
+
+**O raiz precisa ser um redirect 3xx de verdade**, não servir o front. Se ele passar a servir o
+mesmo conteúdo, a origem das requisições vira o raiz e o CORS bloqueia tudo: só
+`https://app.frota360app.com.br` está em `Cors__AllowedOrigins__0`.
+
+## TODO — dependem do DNS publicado
 
 Nada aqui bloqueia o ensaio local.
 
-- Registrar o domínio e apontar um registro A do subdomínio da API para o IP elástico da EC2.
-  **Sem o DNS resolvendo, a validação do Let's Encrypt falha** e o Caddy fica tentando em loop.
-- `.env`: `DOMINIO_API`, `EMAIL_ACME`, `Cors__AllowedOrigins__0`, `Frontend__BaseUrl`.
-- `apps/web/.env.production`: `VITE_API_URL`.
-- Resend: verificar o domínio antes de definir `Resend__From`.
+- Criar os registros da tabela acima.
+- `.env` da instância: `EMAIL_ACME` e os segredos. As URLs já estão preenchidas em `.env.example`.
+- Resend: concluir a verificação de `send.frota360app.com.br` — `Resend__From` só entrega
+  depois disso.
 - HSTS: o `Caddyfile` começa com `max-age=86400` de propósito. Suba para `31536000` **depois**
   de algumas semanas estável — um max-age longo com o domínio ainda instável tranca os
   navegadores em HTTPS pelo período inteiro.

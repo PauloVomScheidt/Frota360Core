@@ -54,7 +54,7 @@ namespace Frota360.Application.Services
 
             var link = MontarLink(token);
 
-            await emailService.EnviarAsync(email, "Convite para o Frota360", CorpoEmail(role, link));
+            await emailService.EnviarAsync(email, "Convite para o Frota360", CorpoDoConvite(role, link));
 
             logger.LogInformation("Convite criado para {Email} como {Role} na empresa {EmpresaId}", email, role, empresaId);
 
@@ -167,10 +167,10 @@ namespace Frota360.Application.Services
         private string MontarLink(string token)
             => $"{frontendSettings.BaseUrl.TrimEnd('/')}/convite?token={Uri.EscapeDataString(token)}";
 
-        private static string CorpoEmail(string role, string link) => $"""
-            <p>Você foi convidado(a) para acessar o <strong>Frota360</strong> com o perfil <strong>{role}</strong>.</p>
-            <p><a href="{link}">Clique aqui para criar sua conta</a>. O link é válido por 7 dias.</p>
-            <p>Se você não esperava este convite, ignore este e-mail.</p>
-            """;
+        private static CorpoDeEmail CorpoDoConvite(string role, string link) => CorpoDeEmail.ComLink(
+            chamada: $"Você foi convidado(a) para acessar o Frota360 com o perfil {role}.",
+            acao: "Criar sua conta (link válido por 7 dias)",
+            link: link,
+            aviso: "Se você não esperava este convite, ignore este e-mail.");
     }
 }
