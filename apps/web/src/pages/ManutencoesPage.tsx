@@ -595,6 +595,9 @@ function useManutencoesController() {
     onSuccess: () => {
       fecharForm()
       queryClient.invalidateQueries({ queryKey: ['manutencoes'] })
+      // Editar pode trocar o veículo de uma manutenção já concluída, e com ele o veículo
+      // a que o custo é atribuído.
+      queryClient.invalidateQueries({ queryKey: ['custos'] })
     },
     onError: (error) =>
       setErros(
@@ -614,6 +617,8 @@ function useManutencoesController() {
       // Concluir pode ter avançado o odômetro do veículo, o que muda `atrasada` e
       // `kmRestantes` das outras manutenções dele — e a quilometragem na tela de veículos.
       queryClient.invalidateQueries({ queryKey: ['veiculos'] })
+      // É aqui que o custo da manutenção entra no sistema.
+      queryClient.invalidateQueries({ queryKey: ['custos'] })
     },
     onError: (error) => setErrosConclusao(mensagensDeErro(error, 'Não foi possível concluir a manutenção.')),
   })
@@ -625,6 +630,8 @@ function useManutencoesController() {
       setErrosExclusao([])
       if (editando?.id === id) fecharForm()
       queryClient.invalidateQueries({ queryKey: ['manutencoes'] })
+      // Excluir uma manutenção concluída tira o custo dela do total.
+      queryClient.invalidateQueries({ queryKey: ['custos'] })
     },
     onError: (error) => setErrosExclusao(mensagensDeErro(error, 'Não foi possível excluir a manutenção.')),
   })

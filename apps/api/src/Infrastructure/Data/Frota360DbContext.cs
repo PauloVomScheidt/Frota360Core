@@ -174,6 +174,12 @@ namespace Frota360.Infrastructure.Data
                 // Consulta dominante da tela: pendencias de um veiculo
                 entity.HasIndex(m => new { m.EmpresaId, m.VeiculoId, m.Status });
 
+                // Custo de manutencao por periodo (tela de custos). O indice acima nao serve:
+                // ele nao tem data. Filtrado porque so manutencao concluida tem DataRealizacao,
+                // e as pendentes sao a maioria das linhas.
+                entity.HasIndex(m => new { m.EmpresaId, m.DataRealizacao })
+                      .HasFilter("\"DataRealizacao\" IS NOT NULL");
+
                 entity.HasOne(m => m.Veiculo)
                       .WithMany()
                       .HasForeignKey(m => m.VeiculoId)

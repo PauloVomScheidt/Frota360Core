@@ -1,75 +1,68 @@
 /**
- * Pele da landing pública (v3).
+ * Pele da landing pública (v4).
  *
- * Ao contrário da v2, a landing agora fala a MESMA língua do painel: reta,
- * bege, sem sombra e sem canto arredondado. A página é uma ficha de controle —
- * réguas de ponta a ponta, rótulos de campo em mono na margem e o número como
- * protagonista. Todas as cores saem de `design-system.css`; nada é inventado
- * aqui.
+ * A landing volta a ser visualmente diferente do painel: cantos arredondados,
+ * sombra suave, nav flutuante em pílula — o oposto da v3 ("ficha de
+ * controle", reta e sem sombra). Cor, tipografia e sombra continuam saindo
+ * de `design-system.css` (nada de hex novo aqui, exceto o que o app não tem:
+ * raio arredondado e sombras maiores).
  *
- * Ela continua escopada em `.lp` e com folha própria porque tem ESCALA própria
- * (display gigante, réguas full-bleed, odômetro) — não porque discorda do
- * sistema. Vermelho e âmbar só aparecem como estado de manutenção, nunca
- * como enfeite.
+ * Uma exceção: as seções que fingem ser o painel (`.lp-painel`, dentro de um
+ * `.lp-dispositivo`) continuam retas e usam as MESMAS classes globais que a
+ * UI real (`.table`, `.tag`, `.btn`) — porque elas representam o produto de
+ * verdade, e desenhá-las arredondadas mentiria sobre como ele é. Ver
+ * docs/contexto-web.md §3.1.
  */
 
 .lp {
-  /* — cor (toda derivada do design system) — */
-  --papel: #fdfaf6;
-  --papel-fundo: #f2ede4;
-  --tinta: #201e1d;
-  --painel: #1f3a5f;
-  --painel-escuro: #12253b;
-  --vencendo: #7a5312;
-  --vencendo-fundo: #f6ecd8;
-  --alerta: #a03123;
+  /* Só três coisas o app não tem: raio, sombra grande para cartão flutuante
+     e um texto em três níveis (o app só tem `.text-muted`, um nível só). */
+  --lp-radius-sm: 12px;
+  --lp-radius-md: 16px;
+  --lp-radius-lg: 20px;
+  --lp-radius-xl: 24px;
 
-  /* Três níveis de tinta para TEXTO, todos acima de 4.5:1 sobre `--papel`.
-     Os nomes são de intenção, não de opacidade, justamente porque os valores
-     foram calibrados por contraste: hierarquia aqui se faz com tamanho, peso
-     e caixa — nunca apagando o texto até ele sumir. Para régua e contorno use
-     `--regua`/`--regua-fraca`, que não são cor de texto. */
-  --tinta-forte: rgba(32, 30, 29, 0.86);
-  --tinta-media: rgba(32, 30, 29, 0.74);
-  --tinta-fraca: rgba(32, 30, 29, 0.66);
-  --regua: rgba(32, 30, 29, 0.16);
-  --regua-fraca: rgba(32, 30, 29, 0.09);
+  --lp-shadow-sm: 0 10px 28px -14px color-mix(in srgb, var(--color-text) 16%, transparent);
+  --lp-shadow-md: 0 14px 34px -14px color-mix(in srgb, var(--color-text) 18%, transparent);
+  --lp-shadow-lg: 0 22px 54px -24px color-mix(in srgb, var(--color-text) 24%, transparent);
+  --lp-shadow-xl: 0 30px 70px -24px color-mix(in srgb, var(--color-text) 26%, transparent);
 
-  /* — escala tipográfica (sem tamanhos soltos no JSX) — */
-  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
-  /* `cqw`, não `vw`: o odômetro precisa caber na COLUNA dele, que muda de
-     largura em cada breakpoint. O container é `.lp-instrumento`. */
-  --t-odo: clamp(30px, 16cqw, 96px);
-  --t-h1: clamp(33px, 5vw, 60px);
-  --t-h2: clamp(25px, 3.1vw, 37px);
+  /* Nomes de intenção, não de opacidade — os valores são os do próprio app
+     (`.text-muted` é 55%; aqui viram três degraus em vez de um só). */
+  --tinta-forte: color-mix(in srgb, var(--color-text) 78%, transparent);
+  --tinta-media: color-mix(in srgb, var(--color-text) 62%, transparent);
+  --tinta-fraca: color-mix(in srgb, var(--color-text) 45%, transparent);
+  --regua: color-mix(in srgb, var(--color-text) 9%, transparent);
+  --regua-forte: color-mix(in srgb, var(--color-text) 14%, transparent);
+
+  --t-h1: clamp(38px, 5.6vw, 66px);
+  --t-h2: clamp(28px, 3.6vw, 42px);
+  --t-h2-sm: clamp(26px, 3.2vw, 38px);
   --t-h3: 21px;
   --t-lead: 18px;
   --t-corpo: 16px;
-  --t-sm: 14px;
-  --t-cap: 12px;
+  --t-sm: 14.5px;
+  --t-cap: 13px;
 
   --medida: 1100px;
+  --medida-estreita: 820px;
   --gutter: 24px;
 
   min-height: 100vh;
   overflow-x: clip;
-  background: var(--papel);
-  color: var(--tinta);
+  background: var(--color-bg);
+  color: var(--color-text);
   font-size: var(--t-corpo);
   line-height: 1.6;
 }
 
-/* Neutraliza os padrões do design system do painel dentro da landing.
- *
- * Tudo aqui vai dentro de `:where()` de propósito: `:where()` não soma
- * especificidade, então este bloco vale (0,1,0) e QUALQUER classe abaixo o
- * vence. Sem isso, `.lp p { margin: 0 }` (0,1,1) engoliria as margens de
- * `.lp-lead`, `.lp-hero-sub` e companhia (0,1,0), e `.lp a` mataria o
- * sublinhado de `.lp-cta-mail`. */
+/* `:where()` não soma especificidade — o bloco vale (0,1,0) e qualquer classe
+   abaixo o vence. `.lp p { margin: 0 }` (0,1,1) engoliria as margens de
+   `.lp-lead`/`.lp-hero-sub` e o sublinhado de `.lp-cta-mail`. */
 .lp :where(h1, h2, h3) {
   margin: 0;
-  font-weight: 800;
-  line-height: 1.06;
+  font-weight: var(--font-heading-weight);
+  line-height: 1.08;
   letter-spacing: -0.03em;
   text-wrap: balance;
 }
@@ -77,73 +70,71 @@
 .lp :where(ul) { margin: 0; padding: 0; list-style: none; }
 .lp :where(a) { color: inherit; text-decoration: none; }
 .lp :where(table) { width: 100%; border-collapse: collapse; }
-.lp :focus-visible { outline: 2px solid var(--painel); outline-offset: 2px; }
+.lp :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
 .lp-h1 { font-size: var(--t-h1); }
 .lp-h2 { font-size: var(--t-h2); }
+.lp-h2-sm { font-size: var(--t-h2-sm); }
 .lp-h3 { font-size: var(--t-h3); letter-spacing: -0.015em; }
-
-/* ── ficha: faixas de ponta a ponta ───────────────────────────────────────── */
-
-.lp-faixa { border-bottom: 1px solid var(--regua); }
-.lp-faixa-forte { border-bottom: 2px solid var(--tinta); }
-.lp-wrap {
-  max-width: var(--medida);
-  margin: 0 auto;
-  padding: 76px var(--gutter);
-}
-.lp-wrap-estreito { max-width: 820px; }
-
-/* Rótulo de campo: nomeia o domínio da seção, como numa ficha impressa. */
-.lp-campo {
-  font-family: var(--mono);
-  font-size: var(--t-cap);
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--tinta-fraca);
-  display: block;
-  margin-bottom: 22px;
-}
-.lp-campo-painel { color: var(--painel); }
 
 .lp-lead {
   font-size: var(--t-lead);
   color: var(--tinta-forte);
   max-width: 58ch;
-  margin-top: 20px;
+  margin-top: 18px;
 }
 
-/* ── barra ────────────────────────────────────────────────────────────────── */
+/* Rótulo de seção — o "kicker" do canvas. */
+.lp-campo {
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-fraca);
+  display: block;
+  margin-bottom: 14px;
+}
+.lp-campo-acento { color: var(--color-accent); }
+
+/* ── faixas ───────────────────────────────────────────────────────────────
+   Sem régua entre elas: o espaço é a divisão, não uma linha (o oposto da v3). */
+
+.lp-faixa { margin-top: var(--topo, 120px); }
+.lp-wrap { max-width: var(--medida); margin: 0 auto; padding: 0 var(--gutter); }
+.lp-wrap-estreito { max-width: var(--medida-estreita); }
+@media (max-width: 700px) {
+  .lp-faixa { margin-top: calc(var(--topo, 120px) * 0.5); }
+}
+
+/* ── nav: pílula flutuante ────────────────────────────────────────────────── */
 
 .lp-nav {
   position: sticky;
-  top: 0;
+  top: 16px;
   z-index: 20;
-  background: var(--papel);
-  border-bottom: 2px solid var(--tinta);
-}
-.lp-nav-inner {
+  width: calc(100% - 2 * var(--gutter));
   max-width: var(--medida);
-  margin: 0 auto;
-  padding: 14px var(--gutter);
+  margin: 16px auto 0;
   display: flex;
   align-items: center;
-  gap: 28px;
+  gap: 26px;
+  padding: 10px 10px 10px 20px;
+  background: color-mix(in srgb, var(--color-bg) 82%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--regua);
+  border-radius: 999px;
+  box-shadow: var(--lp-shadow-sm);
 }
 .lp-brand { display: flex; align-items: center; gap: 9px; margin-right: auto; }
 .lp-nav-links {
   display: none;
-  gap: 26px;
-  font-family: var(--mono);
-  font-size: var(--t-cap);
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  gap: 24px;
+  font-size: var(--t-sm);
   color: var(--tinta-media);
 }
-.lp-nav-links a:hover { color: var(--painel); }
-.lp-nav-acoes { display: flex; align-items: center; gap: 8px; }
+.lp-nav-links a:hover { color: var(--color-accent); }
+.lp-nav-acoes { display: flex; align-items: center; gap: 6px; }
 @media (min-width: 1000px) {
   .lp-nav-links { display: flex; }
   .lp-menu { display: none; }
@@ -154,17 +145,15 @@
 .lp-menu > summary {
   list-style: none;
   cursor: pointer;
-  font-family: var(--mono);
-  font-size: var(--t-cap);
+  font-size: var(--t-sm);
   font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 9px 12px;
-  border: 1px solid var(--regua);
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--regua-forte);
   color: var(--tinta-forte);
 }
 .lp-menu > summary::-webkit-details-marker { display: none; }
-.lp-menu[open] > summary { background: var(--tinta); color: var(--papel); border-color: var(--tinta); }
+.lp-menu[open] > summary { background: var(--color-text); color: var(--color-bg); border-color: var(--color-text); }
 .lp-menu-lista {
   position: absolute;
   right: 0;
@@ -172,18 +161,16 @@
   min-width: 210px;
   display: flex;
   flex-direction: column;
-  background: var(--papel);
-  border: 2px solid var(--tinta);
-  padding: 6px 0;
+  background: var(--color-bg);
+  border: 1px solid var(--regua-forte);
+  border-radius: var(--lp-radius-md);
+  box-shadow: var(--lp-shadow-md);
+  padding: 6px;
 }
-.lp-menu-lista a {
-  padding: 11px 16px;
-  font-size: var(--t-sm);
-  color: var(--tinta-forte);
-}
-.lp-menu-lista a:hover { background: var(--papel-fundo); color: var(--tinta); }
+.lp-menu-lista a { padding: 11px 12px; border-radius: var(--lp-radius-sm); font-size: var(--t-sm); color: var(--tinta-forte); }
+.lp-menu-lista a:hover { background: var(--color-surface); }
 
-/* ── botões: retos, como no painel ────────────────────────────────────────── */
+/* ── botões: pílula ───────────────────────────────────────────────────────── */
 
 .lp-btn {
   display: inline-flex;
@@ -191,9 +178,9 @@
   justify-content: center;
   gap: 9px;
   border: 1px solid transparent;
-  border-radius: 0;
-  font-family: var(--font-heading, inherit);
-  font-weight: 800;
+  border-radius: 999px;
+  font-family: var(--font-heading);
+  font-weight: 700;
   font-size: var(--t-sm);
   line-height: 1.2;
   padding: 12px 20px;
@@ -201,459 +188,304 @@
   white-space: nowrap;
   transition: background 0.15s ease, color 0.15s ease;
 }
-.lp-btn-primario { background: var(--painel); color: var(--papel); }
-.lp-btn-primario:hover { background: var(--painel-escuro); color: var(--papel); }
-.lp-btn-contorno { border-color: var(--tinta); color: var(--tinta); }
-.lp-btn-contorno:hover { background: var(--tinta); color: var(--papel); }
+.lp-btn-primario { background: var(--color-accent); color: var(--color-bg); }
+.lp-btn-primario:hover { background: var(--color-accent-600); }
+.lp-btn-primario:active { background: var(--color-accent-700); }
+.lp-btn-contorno { border-color: var(--regua-forte); color: var(--color-text); }
+.lp-btn-contorno:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
 .lp-btn-discreto { color: var(--tinta-forte); }
-.lp-btn-discreto:hover { color: var(--painel); }
-.lp-btn-claro { background: var(--papel); color: var(--painel); }
-.lp-btn-claro:hover { background: var(--papel-fundo); color: var(--painel); }
+.lp-btn-discreto:hover { color: var(--color-accent); background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+.lp-btn-claro { background: var(--color-bg); color: var(--color-accent); }
+.lp-btn-claro:hover { background: var(--color-surface); }
 .lp-btn-g { font-size: var(--t-corpo); padding: 16px 26px; }
-.lp-btn-p { padding: 9px 14px; font-size: 13px; }
+.lp-btn-p { padding: 9px 14px; font-size: 14px; }
+.lp-btn-block { width: 100%; }
 
-/* ── hero: o odômetro é a assinatura ──────────────────────────────────────── */
+/* ── hero ─────────────────────────────────────────────────────────────────── */
 
-/* Dupla classe de propósito: precisa vencer `.lp-wrap` inclusive dentro do
-   media query de 600px, que vem depois neste arquivo. */
-.lp-wrap.lp-hero { padding-top: 64px; padding-bottom: 64px; }
-/* `center`: o instrumento é a ilustração da coluna de texto, então acompanha o
-   eixo dela — encostado na base ele colava na régua de 2px da faixa. */
-.lp-hero-grade { display: grid; gap: 52px; grid-template-columns: 1fr; align-items: center; }
-@media (min-width: 940px) {
-  .lp-hero-grade { grid-template-columns: 1.05fr 0.95fr; gap: 64px; }
-}
-
-.lp-instrumento {
-  border: 2px solid var(--tinta);
-  background: var(--papel-fundo);
-  container-type: inline-size;
-  min-width: 0;
-}
-.lp-instrumento-topo {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--regua);
-  font-family: var(--mono);
-  font-size: var(--t-cap);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-.lp-instrumento-placa { font-weight: 600; color: var(--tinta); }
-.lp-instrumento-modelo { color: var(--tinta-media); letter-spacing: 0.06em; }
-.lp-instrumento-selo { margin-left: auto; color: var(--tinta-fraca); }
-.lp-instrumento-corpo { padding: 26px 18px 24px; }
-
-/* odômetro mecânico: cada dígito é uma fita de 0–9 que desliza */
-.lp-odo {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 2px;
-  font-family: var(--mono);
-  font-size: var(--t-odo);
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: -0.04em;
-  color: var(--tinta);
-}
-/* A janela do tambor precisa de folga em volta do algarismo: o avanço do Plex
-   Mono é 0.6em e a linha tem 1em, então 0.62em × 1em encostava nos dois eixos.
-   `contain: paint` não é enfeite: só `overflow: hidden` não segurava a fita
-   ENQUANTO ela anima — a fita virava camada composta própria e escapava do
-   recorte do pai, derramando algarismos por cima e por baixo da janela (só nos
-   dígitos em movimento; os parados recortavam certo). */
-.lp-odo-digito {
-  position: relative;
-  overflow: hidden;
-  contain: paint;
-  height: 1.3em;
-  width: 0.8em;
-  background: var(--papel);
-  border: 1px solid var(--regua);
-}
-/* A fita tem 10x a altura da janela — uma célula por algarismo. Com `inset: 0`
-   ela ficaria com 1x e cada célula viraria um décimo de linha, estourando o
-   glifo para fora. O translate é em % da própria fita: -10% = uma célula. */
-.lp-odo-fita {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 1000%;
-  display: flex;
-  flex-direction: column;
-  transform: translateY(calc(var(--digito) * -10%));
-  transition: transform 0.5s cubic-bezier(0.3, 0.9, 0.25, 1);
-}
-.lp-odo-fita span {
-  height: 10%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* o tracking negativo do conjunto deslocaria o algarismo dentro da janela */
-  letter-spacing: 0;
-}
-.lp-odo-unidade {
-  font-family: var(--mono);
-  font-size: var(--t-cap);
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--tinta-media);
-  align-self: flex-end;
-  padding-bottom: 0.2em;
-  padding-left: 10px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .lp-odo-fita { transition: none; }
-}
-
-/* A folga acima da régua é maior que a de cima do odômetro de propósito: o
-   rótulo "km" pendura na base do grupo e pesa visualmente ali embaixo. */
-.lp-servico {
-  margin-top: 44px;
-  padding-top: 18px;
-  border-top: 1px solid var(--regua);
-  display: grid;
-  gap: 6px;
-}
-.lp-servico-nome { font-family: var(--mono); font-size: var(--t-sm); font-weight: 600; }
-.lp-servico-prev { font-family: var(--mono); font-size: 13px; color: var(--tinta-media); }
-.lp-servico-estado {
-  margin-top: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  align-self: start;
-  padding: 8px 14px;
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  background: var(--papel);
-  border: 1px solid var(--regua);
-  color: var(--tinta-media);
-  transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
-}
-.lp-servico-estado.is-vencendo {
-  background: var(--vencendo-fundo);
-  border-color: var(--vencendo);
-  color: var(--vencendo);
-}
-.lp-servico-estado.is-atrasada {
-  background: color-mix(in srgb, var(--alerta) 12%, transparent);
-  border-color: var(--alerta);
-  color: var(--alerta);
-}
-.lp-farol { width: 8px; height: 8px; background: currentColor; flex: none; }
-
-.lp-hero-sub { margin-top: 22px; font-size: var(--t-lead); color: var(--tinta-forte); max-width: 46ch; }
-.lp-hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
-.lp-miudo { margin-top: 18px; font-size: 13px; color: var(--tinta-fraca); }
+.lp-hero { padding-top: 64px; padding-bottom: 24px; text-align: center; }
+.lp-hero-topo { display: flex; flex-direction: column; align-items: center; max-width: var(--medida-estreita); margin: 0 auto; }
+.lp-hero h1 { max-width: 20ch; }
+.lp-hero-sub { margin-top: 22px; font-size: var(--t-lead); color: var(--tinta-forte); max-width: 50ch; }
+.lp-hero-ctas { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 34px; }
+.lp-miudo { margin-top: 18px; font-size: 13.5px; color: var(--tinta-fraca); }
 .lp-miudo a { color: var(--tinta-forte); text-decoration: underline; text-underline-offset: 3px; }
-.lp-miudo a:hover { color: var(--painel); }
+.lp-miudo a:hover { color: var(--color-accent); }
 
-/* ── mock do painel ───────────────────────────────────────────────────────── */
+/* ── dispositivo: moldura arredondada + sombra em volta de um mock reto ─────
+   O `.lp-dispositivo` é vitrine (arredondado, sombra); o `.lp-painel` de
+   dentro é o produto de verdade (reto, classes globais). */
 
-.lp-mock {
-  border: 2px solid var(--tinta);
-  background: var(--papel);
-  display: grid;
-  grid-template-columns: 1fr;
+.lp-dispositivo {
+  background: var(--color-bg);
+  border: 1px solid var(--regua);
+  border-radius: var(--lp-radius-xl);
+  box-shadow: var(--lp-shadow-xl);
+  overflow: hidden;
 }
-/* Sem `min-width: 0` o filho do grid cresce até o `min-width` da tabela (620px),
-   o `overflow-x` de `.lp-rolagem` nunca entra e o cabeçalho/rodapé do mock são
-   cortados fora da tela no celular. Vale para todo grid com tabela dentro. */
-.lp-mock > *,
-.lp-hero-grade > *,
-.lp-split > *,
-.lp-cta-grade > * {
-  min-width: 0;
-}
+.lp-painel { display: grid; grid-template-columns: 1fr; }
+.lp-painel > *, .lp-split > *, .lp-cta-grade > * { min-width: 0; }
+/* Só o mock que tem sidebar (o painel de veículos) abre a segunda coluna —
+   rotas e manutenções são um card só. */
 @media (min-width: 900px) {
-  .lp-mock { grid-template-columns: 206px 1fr; }
+  .lp-painel-com-menu { grid-template-columns: 206px 1fr; }
 }
-.lp-mock-aside {
+.lp-painel-aside {
   display: none;
-  background: var(--papel-fundo);
-  border-right: 1px solid var(--regua);
+  background: var(--color-surface);
+  /* 2px é a espessura real do painel — em escala reduzida ela pesa demais;
+     aqui fica 1px, mesma cor. */
+  border-right: 1px solid var(--color-divider);
   padding: 18px 12px;
   flex-direction: column;
   gap: 20px;
 }
 @media (min-width: 900px) {
-  .lp-mock-aside { display: flex; }
+  .lp-painel-aside { display: flex; }
 }
-.lp-mock-item {
+.lp-painel-item {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px;
-  font-size: 13.5px;
-  color: var(--tinta-media);
+  padding: 9px 10px;
+  font-size: 13px;
+  color: var(--color-text);
 }
-.lp-mock-item.is-ativo { background: var(--painel); color: var(--papel); font-weight: 600; }
-.lp-mock-quad { width: 6px; height: 6px; background: currentColor; flex: none; }
-.lp-mock-user {
+.lp-painel-item.is-ativo { background: var(--color-accent-100); color: var(--color-accent-700); font-weight: 600; }
+.lp-painel-quad { width: 6px; height: 6px; background: currentColor; flex: none; }
+.lp-painel-user {
   margin-top: auto;
   display: flex;
   align-items: center;
   gap: 9px;
   padding-top: 12px;
-  border-top: 1px solid var(--regua);
+  border-top: 1px solid var(--color-divider);
   font-size: 12px;
   line-height: 1.35;
 }
-.lp-avatar {
+.lp-painel-avatar {
   width: 28px;
   height: 28px;
-  background: var(--painel);
-  color: var(--papel);
-  font-family: var(--mono);
+  border-radius: 999px;
+  background: var(--color-neutral-300);
+  color: var(--color-neutral-800);
+  font-family: var(--font-heading);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
   flex: none;
 }
-.lp-mock-cab {
+.lp-painel-cab {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
   padding: 14px 18px;
-  border-bottom: 2px solid var(--tinta);
+  border-bottom: 1px solid var(--color-divider);
 }
-.lp-mock-titulo { font-family: var(--font-heading, inherit); font-weight: 800; font-size: var(--t-h3); }
-.lp-mock-busca {
+.lp-painel-titulo { font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: var(--t-h3); }
+.lp-painel-busca {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 180px;
-  padding: 7px 12px;
-  border: 1px solid var(--regua);
+  padding: 7px 10px;
+  border: 1px solid var(--color-divider);
   font-size: 13px;
   color: var(--tinta-fraca);
 }
-.lp-mock-btn {
-  font-family: var(--font-heading, inherit);
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--papel);
-  background: var(--painel);
-  padding: 8px 14px;
-  white-space: nowrap;
-}
-.lp-mock-rodape {
+.lp-painel-rodape {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 12px 18px;
-  border-top: 1px solid var(--regua);
-  font-family: var(--mono);
-  font-size: var(--t-cap);
+  border-top: 1px solid var(--color-divider);
+  font-size: 12px;
   color: var(--tinta-fraca);
 }
-.lp-direita { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-/* A busca do mock é cenário (`aria-hidden`) — no celular ela só empurra o
-   cabeçalho para fora da tela, então sai. */
+.lp-painel-direita { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 @media (max-width: 480px) {
-  .lp-mock-busca { display: none; }
-  .lp-direita { margin-left: 0; }
+  .lp-painel-busca { display: none; }
+  .lp-painel-direita { margin-left: 0; }
 }
+/* As tabelas do mock reaproveitam `.table`/`.tag` do design system — mesma
+   classe, mesma UI que o painel logado renderiza de verdade. Só a espessura
+   da régua do cabeçalho (2px no painel real) afina pra 1px: em escala
+   reduzida a régua original chama mais atenção que a própria linha. */
+.lp-painel .table { font-size: 13.5px; }
+.lp-painel .table th { border-bottom-width: 1px; }
+.lp-painel .table th:first-child, .lp-painel .table td:first-child { padding-left: 18px; }
+.lp-painel .table th:last-child, .lp-painel .table td:last-child { padding-right: 18px; }
+.lp-painel-numero { font-variant-numeric: tabular-nums; }
+.lp-painel-numero-dir { text-align: right; }
+.lp-painel-forte { font-weight: 700; }
+.lp-painel-sub { font-size: 12px; color: var(--tinta-fraca); margin-top: 2px; }
+.lp-painel .table { min-width: 620px; }
 
-/* ── tabelas ──────────────────────────────────────────────────────────────── */
-
+/* Região rolável genérica — reaproveitada pelo mock do painel, pelo
+   comparativo e pela matriz de permissões. */
 .lp-rolagem { overflow-x: auto; }
-.lp-tabela { font-size: var(--t-sm); min-width: 620px; }
-.lp-tabela th {
-  text-align: left;
-  font-family: var(--mono);
-  font-weight: 600;
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--tinta-fraca);
-  padding: 11px 8px;
-  white-space: nowrap;
-  border-bottom: 1px solid var(--regua);
-}
-.lp-tabela td {
-  padding: 13px 8px;
-  border-bottom: 1px solid var(--regua-fraca);
+
+.lp-contagem { font-size: var(--t-cap); color: var(--tinta-fraca); }
+
+/* ── trust bar ────────────────────────────────────────────────────────────── */
+
+.lp-fundacoes { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.lp-fundacoes-rotulo { font-size: 13px; color: var(--tinta-fraca); }
+.lp-fundacao {
+  font-size: 13px;
   color: var(--tinta-forte);
-  vertical-align: top;
-}
-.lp-tabela tr:last-child td { border-bottom: 0; }
-.lp-tabela th:first-child, .lp-tabela td:first-child { padding-left: 18px; }
-.lp-tabela th:last-child, .lp-tabela td:last-child { padding-right: 18px; }
-.lp-numero { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.lp-numero-dir { text-align: right; }
-.lp-forte { font-family: var(--mono); font-weight: 600; color: var(--tinta); }
-.lp-sub { font-size: 12px; color: var(--tinta-fraca); margin-top: 3px; }
-
-/* Etiqueta de situação — reta, com régua à esquerda em vez de pílula. */
-.lp-etiq {
-  display: inline-block;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 3px 9px;
-  border-left: 3px solid currentColor;
-  background: var(--papel-fundo);
-  white-space: nowrap;
-}
-.lp-etiq-painel { color: var(--painel); }
-.lp-etiq-neutro { color: var(--tinta-media); }
-.lp-etiq-vencendo { color: var(--vencendo); background: var(--vencendo-fundo); }
-.lp-etiq-alerta { color: var(--alerta); background: color-mix(in srgb, var(--alerta) 9%, transparent); }
-.lp-contagem {
-  font-family: var(--mono);
-  font-size: var(--t-cap);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--tinta-fraca);
+  background: var(--color-bg);
+  border: 1px solid var(--regua);
+  padding: 6px 13px;
+  border-radius: 999px;
 }
 
-/* ── grades ───────────────────────────────────────────────────────────────── */
+/* ── stats ────────────────────────────────────────────────────────────────── */
 
-.lp-grade { display: grid; gap: 1px; background: var(--regua); border: 1px solid var(--regua); }
-.lp-grade > * { background: var(--papel); padding: 26px 24px; }
+.lp-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 32px; }
+@media (min-width: 720px) { .lp-stats { grid-template-columns: repeat(4, 1fr); } }
+.lp-stat-valor { font-size: 32px; font-weight: var(--font-heading-weight); letter-spacing: -0.02em; line-height: 1; }
+.lp-stat-rotulo { font-size: 14px; color: var(--tinta-media); margin-top: 8px; }
+
+/* ── grades genéricas ─────────────────────────────────────────────────────── */
+
+.lp-grade { display: grid; gap: 24px; grid-template-columns: 1fr; }
 .lp-grade-2 { grid-template-columns: 1fr; }
 .lp-grade-3 { grid-template-columns: 1fr; }
 @media (min-width: 720px) { .lp-grade-2 { grid-template-columns: repeat(2, 1fr); } }
 @media (min-width: 900px) { .lp-grade-3 { grid-template-columns: repeat(3, 1fr); } }
 
+.lp-cartao {
+  background: var(--color-bg);
+  border: 1px solid var(--regua);
+  border-radius: var(--lp-radius-lg);
+  box-shadow: var(--lp-shadow-sm);
+  padding: 28px 26px;
+}
+
 .lp-split { display: grid; gap: 40px; grid-template-columns: 1fr; align-items: start; }
 @media (min-width: 900px) {
-  .lp-split { grid-template-columns: 0.8fr 1.2fr; gap: 56px; }
+  .lp-split { grid-template-columns: 0.85fr 1.15fr; gap: 48px; }
 }
-
-/* ── falhas da planilha ───────────────────────────────────────────────────── */
-
-.lp-falha-rotulo {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--painel);
+/* Manutenção: a tabela pesa mais que os cards ao lado, então a proporção
+   inverte em relação ao `.lp-split` padrão. */
+.lp-split-manutencao { display: grid; gap: 24px; grid-template-columns: 1fr; align-items: start; }
+@media (min-width: 900px) {
+  .lp-split-manutencao { grid-template-columns: 1.55fr 1fr; }
 }
-.lp-falha-texto { font-size: 16px; color: var(--tinta-forte); margin-top: 12px; }
+.lp-manutencao-lateral { display: flex; flex-direction: column; gap: 20px; }
+.lp-manutencao-lateral .lp-cartao { padding: 22px 24px; }
+.lp-tipos-titulo { font-size: 15px; font-weight: 700; }
+.lp-tipos-nota { font-size: 13.5px; color: var(--tinta-fraca); margin-top: 4px; }
+.lp-tipo-linha { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-top: 1px solid var(--regua); font-size: var(--t-sm); }
+.lp-tipo-linha:first-child { border-top: 0; }
+.lp-tipo-intervalo { margin-left: auto; color: var(--tinta-media); font-variant-numeric: tabular-nums; }
+.lp-destaque-kicker { font-size: 13px; font-weight: 700; color: var(--color-accent); }
+.lp-destaque-texto { font-size: var(--t-sm); color: var(--tinta-forte); margin-top: 10px; }
+
+/* ── dores (numeradas) ────────────────────────────────────────────────────── */
+
+.lp-dor-num { font-size: 13px; font-weight: 700; color: var(--color-accent); }
+.lp-dor-texto { font-size: var(--t-sm); color: var(--tinta-forte); margin-top: 10px; }
 
 /* ── comparativo ──────────────────────────────────────────────────────────── */
 
-.lp-compara { min-width: 640px; }
+/* Sem `overflow: hidden`: as linhas não têm fundo próprio, então não há nada
+   pra recortar — e recortar aqui quebraria a rolagem horizontal (o
+   `.lp-rolagem` em volta só enxerga o que transborda de verdade). */
+.lp-compara { border-radius: var(--lp-radius-lg); border: 1px solid var(--regua); box-shadow: var(--lp-shadow-sm); }
+.lp-compara-tabela { min-width: 640px; }
 .lp-compara-linha {
   display: grid;
   grid-template-columns: 1.1fr 1fr 1fr;
   gap: 24px;
-  padding: 18px 0;
-  border-bottom: 1px solid var(--regua-fraca);
+  padding: 18px 26px;
+  border-bottom: 1px solid var(--regua);
   align-items: start;
 }
-.lp-compara-cab {
-  border-bottom: 2px solid var(--tinta);
-  padding-bottom: 12px;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--tinta-fraca);
-}
-.lp-compara-cab .is-app { color: var(--painel); }
+.lp-compara-linha:last-child { border-bottom: 0; }
+.lp-compara-cab { font-size: 13px; color: var(--tinta-fraca); padding-top: 20px; }
+.lp-compara-cab .is-app { color: var(--color-accent); font-weight: 600; }
 .lp-compara-item { font-size: var(--t-sm); font-weight: 600; }
 .lp-compara-antes { font-size: var(--t-sm); color: var(--tinta-fraca); }
 .lp-compara-depois { font-size: var(--t-sm); color: var(--tinta-forte); }
 
 /* ── recursos ─────────────────────────────────────────────────────────────── */
 
+.lp-recurso { display: flex; flex-direction: column; gap: 14px; transition: box-shadow 0.15s ease; }
+.lp-recurso:hover { box-shadow: var(--lp-shadow-md); }
 .lp-recurso-marca {
-  width: 34px;
-  height: 34px;
-  background: var(--painel);
-  color: var(--papel);
-  font-family: var(--mono);
-  font-weight: 600;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--lp-radius-sm);
+  background: var(--color-accent-100);
+  color: var(--color-accent);
+  font-family: var(--font-heading);
+  font-weight: 700;
   font-size: var(--t-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 16px;
 }
-.lp-recurso-texto { font-size: 15px; color: var(--tinta-forte); margin-top: 10px; }
-.lp-lista { display: grid; gap: 9px; margin-top: 16px; }
-.lp-lista li {
-  display: grid;
-  grid-template-columns: 15px 1fr;
-  gap: 10px;
-  align-items: start;
-  font-size: var(--t-sm);
-  color: var(--tinta-forte);
-}
-.lp-lista svg { margin-top: 4px; color: var(--painel); }
+.lp-recurso-texto { font-size: 15.5px; color: var(--tinta-forte); }
+.lp-lista { display: grid; gap: 10px; margin-top: 4px; }
+.lp-lista li { display: grid; grid-template-columns: 16px 1fr; gap: 10px; align-items: start; font-size: var(--t-sm); color: var(--tinta-media); }
+.lp-lista svg { margin-top: 3px; color: var(--color-accent); flex: none; }
 
-/* ── passos (única numeração real da página) ──────────────────────────────── */
+/* ── como funciona (única numeração de sequência real) ───────────────────── */
 
 .lp-passo-num {
-  font-family: var(--mono);
-  font-size: 40px;
-  font-weight: 600;
-  line-height: 1;
-  color: var(--painel);
-  letter-spacing: -0.04em;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: var(--color-bg);
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.lp-passo h3 { margin-top: 14px; }
-.lp-passo p { margin-top: 10px; font-size: 15px; color: var(--tinta-forte); }
+.lp-passo h3 { margin-top: 12px; }
+.lp-passo p { margin-top: 8px; font-size: 15.5px; color: var(--tinta-forte); }
 
 /* ── permissões ───────────────────────────────────────────────────────────── */
 
-.lp-matriz { font-size: var(--t-sm); min-width: 460px; }
+.lp-matriz-cartao { border: 1px solid var(--regua); border-radius: var(--lp-radius-lg); box-shadow: var(--lp-shadow-sm); padding: 6px 20px 12px; }
+.lp-matriz { min-width: 460px; font-size: var(--t-sm); }
 .lp-matriz th {
   text-align: left;
-  font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
   color: var(--tinta-fraca);
-  padding: 12px 8px;
-  border-bottom: 2px solid var(--tinta);
+  padding: 14px 6px;
 }
-/* `relative` para dar bloco contentor ao `.lp-oculto` de dentro: sem isso ele
-   se posiciona pelo bloco inicial, escapa do `.lp-rolagem` e do `overflow-x:
-   clip` do `.lp`, e cria rolagem horizontal na página abaixo de 480px. */
-.lp-matriz td { position: relative; padding: 13px 8px; border-bottom: 1px solid var(--regua-fraca); color: var(--tinta-forte); }
-.lp-matriz td + td { font-family: var(--mono); font-size: 13px; }
+/* `relative` dá bloco contentor ao `.lp-oculto` — sem isso ele se posiciona
+   pelo bloco inicial, escapa do `.lp-matriz-rolagem` e do `overflow-x: clip`
+   do `.lp`, e cria rolagem horizontal na página inteira abaixo de 480px. */
+.lp-matriz td { position: relative; padding: 13px 6px; border-top: 1px solid var(--regua); color: var(--tinta-forte); }
 .lp-matriz td + td svg { display: block; }
-.lp-sim { color: var(--painel); }
-/* O X não é enfeite: fica em tinta de texto, não num cinza apagado. */
+.lp-sim { color: var(--color-accent); }
 .lp-nao { color: var(--tinta-media); }
-
 /* Some da tela, continua no leitor de tela — um ✓ sozinho não se lê. */
 .lp-oculto {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
 }
-.lp-garantia { display: grid; gap: 4px; padding: 16px 0; border-top: 1px solid var(--regua); }
-.lp-garantia-titulo { font-size: 15px; font-weight: 600; }
-.lp-garantia p { font-size: var(--t-sm); color: var(--tinta-forte); }
+
+/* ── segurança ────────────────────────────────────────────────────────────── */
+
+.lp-seguranca-kicker { font-size: 13px; font-weight: 700; color: var(--color-accent); }
+.lp-seguranca h3 { font-size: 19px; margin-top: 10px; }
+.lp-seguranca p { font-size: var(--t-sm); color: var(--tinta-forte); margin-top: 8px; }
+
+/* ── objeções ─────────────────────────────────────────────────────────────── */
+
+.lp-objecao-q { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.35; }
+.lp-objecao-r { font-size: var(--t-sm); color: var(--tinta-forte); margin-top: 12px; }
 
 /* ── faq ──────────────────────────────────────────────────────────────────── */
 
@@ -670,18 +502,16 @@
   letter-spacing: -0.01em;
 }
 .lp-faq > summary::-webkit-details-marker { display: none; }
-.lp-faq > summary:hover { color: var(--painel); }
-/* O "+" gira 45° e vira "×" quando abre — a única micro-interação da página. */
+.lp-faq > summary:hover { color: var(--color-accent); }
 .lp-faq-sinal {
   margin-left: auto;
   flex: none;
-  font-family: var(--mono);
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1;
   color: var(--tinta-fraca);
   transition: transform 0.2s ease, color 0.2s ease;
 }
-.lp-faq[open] .lp-faq-sinal { transform: rotate(45deg); color: var(--painel); }
+.lp-faq[open] .lp-faq-sinal { transform: rotate(45deg); color: var(--color-accent); }
 @media (prefers-reduced-motion: reduce) {
   .lp-faq-sinal { transition: none; }
 }
@@ -689,80 +519,81 @@
 
 /* ── cta final ────────────────────────────────────────────────────────────── */
 
-.lp-cta { background: var(--painel); color: var(--papel); }
-.lp-cta-grade { display: grid; gap: 40px; grid-template-columns: 1fr; align-items: start; }
-@media (min-width: 900px) {
-  .lp-cta-grade { grid-template-columns: 1fr 0.85fr; gap: 56px; }
+.lp-cta {
+  background: var(--color-accent);
+  border-radius: var(--lp-radius-xl);
+  padding: 56px 44px;
 }
-.lp-cta h2 { color: var(--papel); max-width: 18ch; }
-.lp-cta-sub { margin-top: 20px; max-width: 42ch; font-size: 17px; color: rgba(253, 250, 246, 0.72); }
-.lp-cta-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 30px; }
+.lp-cta-grade { display: grid; gap: 40px; grid-template-columns: 1fr; align-items: center; }
+@media (min-width: 900px) {
+  .lp-cta-grade { grid-template-columns: 1fr 0.85fr; gap: 52px; }
+}
+.lp-cta h2 { color: var(--color-bg); max-width: 18ch; }
+.lp-cta-sub { margin-top: 18px; max-width: 42ch; font-size: var(--t-lead); color: color-mix(in srgb, var(--color-bg) 72%, transparent); }
+.lp-cta-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 28px; }
 .lp-cta-mail {
-  font-family: var(--mono);
   font-size: var(--t-sm);
-  color: rgba(253, 250, 246, 0.72);
+  color: color-mix(in srgb, var(--color-bg) 72%, transparent);
   text-decoration: underline;
   text-underline-offset: 4px;
 }
-.lp-cta-mail:hover { color: var(--papel); }
-/* 0.5 dava 4.02:1 sobre o azul — abaixo do mínimo para texto. */
-.lp-cta .lp-campo { color: rgba(253, 250, 246, 0.72); }
-.lp-cta :focus-visible { outline-color: var(--papel); }
+.lp-cta-mail:hover { color: var(--color-bg); }
+.lp-cta .lp-campo { color: color-mix(in srgb, var(--color-bg) 72%, transparent); }
+.lp-cta :focus-visible { outline-color: var(--color-bg); }
 
-.lp-form { background: var(--papel); color: var(--tinta); padding: 26px 24px; }
-.lp-form-titulo {
-  font-family: var(--mono);
-  font-size: var(--t-cap);
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--tinta-fraca);
-}
+.lp-form { background: var(--color-bg); color: var(--color-text); padding: 28px; border-radius: var(--lp-radius-lg); box-shadow: var(--lp-shadow-lg); }
+.lp-form-titulo { font-size: var(--t-cap); font-weight: 700; color: var(--tinta-fraca); }
 .lp-form-campos { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
 .lp-input {
   font: inherit;
   font-size: var(--t-sm);
-  padding: 12px 13px;
-  border: 1px solid var(--regua);
-  border-radius: 0;
-  background: var(--papel-fundo);
-  color: var(--tinta);
+  padding: 12px 14px;
+  border: 1px solid var(--regua-forte);
+  border-radius: var(--lp-radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
   width: 100%;
 }
-.lp-input:focus-visible { border-color: var(--painel); outline-offset: 0; }
+.lp-input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
 .lp-form-nota { font-size: var(--t-cap); color: var(--tinta-fraca); }
-.lp-form-ok { font-size: 15px; color: var(--tinta-forte); margin-top: 18px; }
-.lp-form-ok a { color: var(--painel); text-decoration: underline; text-underline-offset: 3px; }
+.lp-form-ok { font-size: 15px; color: var(--tinta-forte); }
+.lp-form-ok a { color: var(--color-accent); text-decoration: underline; text-underline-offset: 3px; }
 
 /* ── rodapé ───────────────────────────────────────────────────────────────── */
 
 .lp-rodape {
   max-width: var(--medida);
   margin: 0 auto;
-  padding: 32px var(--gutter) 48px;
+  padding: 40px var(--gutter) 56px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 22px;
-  font-family: var(--mono);
-  font-size: var(--t-cap);
+  font-size: var(--t-sm);
   color: var(--tinta-fraca);
 }
-.lp-rodape a:hover { color: var(--painel); }
+.lp-rodape a:hover { color: var(--color-accent); }
+
+/* ── revelar ao rolar ─────────────────────────────────────────────────────── */
+
+.lp-revela { opacity: 0; transform: translateY(16px); transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.2, 0.7, 0.3, 1); }
+.lp-revela.is-visivel { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .lp-revela { opacity: 1; transform: none; transition: none; }
+}
 
 @media (max-width: 600px) {
   .lp { --gutter: 16px; }
-  .lp-wrap { padding-top: 56px; padding-bottom: 56px; }
-  .lp-grade > * { padding: 22px 18px; }
+  .lp-cta { padding: 40px 24px; }
 }
 
 /* Abaixo disto a barra não comporta marca + Entrar + CTA + Seções na mesma
    linha. "Entrar" sai da barra e passa a viver dentro do menu. */
 @media (max-width: 560px) {
-  .lp-nav-inner { gap: 12px; padding-left: 12px; padding-right: 12px; }
+  .lp-nav { gap: 12px; padding-left: 14px; }
   .lp-nav-entrar { display: none; }
   .lp-nav-acoes { gap: 6px; }
-  .lp-nav-acoes .lp-btn { padding: 9px 11px; }
+  .lp-nav-acoes .lp-btn { padding: 9px 12px; }
 }
 .lp-menu-entrar { display: none; }
 @media (max-width: 560px) {

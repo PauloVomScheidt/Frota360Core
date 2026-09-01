@@ -141,9 +141,10 @@ img { display: block; max-width: 100%; }
 .input-underline:focus-visible { border-color: var(--color-accent); }
 
 /* — tags —
-   Mesma forma da etiqueta da landing (.lp-etiq): a barra lateral saturada e o que
-   chama o olho numa tabela longa, sem que o fundo precise gritar. A barra sai de
-   currentColor, entao cada variante so define o par cor/fundo. */
+   A barra lateral saturada e o que chama o olho numa tabela longa, sem que o fundo
+   precise gritar. A barra sai de currentColor, entao cada variante so define o par
+   cor/fundo. A landing reaproveita esta classe direto dentro de um `Dispositivo`
+   (ver docs/contexto-web.md §3.1) — nao tem uma etiqueta propria. */
 .tag {
   display: inline-flex; align-items: center;
   font-size: 11px; font-weight: 600;

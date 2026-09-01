@@ -459,6 +459,8 @@ export function RotasPage() {
       // `kmRestantes` das manutenções. A cadeia é rota → veículo → manutenção.
       queryClient.invalidateQueries({ queryKey: ['veiculos'] })
       queryClient.invalidateQueries({ queryKey: ['manutencoes'] })
+      // E é aqui que o `kmPercorrido` é apurado — o denominador do custo por km.
+      queryClient.invalidateQueries({ queryKey: ['custos'] })
     },
     onError: (error) =>
       setErrosEncerramento(mensagensDeErro(error, 'Não foi possível encerrar a rota.')),
@@ -474,6 +476,8 @@ export function RotasPage() {
       // Excluir uma rota aberta solta o veículo: a coluna "Situação" de /veiculos
       // ficaria dizendo "Em rota" até o próximo staleTime.
       queryClient.invalidateQueries({ queryKey: ['veiculos'] })
+      // Se a rota estava encerrada, o `kmPercorrido` dela some do custo por km.
+      queryClient.invalidateQueries({ queryKey: ['custos'] })
     },
     onError: (error) => setErrosExclusao(mensagensDeErro(error, 'Não foi possível excluir a rota.')),
   })

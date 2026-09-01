@@ -455,9 +455,13 @@ export function AbastecimentosPage() {
     return lista.filter((v) => v.id === rotaAtiva.codigoVeiculo)
   }, [veiculosQuery.data, rotaAtiva])
 
-  /** Sem odômetro em jogo, o lançamento não toca em veículo nem em manutenção. */
+  /**
+   * Sem odômetro em jogo, o lançamento não toca em veículo nem em manutenção — mas o valor
+   * é metade do que a tela de custos soma.
+   */
   function invalidar() {
     queryClient.invalidateQueries({ queryKey: ['abastecimentos'] })
+    queryClient.invalidateQueries({ queryKey: ['custos'] })
   }
 
   const salvarMutation = useMutation({

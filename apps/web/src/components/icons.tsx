@@ -185,6 +185,15 @@ export const FuelIcon = (p: IconProps) => (
   </Icon>
 )
 
+/** Cifrão em círculo — custos. */
+export const DinheiroIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 6v12" />
+    <path d="M14.5 9.5a2.5 2.5 0 0 0-2.5-1.5c-1.4 0-2.5.7-2.5 2s1.1 2 2.5 2 2.5.7 2.5 2-1.1 2-2.5 2a2.5 2.5 0 0 1-2.5-1.5" />
+  </Icon>
+)
+
 /** Relógio com seta de retorno — histórico/trilha de auditoria. */
 export const HistoricoIcon = (p: IconProps) => (
   <Icon {...p}>

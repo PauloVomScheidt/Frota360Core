@@ -523,6 +523,9 @@ export function MinhasRotasPage() {
       // acender uma manutenção atrasada. A cadeia é rota → veículo → manutenção.
       queryClient.invalidateQueries({ queryKey: ['veiculos'] })
       queryClient.invalidateQueries({ queryKey: ['manutencoes'] })
+      // O motorista não vê `/custos`, mas apura aqui o `kmPercorrido` que a gestão divide
+      // pelo custo — e o cache é o mesmo se ela abrir a tela na sequência.
+      queryClient.invalidateQueries({ queryKey: ['custos'] })
     },
     onError: (error) =>
       setErrosEncerramento(mensagensDeErro(error, 'Não foi possível encerrar a rota.')),
