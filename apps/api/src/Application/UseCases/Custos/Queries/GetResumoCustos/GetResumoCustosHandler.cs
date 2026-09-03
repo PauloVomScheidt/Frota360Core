@@ -78,26 +78,33 @@ namespace Frota360.Application.UseCases.Custos.Queries.GetResumoCustos
             var km = quilometragens.ToDictionary(k => k.VeiculoId);
 
             var linhas = totais
-                .GroupBy(t => t.VeiculoId)
-                .Select(g =>
-                {
-                    var totalAbastecimento = g.Where(t => t.Origem == OrigemCusto.Abastecimento).Sum(t => t.Total);
-                    var totalManutencao = g.Where(t => t.Origem == OrigemCusto.Manutencao).Sum(t => t.Total);
-                    var quilometragem = km.TryGetValue(g.Key, out var k) ? k.Km : 0;
+            .GroupBy(t => t.VeiculoId)
+            .Select(g =>
+            {
+                decimal totalAbastecimento = 0;
+                decimal totalManutencao = 0;
 
-                    return new CustoPorVeiculoResponse
-                    {
-                        VeiculoId = g.Key,
-                        VeiculoNome = g.First().VeiculoNome,
-                        VeiculoPlaca = g.First().VeiculoPlaca,
-                        TotalAbastecimento = totalAbastecimento,
-                        TotalManutencao = totalManutencao,
-                        Total = totalAbastecimento + totalManutencao,
-                        Km = quilometragem,
-                        CustoPorKm = PorKm(totalAbastecimento + totalManutencao, quilometragem)
-                    };
-                })
-                .ToList();
+                foreach (var item in g)
+                {
+                    if (item.Origem == OrigemCusto.Abastecimento) totalAbastecimento += item.Total;
+                    else if (item.Origem == OrigemCusto.Manutencao) totalManutencao += item.Total;
+                }
+
+                var quilometragem = km.TryGetValue(g.Key, out var k) ? k.Km : 0;
+
+                return new CustoPorVeiculoResponse
+                {
+                    VeiculoId = g.Key,
+                    VeiculoNome = g.First().VeiculoNome,
+                    VeiculoPlaca = g.First().VeiculoPlaca,
+                    TotalAbastecimento = totalAbastecimento,
+                    TotalManutencao = totalManutencao,
+                    Total = totalAbastecimento + totalManutencao,
+                    Km = quilometragem,
+                    CustoPorKm = PorKm(totalAbastecimento + totalManutencao, quilometragem)
+                };
+            })
+            .ToList();
 
             var comCusto = linhas.Select(l => l.VeiculoId).ToHashSet();
 
