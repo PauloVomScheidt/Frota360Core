@@ -43,6 +43,12 @@ export const pode = {
    * gestão recebe a frota inteira, o motorista só os próprios lançamentos.
    */
   verAbastecimentos: (role?: Role) => role !== undefined,
+  /**
+   * Tela `/custos`: a visão consolidada do que a frota gasta. Só gestão — o endpoint devolve
+   * totais da frota inteira, que é justamente o que o motorista não pode ver (a API já
+   * esconde dele o custo da manutenção).
+   */
+  verCustos: gestao,
 
   // ----- Ações -----
   /** Cadastrar, editar e encerrar rota na tela de gestão (`/rotas`). */

@@ -234,13 +234,21 @@ Base: `api/v1/{controller}`. A versão também é aceita via header `api-version
 | GET/POST/DELETE | `/convite`, `/convite/{id}` | Admin |
 | POST | `/convite/aceitar` | anônimo |
 | GET | `/usuario` · PUT `/usuario/{id}/role` · `/usuario/{id}/ativo` | Admin |
-| GET | `/veiculo`, `/motorista`, `/rota`, `/tipomanutencao?apenasAtivos=`, `/manutencao?veiculoId=&status=` (+ `/{id}`) | qualquer autenticado |
-| POST/PUT | `/veiculo`, `/motorista`, `/tipomanutencao`, `/manutencao`, `/manutencao/{id}/concluir` | Admin, Supervisor |
+| GET/PUT | `/usuario/perfil` — o próprio cadastro | qualquer autenticado |
+| GET | `/veiculo`, `/tipomanutencao?apenasAtivos=`, `/manutencao?veiculoId=&status=&de=&ate=` (+ `/{id}`) | qualquer autenticado (o Motorista não recebe `custo` da manutenção) |
+| GET | `/motorista`, `/rota` (+ `/{id}`) | Admin, Supervisor, Operador |
+| GET | `/rota/minhas` | **Motorista** (as próprias, pelo `sub` do token) |
+| GET/POST/PUT | `/abastecimento?veiculoId=&motoristaId=&de=&ate=` (+ `/{id}`) | qualquer autenticado — o Motorista só alcança o que é dele |
+| GET | `/custo?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&origem=&de=&ate=` · `/custo/resumo?…` | Admin, Supervisor, Operador |
+| GET | `/auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` | Admin |
+| POST/PUT | `/veiculo`, `/tipomanutencao`, `/manutencao`, `/manutencao/{id}/concluir` | Admin, Supervisor |
 | POST/PUT | `/rota`, `/rota/{id}/encerrar` | qualquer autenticado (inclui Operador) |
 | DELETE | `/{qualquer}/{id}` | **Admin** |
 | GET | `/health`, `/health/detail`, `/scalar/v1` | aberto |
 
 Transição de estado é sempre **endpoint próprio**, nunca PUT: `POST /manutencao/{id}/concluir`, `POST /rota/{id}/encerrar`.
+
+`/auditoria` e `/custo` são os dois endpoints paginados — o `dados` do envelope vem como `ResultadoPaginado<T>`, não como array. **`/custo` não tem tabela por trás**: é um read model que une `Abastecimento.Valor` e `Manutencao.Custo` na leitura, e `/custo/resumo` é a única agregação servida pela API.
 
 ---
 

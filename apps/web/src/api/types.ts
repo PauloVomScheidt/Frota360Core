@@ -417,3 +417,96 @@ export interface AbastecimentoResponse {
   observacao?: string | null
   dataInclusao: string
 }
+
+// ---------- Custo ----------
+
+/**
+ * De onde saiu um custo. Não existe tabela de custos: o valor continua sendo lançado no
+ * abastecimento e na conclusão da manutenção, e `/custo` só une as duas origens na leitura.
+ *
+ * Espelha o enum `OrigemCusto` do Domain — mexeu numa, mexa na outra. Custo avulso
+ * (pedágio, multa, IPVA) entra aqui como uma origem nova, e nada mais neste arquivo muda.
+ */
+export type OrigemCusto = 'Abastecimento' | 'Manutencao'
+
+/** Uma linha de custo, já normalizada entre as origens. */
+export interface LancamentoCustoResponse {
+  origem: OrigemCusto
+  /** Id na tabela de origem — é por ele que se volta ao registro. */
+  origemId: number
+  data: string
+  veiculoId: number
+  veiculoNome: string
+  veiculoPlaca: string
+  /** Nulo em manutenção, que não é atribuída a motorista. */
+  motoristaId?: number | null
+  motoristaNome?: string | null
+  /** "Combustível" no abastecimento; o nome do tipo na manutenção. */
+  categoria: string
+  valor: number
+  observacao?: string | null
+}
+
+export interface CustoFiltro {
+  pagina?: number
+  /** Teto de 100 no servidor; acima disso volta 400. */
+  tamanhoPagina?: number
+  veiculoId?: number
+  /**
+   * Preenchido, o resultado sai **só com abastecimentos**: manutenção não é atribuída a
+   * motorista. A tela avisa o usuário disso.
+   */
+  motoristaId?: number
+  origem?: OrigemCusto
+  /** `yyyy-MM-dd`; `ate` é inclusivo (o servidor estende até o fim do dia). */
+  de?: string
+  ate?: string
+}
+
+export interface CustoPorVeiculoResponse {
+  veiculoId: number
+  veiculoNome: string
+  veiculoPlaca: string
+  totalAbastecimento: number
+  totalManutencao: number
+  total: number
+  /** Km das rotas encerradas no período. Zero quando nenhuma foi encerrada. */
+  km: number
+  /** Nulo quando `km` é zero — não há denominador. */
+  custoPorKm?: number | null
+}
+
+export interface CustoPorMesResponse {
+  ano: number
+  /** 1 a 12. */
+  mes: number
+  totalAbastecimento: number
+  totalManutencao: number
+  total: number
+}
+
+/**
+ * A primeira agregação servida pela API — os totais são somados no banco, não com `reduce`
+ * no cliente como nos KPIs do dashboard.
+ */
+export interface ResumoCustosResponse {
+  total: number
+  totalAbastecimento: number
+  totalManutencao: number
+  quantidadeLancamentos: number
+  kmTotal: number
+  /**
+   * Nulo quando não houve rota encerrada no período. Rota ainda aberta não tem km apurado,
+   * então o mês corrente subestima o km e superestima o R$/km.
+   */
+  custoPorKm?: number | null
+  /**
+   * Manutenções concluídas no período sem custo informado. Ficam fora de toda soma — a tela
+   * mostra a contagem para o total não mentir por omissão.
+   */
+  manutencoesSemCustoInformado: number
+  /** Do maior total para o menor. Inclui veículo que rodou sem custo lançado. */
+  porVeiculo: CustoPorVeiculoResponse[]
+  /** Em ordem cronológica; só os meses que tiveram lançamento. */
+  porMes: CustoPorMesResponse[]
+}

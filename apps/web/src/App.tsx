@@ -15,6 +15,7 @@ import { UsuariosPage } from './pages/UsuariosPage'
 import { ConvitesPage } from './pages/ConvitesPage'
 import { AuditoriaPage } from './pages/AuditoriaPage'
 import { AbastecimentosPage } from './pages/AbastecimentosPage'
+import { CustosPage } from './pages/CustosPage'
 import { PerfilPage } from './pages/PerfilPage'
 import { RequireAuth, RequirePode } from './components/RequireAuth'
 import { pode } from './auth/permissions'
@@ -54,6 +55,9 @@ export default function App() {
           </Route>
           <Route element={<RequirePode permitido={pode.verAbastecimentos} />}>
             <Route path="/abastecimentos" element={<AbastecimentosPage />} />
+          </Route>
+          <Route element={<RequirePode permitido={pode.verCustos} />}>
+            <Route path="/custos" element={<CustosPage />} />
           </Route>
           <Route element={<RequirePode permitido={pode.verMinhasRotas} />}>
             <Route path="/minhas-rotas" element={<MinhasRotasPage />} />

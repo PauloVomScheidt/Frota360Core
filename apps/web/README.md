@@ -43,16 +43,26 @@ A URL da API vem de `VITE_API_URL` (`.env.development` / `.env.production`).
 | `/esqueci-senha` | anônimo | Dispara `POST /auth/esqueci-senha` (resposta neutra) |
 | `/redefinir-senha?token=` | anônimo | Destino do e-mail de reset |
 | `/convite?token=` | anônimo | Destino do convite: cria a conta e já autentica |
-| `/dashboard` | autenticado | Visão geral da frota |
-| `/motoristas` | autenticado (cadastro: Admin/Supervisor) | Lista e cadastro de motoristas |
+| `/dashboard` | gestão | Visão geral da frota |
+| `/motoristas` | gestão | Lista de motoristas (somente leitura) |
 | `/veiculos` | autenticado (cadastro: Admin/Supervisor) | Lista e cadastro de veículos |
-| `/rotas` | autenticado | Lista e cadastro de rotas |
+| `/rotas` | gestão | Lista e cadastro de rotas |
+| `/manutencoes` | autenticado (edição: Admin/Supervisor) | Plano de manutenção; o Motorista não vê custo |
+| `/abastecimentos` | autenticado | Lançar o gasto; o Motorista vê só o que é dele |
+| `/custos` | gestão | Abastecimentos e manutenções consolidados, com totais e R$/km |
+| `/minhas-rotas` | Motorista | Abrir e encerrar as próprias rotas |
+| `/tipos-manutencao` | Admin/Supervisor | Catálogo de tipos de manutenção |
 | `/usuarios` | Admin | Alterar permissão, ativar/desativar |
 | `/convites` | Admin | Criar, listar e cancelar convites |
+| `/auditoria` | Admin | Trilha do que a equipe alterou (somente leitura) |
+| `/perfil` | qualquer autenticado | O próprio cadastro |
+
+"Gestão" é todo papel menos `Motorista`, que tem `/minhas-rotas` como home.
 
 A navegação interna é uma **sidebar colapsável** (`AppLayout`) com duas categorias: *Dashboard*
-(Visão geral, Motoristas, Veículos, Rotas) e *Controle* (Usuários, Convites — só para Admin).
-O estado recolhido/expandido fica em `localStorage`.
+(as telas da frota) e *Controle* (Usuários, Convites, Auditoria — só para Admin). Para o
+Motorista ela separa o que ele **faz** do que só **consulta**. O estado recolhido/expandido
+fica em `localStorage`.
 
 ## Estrutura
 

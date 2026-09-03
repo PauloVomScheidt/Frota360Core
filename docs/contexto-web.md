@@ -57,6 +57,7 @@ Definido em [`apps/web/src/App.tsx`](apps/web/src/App.tsx). Qualquer rota descon
 | `/rotas` | `RotasPage` | Gestão |
 | `/manutencoes` | `ManutencoesPage` | Todos (Motorista: leitura, sem custo) |
 | `/abastecimentos` | `AbastecimentosPage` | Todos — **leitura e escrita**; Motorista vê só o que é dele |
+| `/custos` | `CustosPage` | Gestão — somente leitura |
 | `/minhas-rotas` | `MinhasRotasPage` | **Motorista** |
 | `/tipos-manutencao` | `TiposManutencaoPage` | **Admin / Supervisor** |
 | `/usuarios` | `UsuariosPage` | **Admin** |
@@ -82,30 +83,31 @@ O servidor continua sendo a autoridade — os guardas só evitam telas que resul
 
 ### 3.1 `/` — Landing page
 
-Página de apresentação do produto (v3 — "ficha de controle"). Não consome a API.
+Página de apresentação do produto (v4). Não consome a API.
 
-**Mesma linguagem visual do painel.** Até a v2 a landing era deliberadamente o oposto do painel (cantos arredondados, cartões brancos, botões-pílula, sombras difusas). Isso foi revertido: a landing agora é reta, bege e sem sombra como o resto do sistema, e **todas as cores saem de [`design-system.css`](apps/web/src/styles/design-system.css)** — `#fdfaf6` de fundo, `#201e1d` de texto, `#1f3a5f` de acento. Motivo: o mock do painel é o principal argumento da página, e ele mentia sobre o produto quando desenhado noutra língua.
+**Volta a ter linguagem visual própria.** A v3 tinha revertido a landing para a mesma língua reta/sem sombra do painel — essa decisão foi desfeita: a landing é de novo cantos arredondados, cartões com sombra e nav flutuante em pílula, o oposto do painel. A **exceção** é o que fica dentro de um `Dispositivo` (moldura arredondada + sombra) — os mocks que fingem ser telas de verdade (painel de veículos, rotas, manutenções): esses continuam **retos e reaproveitam as classes globais** `.table`/`.tag`/`.btn` de [`design-system.css`](apps/web/src/styles/design-system.css), porque representam o produto real, e desenhá-los arredondados mentiria sobre como ele é. Cor, sombra (`--shadow-*`) e tipografia (`--font-*`) continuam saindo do design system em toda a página — só o raio arredondado e as sombras maiores da vitrine (`--lp-radius-*`, `--lp-shadow-*`) são tokens exclusivos da landing.
 
-Ela mantém folha própria, [`apps/web/src/styles/landing.css`](apps/web/src/styles/landing.css), escopada em `.lp` e importada só por esta tela — mas agora por causa da **escala** (display grande, faixas de ponta a ponta, odômetro), não por discordar do sistema.
+Ela mantém folha própria, [`apps/web/src/styles/landing.css`](apps/web/src/styles/landing.css), escopada em `.lp` e importada só por esta tela — pela **escala** (display grande) e pelo visual divergente do painel.
 
 Convenções da folha, que valem ao editar:
 
 - **Escala tipográfica em tokens** (`--t-h1`, `--t-h2`, `--t-corpo`, `--t-cap`…) no bloco `.lp`. Não use tamanho solto no JSX.
-- **Três níveis de tinta para texto**, com nome de intenção e não de opacidade: `--tinta-forte` (.86), `--tinta-media` (.74) e `--tinta-fraca` (.66). Os valores foram **calibrados por contraste** — todos passam de 4,5:1 sobre `--papel`. Os antigos `--tinta-35`/`--tinta-50` reprovavam (2,15:1 e 3,13:1) em 23 pontos da página. Hierarquia aqui se faz com tamanho, peso e caixa; para régua e contorno use `--regua`/`--regua-fraca`, que **não são cor de texto**.
-- **`min-width: 0` nos filhos de todo grid que contenha tabela** (`.lp-mock > *`, `.lp-split > *`…). Sem isso o filho cresce até o `min-width` da tabela, o `overflow-x` de `.lp-rolagem` nunca entra e cabeçalho e rodapé do mock são cortados fora da tela no celular.
-- **O odômetro dimensiona por `cqw`**, não `vw` — ele tem que caber na coluna dele, que muda de largura por breakpoint; `.lp-instrumento` é o `container-type: inline-size`. A fita de algarismos tem `height: 1000%` (dez células de uma linha); com `inset: 0` cada célula vira um décimo de linha e o glifo estoura para fora da janela.
-- **`.lp-odo-digito` precisa de `contain: paint`, não só `overflow: hidden`.** Enquanto a fita anima ela vira camada composta própria e escapa do recorte do pai: os algarismos derramam por cima e por baixo da janela e chegam a encostar nas réguas do instrumento. O sintoma é característico — **só os dígitos em movimento vazam**, os parados recortam certo. Pelo mesmo motivo a fita **não** leva `will-change: transform`, que era justamente o que forçava a promoção da camada.
-- **Mono para número.** Placa, quilometragem, data, rótulo de campo e cabeçalho de tabela usam **IBM Plex Mono** (`--mono`); título e corpo seguem em Archivo. A fonte é carregada em [`index.html`](apps/web/index.html).
-- **Vermelho (`--alerta`) e âmbar (`--vencendo`) são estado de manutenção, nunca enfeite.** Só aparecem em "Atrasada" e "Vencendo".
+- **Três níveis de tinta para texto**, com nome de intenção e não de opacidade: `--tinta-forte` (78%), `--tinta-media` (62%) e `--tinta-fraca` (45%) — todos derivados de `var(--color-text)` por `color-mix()`, não um hex novo. Hierarquia aqui se faz com tamanho, peso e caixa; para régua use `--regua`/`--regua-forte`, que **não são cor de texto**.
+- **`min-width: 0` nos filhos de todo grid que contenha tabela** (`.lp-painel > *`, `.lp-split > *`, `.lp-cta-grade > *`). Sem isso o filho cresce até o `min-width` da tabela, o `overflow-x` de `.lp-rolagem` nunca entra e cabeçalho e rodapé do mock são cortados fora da tela no celular.
+- **`Dispositivo` (`comMenu?`) é a moldura de vitrine** — arredondada, com sombra, `overflow: hidden` (necessário aqui: os filhos retos têm fundo próprio e precisam ser recortados pelo raio da moldura). Por dentro fica um `.lp-painel`, que só abre a segunda coluna (206px de sidebar) com o modificador `.lp-painel-com-menu` — rotas e manutenções são um card só, sem sidebar.
+- **Dentro do `Dispositivo` as réguas do painel real (2px) afinam para 1px** — `.lp-painel-aside`, `.lp-painel-cab` e o cabeçalho de `.lp-painel .table` sobrescrevem só a espessura, nunca a cor (`var(--color-divider)` continua vindo do design system). Em escala reduzida a régua de 2px pesa mais do que no painel de verdade; a cor idêntica é o que garante que o mock ainda "é" a UI real, só menor.
+- **As demais rolagens horizontais (`.lp-compara`, `.lp-matriz-cartao`) NÃO levam `overflow: hidden`.** Elas não têm fundo próprio nas linhas, então não há nada pra recortar — e recortar quebraria a rolagem: o `.lp-rolagem` em volta só enxerga overflow que realmente transborda por um ancestral sem `overflow: hidden` no meio do caminho.
+- **Sem fonte mono.** A v3 usava IBM Plex Mono para placa/km/data — removida (o painel de verdade também não usa mono, então a mock não precisava). Números tabulares vêm de `font-variant-numeric: tabular-nums` em Archivo. `index.html` carrega só Archivo agora.
+- **Vermelho (`var(--color-danger)`) e âmbar (`var(--color-warning)`) são estado de manutenção, nunca enfeite** — os mesmos tokens do design system, via `.tag-danger`/`.tag-warning` dentro do `.lp-painel`. Não inventa um sexto tom nem apaga um existente (§8.1).
 - **O reset de `.lp` usa `:where()`** — `:where()` não soma especificidade, então `.lp :where(p) { margin: 0 }` vale (0,1,0) e qualquer classe abaixo o vence. Escrever `.lp p` em vez disso quebra silenciosamente as margens de `.lp-lead`, `.lp-hero-sub` e o sublinhado de `.lp-cta-mail`.
-- `.lp-wrap.lp-hero` usa classe dupla de propósito: precisa vencer `.lp-wrap` inclusive dentro do media query de 600px, que vem depois no arquivo.
+- **Espaço entre faixas via `--topo`.** `Faixa` recebe `espaco` (px, padrão 120) e escreve `--topo` inline; o CSS lê `margin-top: var(--topo, 120px)` e reduz pela metade abaixo de 700px. Não há mais régua entre faixas (era a identidade "ficha" da v3) — o espaço é a própria divisão.
 
-Seções, na ordem: barra fixa reta (âncoras, "Entrar", CTA de WhatsApp, menu `<details>` de seções no celular) → **hero com o odômetro** → mock do painel (sidebar + tabela de veículos) → "O que a planilha perde" (4 rótulos de campo) → comparativo planilha × Frota360 → "Recursos" (Motoristas, Veículos, Rotas, Manutenções) → **Manutenção** (mock da lista + catálogo de tipos no rodapé) → "Permissões" (matriz + três garantias de isolamento) → "Implantação" (3 passos) → "Dúvidas" (9 perguntas em `<details>`) → CTA azul com formulário de demonstração → rodapé.
+Seções, na ordem: nav flutuante em pílula (âncoras, "Entrar", CTA de WhatsApp, menu `<details>` no celular) → **hero** (texto centralizado, sem imagem) → mock do painel de veículos → barra "Construído sobre" → estatísticas → "O que a planilha perde" (4 dores numeradas) → comparativo planilha × Frota360 → **Recursos** (Motoristas, Veículos, Rotas, Manutenções) → **Como funciona** (3 passos) → Rotas (texto + mock) → **Manutenção** (mock da lista + catálogo de tipos + destaque) → **Permissões** (matriz) → Segurança (3 cards) → Objeções (3 citações) → **Dúvidas** (7 perguntas em `<details>`) → CTA azul com formulário de demonstração → rodapé. `ANCORAS` segue essa mesma ordem de leitura.
 
-- **O odômetro é o elemento de assinatura.** No hero, a quilometragem do veículo `MJU-5F71` conta de `KM_INICIAL` (51.780) até `KM_FINAL` (51.988) — cada algarismo é uma fita de 0–9 que desliza (`.lp-odo-fita`, `--digito`). Ao chegar perto de `KM_PREVISTO` (52.000) a manutenção abaixo acende como **Vencendo**, dentro da faixa `FAIXA_AVISO` (500 km). É a mecânica real do produto encenada; o selo "Demonstração" no alto do instrumento marca que os números são ilustrativos.
-- **Animação**: só o odômetro e o "+" do FAQ. Os *reveals* por `IntersectionObserver` da v2 foram removidos — eram 13 seções com a mesma transição. `prefers-reduced-motion` já entrega o odômetro no valor final (estado inicial do `useState`, sem salto depois do primeiro render).
-- **Numeração**: só "Implantação" é numerada, porque só ela é uma sequência de verdade. As falhas da planilha são identificadas por **rótulo de campo** (`Quilometragem`, `Responsável`, `Permissão`, `Cadastro`), não por `01/02/03`.
-- **Acessibilidade**: toda área rolável passa pelo componente `Rolagem` (`tabIndex=0` + `role="region"` + `aria-label`), sem o que ninguém alcança as tabelas só pelo teclado. O odômetro é `role="img"` com `aria-label`, e **sem** `aria-live`: o texto muda a cada tique e viraria dezenas de anúncios.
+- **Sem peça de assinatura no hero.** A v4 original tinha um odômetro decorativo (fita de dígitos contando até a manutenção "vencer") ao lado do texto — removido: complexidade (dois `useEffect` com `setTimeout`/`setInterval` encadeados, `contain: paint` para não vazar a animação) para um elemento que não era nem o mock do painel nem parte do produto real. O hero agora é só texto centralizado.
+- **Animação**: o "+" do FAQ e um *reveal* por `IntersectionObserver` (`useRevelarFaixas`) — cada `.lp-faixa` a partir da segunda (a primeira é o mock do painel, sempre visível) nasce oculta e aparece ao entrar na viewport. Quem prefere menos movimento **nunca recebe a classe que começa oculta** — não é a transição que se pula, é o esconder que não acontece.
+- **Numeração**: "Como funciona" (passos) e "O que a planilha perde" (dores) são as duas sequências numeradas da página — a primeira por serem passos de verdade, a segunda porque o layout de vitrine do canvas de origem pede o número como elemento visual do card.
+- **Acessibilidade**: toda área rolável passa pelo componente `Rolagem` (`tabIndex=0` + `role="region"` + `aria-label`), sem o que ninguém alcança as tabelas só pelo teclado.
 - **Matriz de permissões**: mostra ✓ (`CheckIcon`) e ✗ (`XIcon`) — mas a palavra "Sim"/"Não" continua no DOM em `.lp-oculto`, porque um ✓ sozinho não se lê em leitor de tela. `.lp-matriz td` é `position: relative` de propósito: sem bloco contentor, o `.lp-oculto` absoluto se posiciona pelo bloco inicial, escapa do `.lp-rolagem` **e** do `overflow-x: clip` do `.lp`, e cria rolagem horizontal na página inteira abaixo de 480px.
 - **Formulário de demonstração**: não existe endpoint público na API, então o envio monta um `mailto:` já preenchido com nome, empresa, e-mail e tamanho da frota. Como não há como saber se o cliente de e-mail abriu, a confirmação **não afirma que abriu** — diz o que era para acontecer e oferece WhatsApp e e-mail como saída. Trocar por um endpoint real é uma alteração local em `FormularioDemonstracao`.
 - Os contatos são as constantes `WHATSAPP` e `EMAIL` no topo de [`LandingPage.tsx`](apps/web/src/pages/LandingPage.tsx) — trocar ali muda todos os links da página.
@@ -316,6 +318,36 @@ O apontamento é curto de propósito — **veículo, motorista, valor, data e ob
 
 Cache: `['abastecimentos', filtro]`, com `filtro` incluindo `motoristaId`.
 
+### 5.9.2 `/custos` (gestão)
+
+Onde o gasto da frota fica visível numa tela só. Antes dela, a resposta para "quanto esse veículo custou em agosto" exigia abrir duas telas e somar à mão: `/abastecimentos` totalizava no cliente, `/manutencoes` exibia a coluna `Custo` e nem isso.
+
+**Somente leitura, e de propósito.** Não há `InlineForm` nem `RowActions`: o lançamento continua acontecendo nas telas de origem. Do lado da API não existe tabela de custos — as duas origens são unidas na leitura (§ 8.2 do contexto-api), e é isso que faz corrigir um valor em `/abastecimentos` corrigir o total aqui.
+
+**Só gestão.** O endpoint devolve totais da frota inteira, que é justamente o que o motorista não pode ver — a API já esconde dele o custo da manutenção. Sendo a tela fechada na porta (`Roles.Gestao` → 403), nenhum valor precisa ser escondido condicionalmente aqui dentro.
+
+A tela tem quatro blocos, nesta ordem:
+
+1. **Faixa de KPIs** no formato do dashboard: custo total (com a contagem de lançamentos), combustível e manutenção (cada um com sua participação no total) e **custo por km**. Os números vêm somados do banco, não de `reduce` no cliente.
+2. **Gráfico de evolução mensal** — barras empilhadas por origem, some quando o período cabe num mês só. Feito com divs e altura em porcentagem: uma biblioteca de gráfico seria a primeira dependência de front do projeto para desenhar dois retângulos. As duas séries usam a rampa do acento (`--color-accent-700` e `--color-accent-300`), **não** as classes `.tag-*`: aquelas são reservadas a situação (§8.1), e série de gráfico é categoria.
+3. **Tabela por veículo** — combustível, manutenção, total, km rodado e R$/km, do maior total para o menor.
+4. **Tabela de lançamentos** paginada (25 por página, teto de 100 no servidor), com o componente `Paginacao`.
+
+**Dois avisos em `tag-warning`, e ambos existem porque sem eles o número mente:**
+
+- **`N manutenções concluídas sem custo informado não entram neste total`** — `custo` é opcional em `ConcluirManutencaoRequest`, e quem concluiu sem preencher some da soma. A contagem vem do servidor (`manutencoesSemCustoInformado`).
+- **`Manutenção não é atribuída a motorista`**, quando há filtro de motorista ativo. O recorte por pessoa devolve **só abastecimentos**; sem o aviso, "custo do motorista X = R$ 800" seria lido como se incluísse oficina.
+
+Outros detalhes que decidem se o número é confiável:
+
+- **O período começa em "Este mês"**, não em "Todo o período": um total de todos os tempos não responde pergunta nenhuma e ainda faz a primeira carga ser a mais cara possível. É a única tela cujo `FiltroPeriodo` não abre em `todos`.
+- **Custo por km é `—`, nunca zero, quando não houve rota encerrada no período.** Sem denominador não existe métrica, e zero afirmaria que a frota rodou de graça. Rota ainda aberta não tem `kmPercorrido`, então o mês corrente subestima o km e **superestima** o R$/km.
+- **Veículo que rodou sem custo lançado aparece com total zero.** É o caso que mais merece ser visto — ninguém lançou o abastecimento —, e mantê-lo faz as colunas fecharem com o km total.
+- Filtros no servidor (veículo, motorista, origem, período); qualquer mudança **volta para a página 1**. Botão **Atualizar** no cabeçalho, como em `/auditoria`.
+- `formatCustoPorKm` (`lib/custo.ts`) usa até 4 casas: o valor costuma ficar abaixo de um real, e duas casas transformariam a diferença entre veículos em "R$ 0,50" para todo mundo.
+
+Cache: **`['custos', filtro]`** para a lista e **`['custos', 'resumo', recorte]`** para os totais — o recorte do resumo não carrega paginação, senão trocar de página refaria as somas. Ao contrário de `['auditoria']`, esta chave **é** invalidada de fora: ver a segunda cadeia longa em §6.4.
+
 ### 5.10 `/auditoria` (Admin)
 
 Trilha do que a equipe alterou. **Somente leitura** — não há `InlineForm` nem `RowActions`, porque a API não expõe caminho para alterar ou apagar uma linha (nem para o Admin).
@@ -363,7 +395,7 @@ Formulário único, sem tabela: **nome, CPF e data de nascimento** do próprio u
 
 ### 6.4 Chaves do React Query
 
-`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['usuarios']`, `['convites']`, `['perfil']`, `['manutencoes', filtro]`, `['abastecimentos', filtro]`, `['auditoria', filtro]`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`apps/web/src/lib/queryClient.ts`](apps/web/src/lib/queryClient.ts)).
+`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['usuarios']`, `['convites']`, `['perfil']`, `['manutencoes', filtro]`, `['abastecimentos', filtro]`, `['auditoria', filtro]`, `['custos', filtro]`, `['custos', 'resumo', recorte]`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`apps/web/src/lib/queryClient.ts`](apps/web/src/lib/queryClient.ts)).
 
 ⚠️ `['rotas']` e `['rotas','minhas']` são **listas diferentes**, não pai e filho: a segunda vem de outro endpoint e traz só as rotas do motorista logado. Invalidar pelo prefixo `['rotas']` alcançaria as duas, o que é inofensivo apenas porque nenhuma sessão usa as duas telas. Ao mexer nisso, invalide a chave exata.
 
@@ -375,7 +407,8 @@ Cruzamentos que não são óbvios, conferidos no código:
 - **Excluir uma rota** invalida `['rotas']` **e `['veiculos']`** — se a rota estava aberta, o veículo volta a `Disponível` na coluna Situação de `/veiculos` (§5.3). Não invalida `['manutencoes']`: excluir não mexe no odômetro.
 - Em `/minhas-rotas`, **abrir** e **encerrar** invalidam `['rotas','minhas']`, `['veiculos']` **e** `['manutencoes']` — a mesma cadeia da tela de gestão, agora que o motorista também lê manutenções e a tela mostra a pendência do veículo escolhido.
 - **Salvar o perfil** invalida `['perfil']`, `['motoristas']` **e** `['usuarios']` ([PerfilPage.tsx](apps/web/src/pages/PerfilPage.tsx)) — as duas listas exibem nome e CPF de quem acabou de se corrigir. É o único cruzamento que parte de uma tela sem tabela.
-- **Lançar, corrigir ou excluir abastecimento** invalida **só** `['abastecimentos']` — o lançamento é só o gasto e não toca no odômetro do veículo, então não entra na cadeia rota → veículo → manutenção. (Ele já entrou: enquanto o formulário pedia odômetro, invalidava também `['veiculos']` e `['manutencoes']`.)
+- **Lançar, corrigir ou excluir abastecimento** invalida `['abastecimentos']` **e `['custos']`** — o lançamento é só o gasto e não toca no odômetro, então continua fora da cadeia rota → veículo → manutenção; mas o valor é metade do que `/custos` soma. (Ele já esteve na cadeia: enquanto o formulário pedia odômetro, invalidava também `['veiculos']` e `['manutencoes']`.)
+- ⚠️ **`['custos']` é a segunda cadeia longa do app, e a menos óbvia.** Cinco mutações de três telas a alimentam: abastecimento (criar/corrigir/excluir), manutenção (**concluir** — é onde o custo entra —, editar, que pode trocar o veículo a que o custo é atribuído, e excluir) e **encerrar rota**, que apura o `kmPercorrido`: o denominador do R$/km. Encerrar rota passa a invalidar **quatro** chaves. As duas chaves de custo (lista e resumo) compartilham o prefixo `['custos']`, então uma invalidação alcança as duas de propósito — nenhuma tela usa uma sem a outra.
 - Qualquer mutação no catálogo invalida o prefixo `['tiposManutencao']`, que cobre de uma vez o catálogo completo e a lista de ativos usada no agendamento.
 - ⚠️ **`['auditoria']` é a exceção deliberada: ninguém a invalida.** Praticamente toda mutação do app cria uma linha de trilha, então invalidar de dentro de cada tela espalharia acoplamento pelo front inteiro — cada mutation passaria a conhecer uma tela que ela não afeta. O `staleTime` de 30 s cobre o uso normal, e a tela tem botão "Atualizar" para quem quer ver agora.
 
@@ -392,7 +425,8 @@ Cruzamentos que não são óbvios, conferidos no código:
 | | `GET /convite` (Admin) | ConvitesPage |
 | | `DELETE /convite/{id}` (Admin) | cancelar pendente (utilizado → 422) |
 | | `POST /convite/aceitar` (anônimo) | AcceptInvitePage — **já devolve sessão autenticada**; leva `cpf`/`dataNascimento` opcionais |
-| **auditoria** | `GET /auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` (Admin) | AuditoriaPage — **único endpoint paginado**: `dados` é um `ResultadoPaginado<T>`, não um array |
+| **auditoria** | `GET /auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` (Admin) | AuditoriaPage — paginado: `dados` é um `ResultadoPaginado<T>`, não um array |
+| **custo** | `GET /custo?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&origem=&de=&ate=` · `GET /custo/resumo?veiculoId=&motoristaId=&origem=&de=&ate=` (gestão) | CustosPage — a lista é paginada (`ResultadoPaginado<T>`); o resumo é a **única agregação servida pela API** |
 | **usuario** | `GET /usuario` (Admin) | UsuariosPage, **AuditoriaPage** (select "Quem") |
 | | `PUT /usuario/{id}/role` | muda permissão — revoga a sessão do alvo |
 | | `PUT /usuario/{id}/ativo` | ativa/desativa — idem; último admin ativo → 422 |
@@ -431,6 +465,7 @@ Cruzamentos que não são óbvios, conferidos no código:
 | Criar/editar veículos | ✅ | ✅ | — | — |
 | Criar/editar/concluir manutenções e tipos | ✅ | ✅ | — | — |
 | Lançar e corrigir abastecimento | ✅ | ✅ | ✅ | ✅ (só o que é dele) |
+| Ver os custos consolidados (`/custos`) | ✅ | ✅ | ✅ | — |
 | Excluir qualquer registro | ✅ | — | — | — |
 | Usuários e convites | ✅ | — | — | — |
 | Ver a trilha de auditoria | ✅ | — | — | — |
@@ -446,15 +481,15 @@ O `Motorista` combina os dois mecanismos: nas telas que ele alcança (veículos,
 
 ## 8. Design system e componentes compartilhados
 
-Tokens e classes em [`apps/web/src/styles/design-system.css`](apps/web/src/styles/design-system.css): fundo `#fdfaf6`, superfície `#f2ede4`, texto `#201e1d`, acento `#1f3a5f` (com rampa 100–900), perigo `#a03123`, tipografia Archivo e **raio 0 em tudo** — o visual é de réguas retas, não de cartões arredondados. **A landing pública segue esse mesmo visual** desde a v3 (§3.1); não há mais duas linguagens no produto.
+Tokens e classes em [`apps/web/src/styles/design-system.css`](apps/web/src/styles/design-system.css): fundo `#fdfaf6`, superfície `#f2ede4`, texto `#201e1d`, acento `#1f3a5f` (com rampa 100–900), perigo `#a03123`, tipografia Archivo e **raio 0 em tudo** — o visual é de réguas retas, não de cartões arredondados. **A landing pública (§3.1) tem visual próprio** (cantos arredondados, sombra) desde a v4 — a única exceção são os mocks de UI dentro de um `Dispositivo`, que reaproveitam estas mesmas classes (`.table`/`.tag`/`.btn`) porque precisam parecer com o produto real.
 
-`index.html` carrega Archivo (400/600/800) e **IBM Plex Mono** (400/600). O mono é usado hoje só pela landing, para placa, quilometragem, data e rótulo de campo — se o painel passar a usá-lo em coluna numérica, promova-o a token do design system.
+`index.html` carrega só Archivo (400/600/800) — o mono (IBM Plex Mono, usado pela landing até a v3) foi removido; nada no produto usa fonte monoespaçada hoje.
 
 Classes: `.btn` (`.btn-primary`, `.btn-secondary`, `.btn-icon`, `.btn-danger`), `.field` + `.input` (`.input-underline` no login), `.tag` (ver abaixo), `.nav`, `.table`, `.dialog*`.
 
 ### 8.1 Cor de situação — a tabela normativa
 
-**Situação se sinaliza pela classe `.tag`, nunca por `style` inline.** A `.tag` tem a forma da etiqueta da landing: barra de 3px na cor do estado (`border-left: 3px solid currentColor`), fundo tonal, caixa alta e peso 600. A barra é o que chama o olho numa tabela longa sem que o fundo precise gritar.
+**Situação se sinaliza pela classe `.tag`, nunca por `style` inline.** Barra de 3px na cor do estado (`border-left: 3px solid currentColor`), fundo tonal, caixa alta e peso 600 — a mesma classe usada nos mocks de UI da landing (§3.1), não uma imitação. A barra é o que chama o olho numa tabela longa sem que o fundo precise gritar.
 
 Cinco tokens de estado, em `:root`: `--color-accent`, `--color-success` (`#2e5c42`), `--color-warning` (`#7a5312`), `--color-danger` (`#a03123`) e a rampa neutra — cada um com seu `-bg`. **Não invente um hex novo nem um sexto tom**: a cor diz a consequência, não a entidade, e um tom por entidade transformaria a tabela em arco-íris.
 
@@ -496,7 +531,8 @@ Componentes reutilizados pelas telas:
 
 ## 9. O que ainda não existe
 
-- **Paginação e ordenação** nas demais listas — tudo vem de uma vez. A exceção é `/auditoria`, o único endpoint paginado da API (§5.10); `ResultadoPaginado<T>` e o componente `Paginacao` já nascem genéricos para as próximas listas que precisarem.
+- **Paginação e ordenação** nas demais listas — tudo vem de uma vez. As exceções são `/auditoria` (§5.10) e `/custos` (§5.12), os dois endpoints paginados da API; `ResultadoPaginado<T>` e o componente `Paginacao` já nascem genéricos para as próximas listas que precisarem.
+- **Biblioteca de gráfico**: não há nenhuma no `package.json`. O gráfico de `/custos` é feito com divs e altura em porcentagem — uma dependência nova não se paga por barras empilhadas.
 - **Toasts globais**: erros e sucessos são exibidos no local da ação, não há notificação central.
 - **Tratamento específico de 429**: a mensagem do rate limit chega como erro comum.
 - **Testes**: não há suíte no front.

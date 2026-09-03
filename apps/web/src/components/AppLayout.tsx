@@ -11,6 +11,7 @@ import {
   ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  DinheiroIcon,
   FuelIcon,
   GridIcon,
   HistoricoIcon,
@@ -174,6 +175,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         { to: '/rotas', rotulo: 'Rotas', icone: <RouteIcon size={17} /> },
         { to: '/manutencoes', rotulo: 'Manutenções', icone: <WrenchIcon size={17} /> },
         { to: '/abastecimentos', rotulo: 'Abastecimentos', icone: <FuelIcon size={17} /> },
+        { to: '/custos', rotulo: 'Custos', icone: <DinheiroIcon size={17} /> },
         // O catálogo de tipos só aparece para quem pode mantê-lo (Admin/Supervisor).
         ...(gestor
           ? [{ to: '/tipos-manutencao', rotulo: 'Tipos de manutenção', icone: <ClipboardIcon size={17} /> }]

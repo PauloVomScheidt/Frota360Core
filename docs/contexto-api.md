@@ -170,7 +170,7 @@ Além do odômetro, o encerramento grava `Veiculo.UltimoMotorista` e `Veiculo.Da
 
 **O apontamento é curto de propósito.** A primeira versão pedia litros e odômetro além de veículo, valor e data, para calcular consumo — precisão que não se paga no posto e que fazia o lançamento ser evitado. O contrato hoje é **veículo, motorista, valor, data e observação**: o dado entra sempre, e serve de base para relatório de **gasto** por veículo, por motorista, por rota e por período.
 
-**O abastecimento não mexe no odômetro.** São **dois** os fluxos que o avançam — abertura/encerramento de rota e conclusão de manutenção. Não há mais consumo (km/l), preço por litro nem custo por km; a `AbastecimentoResponse` não tem campo derivado nenhum.
+**O abastecimento não mexe no odômetro.** São **dois** os fluxos que o avançam — abertura/encerramento de rota e conclusão de manutenção. Sem litros nem odômetro no apontamento, consumo (km/l) e preço por litro continuam impossíveis, e a `AbastecimentoResponse` não tem campo derivado nenhum. Custo por km, esse sim, é calculável — mas fora daqui, cruzando com `Rota.KmPercorrido` (§ 8.2).
 
 **Duas pessoas por lançamento, e elas podem ser diferentes:**
 
@@ -196,6 +196,71 @@ A gestão escolhe o motorista, e ele é **obrigatório**: sem ele o handler recu
 Escrita é aberta a **todos os papéis** (quem abastece na estrada é o motorista, no pátio é o operador); exclusão é só Admin, como no resto. Veículo, motorista e rota não entram no `PUT` — só valor, data e observação: trocar qualquer um dos três reatribuiria o gasto. Nesse caso, exclua e lance de novo.
 
 **RN08 estendida:** veículo com abastecimento lançado não pode ser excluído (a FK é `Restrict`, então sem a guarda o usuário veria 500 em vez da explicação).
+
+### 8.2 Custos — a visão consolidada (01/09/2026)
+
+O custo da frota nasceu espalhado em duas telas que não conversavam: `/abastecimentos` somava no cliente, `/manutencoes` nem isso. `GET /custo` e `GET /custo/resumo` unem as duas origens numa visão só, filtrável por veículo, motorista, origem e período.
+
+**Não há tabela de custos, e isso é a decisão central.** O custo são duas colunas — `Abastecimento.Valor` (`numeric(10,2)`, NOT NULL) e `Manutencao.Custo` (`numeric(10,2)`, nulável, só na conclusão). Uma tabela de custos seria um **espelho**: o valor continua editável em `PUT /abastecimento/{id}` e em `POST /manutencao/{id}/concluir`, e o espelho precisaria de sincronia em create/update/delete/concluir — cada bug de sincronia virando número errado no relatório, em silêncio. A justificativa de performance também não existe neste volume. O desenho é um **read model**: as origens são unidas na leitura, e corrigir o valor na tela de origem já corrige o relatório.
+
+O DTO carrega um discriminador `origem` desde o primeiro dia justamente para que uma origem nova entre sem mexer no contrato — ver **Evolução prevista** no fim desta seção.
+
+**`ICustoRepository` é um repositório de read model**, e por isso atravessa três tabelas (`Abastecimento`, `Manutencao` e `Rota`). É exceção consciente ao "um repositório por agregado" do resto do projeto; nada nele escreve.
+
+**O que conta como custo:**
+
+| Origem | Fonte | Data | Categoria |
+|---|---|---|---|
+| `Abastecimento` | `Valor` | `DataAbastecimento` | literal `"Combustível"` |
+| `Manutencao` | `Custo` — **só** com `Status == Realizada` e `Custo`/`DataRealizacao` preenchidos | `DataRealizacao` | nome do `TipoManutencao` |
+
+**Três armadilhas do domínio que a API expõe explicitamente**, porque sem elas o número mente:
+
+- **Manutenção não é atribuída a motorista.** Filtrar por `motoristaId` descarta a perna de manutenção inteira — deduzi-la pela rota do veículo seria um chute. O recorte impossível (`motoristaId` + `origem=Manutencao`) devolve lista vazia, não erro.
+- **`Custo` é opcional ao concluir manutenção.** Concluída sem valor informado, ela fica fora de toda soma. Daí `ManutencoesSemCustoInformado` no resumo: a tela mostra a contagem para o total não mentir por omissão.
+- **Rota aberta não tem `KmPercorrido`.** O período corrente subestima o km e, portanto, **superestima** o R$/km.
+
+**Custo por km** sai de `Rota.KmPercorrido` das rotas **encerradas** no período, recortadas por `DataFim` (o momento em que a quilometragem foi apurada — mesmo critério do KPI do dashboard). É nulo quando o km é zero: sem denominador não existe métrica, e devolver zero afirmaria que a frota rodou de graça. A origem do custo é ignorada nessa soma — o km rodado é o mesmo, seja qual for o gasto dividido por ele.
+
+O resumo por veículo inclui **veículo que rodou sem custo lançado**, com total zero. É o caso que mais merece ser visto (ninguém lançou o abastecimento), e mantê-lo faz as colunas fecharem com os totais gerais.
+
+**A união é feita em memória, não com `Concat`.** A primeira implementação usava `UNION ALL`; o EF Core não traduz operação de conjunto depois de uma projeção com constantes — e a origem e a categoria são literais —, nem ordena por elas. `TraducaoDeConsultaTests` provou os dois erros contra o banco de verdade e é onde descobrir se um dia mudar. O custo disso é limitado e não é "trazer tudo": nenhuma linha além da `pagina × tamanhoPagina`-ésima de cada origem pode entrar na página pedida, então cada consulta lê no máximo isso — e o validator ainda limita a página a 100. Os agregados (`SomarPorVeiculoAsync`, `SomarPorMesAsync`) rodam **um `GroupBy` por tabela**, no banco; quem pivota as origens em colunas é o handler, onde a divisão do R$/km também mora — é lá que está o zero no denominador.
+
+**A ordenação desempata por origem antes do id.** Ids de tabelas diferentes colidem; sem isso a ordem é instável e a paginação repete linhas entre páginas.
+
+**Esta é a primeira agregação servida pela API.** Até aqui não havia um `Sum`/`GroupBy` em `apps/api/src` — todo KPI do dashboard é `reduce` sobre listas inteiras baixadas do servidor. As telas de relatório futuras saem daqui.
+
+**`Roles.Gestao` no controller** barra o Motorista na porta, e é por isso que os handlers **não** replicam a regra de `ManutencaoVisibilidade.SemCustoParaMotorista`. Se um dia a tela abrir para a role Motorista, o recorte tem que voltar para dentro dos handlers — um total de frota vazaria sem ele.
+
+**Índice:** `(EmpresaId, DataRealizacao)` filtrado em `"DataRealizacao" IS NOT NULL` (migration `IndiceDeCustoPorPeriodo`). O índice que já existia em `Manutencao` não tem data, e pendência é a maioria das linhas.
+
+#### Evolução prevista: despesas avulsas (`Despesa`)
+
+**O gatilho** é o primeiro custo que **não tem tela própria** — pedágio, multa, IPVA, seguro, licenciamento, pneu, lavagem. Aí a tabela não é espelho de nada: é fonte de verdade de um terceiro tipo de lançamento, e passa a ser a decisão certa.
+
+```
+TipoDespesa   Id, EmpresaId, Nome (100), Ativo, DataInclusao
+              índice único (EmpresaId, Nome) — molde de TipoManutencao
+
+Despesa       Id, EmpresaId
+              TipoDespesaId : int
+              VeiculoId     : int?   nulo = custo da frota (seguro do grupo)
+              MotoristaId   : int?   nulo = não atribuível a pessoa (IPVA); multa tem dono
+              RotaId        : int?   derivado no servidor, como em Abastecimento
+              Valor         : decimal(10,2)
+              DataDespesa   : DateTime
+              Observacao    : string? (500)
+              DataInclusao
+              índices (EmpresaId, VeiculoId, DataDespesa) e (EmpresaId, MotoristaId, DataDespesa)
+```
+
+**O que o desenho atual já garante:** `OrigemCusto` ganha `Despesa = 2`, o repositório ganha uma terceira perna na união com `Categoria = TipoDespesa.Nome`, e **`LancamentoCustoResponse` não muda**. No front, só a união `OrigemCusto` ganha `'Despesa'` e o select de origem ganha uma opção — a tela de custos e os relatórios absorvem a origem nova sem reescrita. É exatamente o que o discriminador compra.
+
+**O que não vem de graça:**
+
+- despesa com `VeiculoId` nulo não cabe no resumo por veículo — ou vira linha "Sem veículo", ou fica só no total geral;
+- `Despesa` é escrita, então precisa de CRUD, validators, tela e **auditoria**: `EntidadesAuditadas.Despesa` + `Criou`/`Atualizou`/`Excluiu`, com `AlteracoesBuilder` montado antes da mutação;
+- RN08 (exclusão de veículo) hoje barra por rota e abastecimento — teria que considerar despesa também.
 
 ### 9. Auditoria — quem alterou o quê
 
@@ -246,7 +311,7 @@ Dois casos fogem do padrão:
 
 ### Paginação — `ResultadoPaginado<T>`
 
-`/auditoria` é o **primeiro e único endpoint paginado** do sistema; as demais listas ainda vêm inteiras. `ResultadoPaginado<T>` (`Domain/Common`) traz `Itens`, `Pagina`, `TamanhoPagina`, `Total` e `TotalPaginas`, e vai **dentro** de `ApiResponse<T>.Dados` — o envelope não muda: `ApiResponse<ResultadoPaginado<LogAuditoriaResponse>>`.
+`/auditoria` e `/custo` são os **dois endpoints paginados** do sistema; as demais listas ainda vêm inteiras. `ResultadoPaginado<T>` (`Domain/Common`) traz `Itens`, `Pagina`, `TamanhoPagina`, `Total` e `TotalPaginas`, e vai **dentro** de `ApiResponse<T>.Dados` — o envelope não muda: `ApiResponse<ResultadoPaginado<LogAuditoriaResponse>>`.
 
 `ConsultarAuditoriaValidator` impõe teto de **100** por página. Sem ele, um `tamanhoPagina=999999` materializaria a trilha inteira da empresa em memória. Reutilize esse tipo ao paginar qualquer outra lista.
 
@@ -263,7 +328,9 @@ Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou 
 | POST | `/convite/aceitar` | anônimo |
 | GET | `/usuario` · PUT `/usuario/{id}/role` · `/{id}/ativo` | Admin |
 | GET/PUT | `/usuario/perfil` — o próprio cadastro (nome, CPF, nascimento); alvo pelo `sub` do token | **qualquer autenticado** (inclui Motorista) |
-| GET | `/auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` — **único endpoint paginado**; somente leitura | Admin |
+| GET | `/auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` — paginado; somente leitura | Admin |
+| GET | `/custo?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&origem=&de=&ate=` — paginado; read model das duas origens, sem tabela própria | Admin, Supervisor, Operador |
+| GET | `/custo/resumo?veiculoId=&motoristaId=&origem=&de=&ate=` — **a única agregação da API**: totais por origem, por veículo (com R$/km) e por mês | Admin, Supervisor, Operador |
 | GET | `/veiculo` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**) — a resposta traz `emRota` derivado |
 | GET | `/manutencao?veiculoId=&status=&de=&ate=` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**, sem `custo`) |
 | GET/POST/PUT | `/abastecimento?veiculoId=&motoristaId=&de=&ate=` (+ `/{id}`) | qualquer autenticado — o Motorista só alcança o que é dele, e `motoristaId` é ignorado para ele |
@@ -382,7 +449,7 @@ Existe porque `dotnet test` da suíte unitária **não prova nada** sobre provid
 |---|---|
 | `PoliticaDeDataTests` | os três Kinds (`Local` do `DateTime.Now`, `Unspecified` do front, `Utc` como regressão) gravam na mesma coluna; o relógio de parede sobrevive ao round-trip e volta `Unspecified`; a coluna é mesmo `timestamp without time zone` |
 | `SchemaERestricoesTests` | as migrations criam as 9 tabelas; lookup de e-mail ignora caixa; índice filtrado `(EmpresaId, CPF)` aceita vários nulos, barra duplicata e permite o mesmo CPF em empresas diferentes; `Usuario.Email` é único **global**; `numeric(10,2)` preserva centavo |
-| `TraducaoDeConsultaTests` | filtro `de`/`ate` inclui o próprio dia final; `Status` persiste como texto e volta como enum; o `OrderBy` com condicional traz pendentes primeiro apesar do texto; `GetAllAsync` recorta pela empresa |
+| `TraducaoDeConsultaTests` | filtro `de`/`ate` inclui o próprio dia final; `Status` persiste como texto e volta como enum; o `OrderBy` com condicional traz pendentes primeiro apesar do texto; `GetAllAsync` recorta pela empresa. **Custos:** as duas origens viram uma lista só, a paginação não repete linha entre elas, o recorte por motorista descarta manutenção, o `GroupBy` com navegação na chave traz nome e placa, e as cinco consultas do read model recortam pela empresa |
 
 Dois detalhes de infraestrutura, ambos comentados no código: o **resource reaper do Testcontainers fica desligado** (no Docker Desktop em Windows ele falha ao baixar e derruba a suíte antes do primeiro teste — a fixture descarta o container por conta própria), e o gerador de valores únicos é **compartilhado entre as classes**, porque elas dividem o mesmo banco e contadores separados colidem no índice único de e-mail.
 
