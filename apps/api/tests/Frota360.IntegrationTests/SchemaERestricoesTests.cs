@@ -49,6 +49,8 @@ namespace Frota360.IntegrationTests
             Assert.Contains("Manutencao", tabelas);
             Assert.Contains("TipoManutencao", tabelas);
             Assert.Contains("Abastecimento", tabelas);
+            Assert.Contains("TipoDespesa", tabelas);
+            Assert.Contains("Despesa", tabelas);
             Assert.Contains("Convite", tabelas);
             Assert.Contains("LogAuditoria", tabelas);
         }

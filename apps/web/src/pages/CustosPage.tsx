@@ -14,7 +14,7 @@ import type {
 } from '../api/types'
 import { AppLayout, PageHeader } from '../components/AppLayout'
 import { FiltroPeriodo, Paginacao, TableStates } from '../components/Table'
-import { DinheiroIcon, FuelIcon, RouteIcon, WrenchIcon } from '../components/icons'
+import { DinheiroIcon, FuelIcon, ReciboIcon, RouteIcon, WrenchIcon } from '../components/icons'
 import { formatDate, formatKm, formatMoeda } from '../lib/format'
 import { formatCustoPorKm, rotuloDoMes, ROTULO_ORIGEM } from '../lib/custo'
 import { intervaloDoPeriodo, type Periodo } from '../lib/periodo'
@@ -23,9 +23,10 @@ const TAMANHO_PAGINA = 25
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
-/** As duas séries do gráfico saem da rampa do acento: são categorias, não situações. */
+/** As três séries do gráfico saem da rampa do acento: são categorias, não situações. */
 const COR_ABASTECIMENTO = 'var(--color-accent-700)'
-const COR_MANUTENCAO = 'var(--color-accent-300)'
+const COR_MANUTENCAO = 'var(--color-accent-400)'
+const COR_DESPESA = 'var(--color-accent-200)'
 
 function FiltrosCustos({
   veiculos,
@@ -150,6 +151,12 @@ function FaixaDeKpis({ resumo, carregado }: { resumo?: ResumoCustosResponse; car
       icon: <WrenchIcon size={16} />,
     },
     {
+      label: 'Despesas',
+      value: carregado && resumo ? formatMoeda(resumo.totalDespesa) : '—',
+      detail: carregado && resumo ? participacao(resumo.totalDespesa, resumo.total) : '',
+      icon: <ReciboIcon size={16} />,
+    },
+    {
       label: 'Custo por km',
       value: carregado && resumo ? formatCustoPorKm(resumo.custoPorKm) : '—',
       detail: carregado && resumo ? `${formatKm(resumo.kmTotal)} em rotas encerradas` : '',
@@ -158,7 +165,7 @@ function FaixaDeKpis({ resumo, carregado }: { resumo?: ResumoCustosResponse; car
   ]
 
   return (
-    <div className="mb-6 grid grid-cols-2 lg:grid-cols-4" style={{ border: '1px solid var(--color-divider)' }}>
+    <div className="mb-6 grid grid-cols-2 lg:grid-cols-5" style={{ border: '1px solid var(--color-divider)' }}>
       {kpis.map((kpi) => (
         <div
           key={kpi.label}
@@ -193,7 +200,7 @@ function participacao(parte: number, total: number): string {
 
 /**
  * Barras em CSS puro. Uma biblioteca de gráfico seria a primeira dependência de front do
- * projeto para desenhar dois retângulos empilhados — não se paga.
+ * projeto para desenhar três retângulos empilhados — não se paga.
  */
 function GraficoPorMes({ meses }: { meses: CustoPorMesResponse[] }) {
   if (meses.length < 2) return null
@@ -214,6 +221,10 @@ function GraficoPorMes({ meses }: { meses: CustoPorMesResponse[] }) {
             <span style={{ width: 10, height: 10, background: COR_MANUTENCAO }} />
             Manutenção
           </span>
+          <span className="flex items-center gap-1.5">
+            <span style={{ width: 10, height: 10, background: COR_DESPESA }} />
+            Despesas
+          </span>
         </div>
       </div>
 
@@ -229,6 +240,9 @@ function GraficoPorMes({ meses }: { meses: CustoPorMesResponse[] }) {
               style={{ height: 140 }}
               title={`${rotuloDoMes(mes.ano, mes.mes)}: ${formatMoeda(mes.total)}`}
             >
+              <div
+                style={{ height: `${(mes.totalDespesa / maximo) * 100}%`, background: COR_DESPESA }}
+              />
               <div
                 style={{ height: `${(mes.totalManutencao / maximo) * 100}%`, background: COR_MANUTENCAO }}
               />
@@ -267,6 +281,7 @@ function TabelaPorVeiculo({
               <th>Veículo</th>
               <th>Combustível</th>
               <th>Manutenção</th>
+              <th>Despesas</th>
               <th>Total</th>
               <th>Km rodado</th>
               <th>Custo por km</th>
@@ -274,7 +289,7 @@ function TabelaPorVeiculo({
           </thead>
           <tbody>
             <TableStates
-              colSpan={6}
+              colSpan={7}
               pending={pending}
               error={error}
               empty={veiculos.length === 0}
@@ -292,6 +307,7 @@ function TabelaPorVeiculo({
                 </td>
                 <td>{formatMoeda(v.totalAbastecimento)}</td>
                 <td>{formatMoeda(v.totalManutencao)}</td>
+                <td>{formatMoeda(v.totalDespesa)}</td>
                 <td className="font-semibold">{formatMoeda(v.total)}</td>
                 <td>{v.km > 0 ? formatKm(v.km) : '—'}</td>
                 <td>{formatCustoPorKm(v.custoPorKm)}</td>
@@ -475,7 +491,7 @@ export function CustosPage() {
       {filtroMotorista !== '' && (
         <p className="mb-4">
           <span className="tag tag-warning">
-            Manutenção não é atribuída a motorista — este recorte mostra apenas abastecimentos.
+            Manutenção não é atribuída a motorista — este recorte mostra abastecimentos e despesas.
           </span>
         </p>
       )}

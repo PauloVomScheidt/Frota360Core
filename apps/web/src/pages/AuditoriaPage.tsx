@@ -24,6 +24,8 @@ const ROTULO_ENTIDADE: Record<EntidadeAuditada, string> = {
   Manutencao: 'Manutenção',
   Abastecimento: 'Abastecimento',
   TipoManutencao: 'Tipo de manutenção',
+  Despesa: 'Despesa',
+  TipoDespesa: 'Tipo de despesa',
   Usuario: 'Usuário',
   Convite: 'Convite',
 }

@@ -57,9 +57,11 @@ Definido em [`apps/web/src/App.tsx`](apps/web/src/App.tsx). Qualquer rota descon
 | `/rotas` | `RotasPage` | Gestão |
 | `/manutencoes` | `ManutencoesPage` | Todos (Motorista: leitura, sem custo) |
 | `/abastecimentos` | `AbastecimentosPage` | Todos — **leitura e escrita**; Motorista vê só o que é dele |
+| `/despesas` | `DespesasPage` | Gestão — leitura e escrita |
 | `/custos` | `CustosPage` | Gestão — somente leitura |
 | `/minhas-rotas` | `MinhasRotasPage` | **Motorista** |
 | `/tipos-manutencao` | `TiposManutencaoPage` | **Admin / Supervisor** |
+| `/tipos-despesa` | `TiposDespesaPage` | **Admin / Supervisor** |
 | `/usuarios` | `UsuariosPage` | **Admin** |
 | `/convites` | `ConvitesPage` | **Admin** |
 | `/auditoria` | `AuditoriaPage` | **Admin** |
@@ -320,7 +322,7 @@ Cache: `['abastecimentos', filtro]`, com `filtro` incluindo `motoristaId`.
 
 ### 5.9.2 `/custos` (gestão)
 
-Onde o gasto da frota fica visível numa tela só. Antes dela, a resposta para "quanto esse veículo custou em agosto" exigia abrir duas telas e somar à mão: `/abastecimentos` totalizava no cliente, `/manutencoes` exibia a coluna `Custo` e nem isso.
+Onde o gasto da frota fica visível numa tela só. Antes dela, a resposta para "quanto esse veículo custou em agosto" exigia abrir duas telas e somar à mão: `/abastecimentos` totalizava no cliente, `/manutencoes` exibia a coluna `Custo` e nem isso. Hoje são **três** origens — abastecimento, manutenção concluída e despesa avulsa (§5.9.3).
 
 **Somente leitura, e de propósito.** Não há `InlineForm` nem `RowActions`: o lançamento continua acontecendo nas telas de origem. Do lado da API não existe tabela de custos — as duas origens são unidas na leitura (§ 8.2 do contexto-api), e é isso que faz corrigir um valor em `/abastecimentos` corrigir o total aqui.
 
@@ -328,15 +330,15 @@ Onde o gasto da frota fica visível numa tela só. Antes dela, a resposta para "
 
 A tela tem quatro blocos, nesta ordem:
 
-1. **Faixa de KPIs** no formato do dashboard: custo total (com a contagem de lançamentos), combustível e manutenção (cada um com sua participação no total) e **custo por km**. Os números vêm somados do banco, não de `reduce` no cliente.
-2. **Gráfico de evolução mensal** — barras empilhadas por origem, some quando o período cabe num mês só. Feito com divs e altura em porcentagem: uma biblioteca de gráfico seria a primeira dependência de front do projeto para desenhar dois retângulos. As duas séries usam a rampa do acento (`--color-accent-700` e `--color-accent-300`), **não** as classes `.tag-*`: aquelas são reservadas a situação (§8.1), e série de gráfico é categoria.
-3. **Tabela por veículo** — combustível, manutenção, total, km rodado e R$/km, do maior total para o menor.
+1. **Faixa de KPIs** no formato do dashboard: custo total (com a contagem de lançamentos), combustível, manutenção e despesas (cada um com sua participação no total) e **custo por km**. Os números vêm somados do banco, não de `reduce` no cliente.
+2. **Gráfico de evolução mensal** — barras empilhadas por origem, some quando o período cabe num mês só. Feito com divs e altura em porcentagem: uma biblioteca de gráfico seria a primeira dependência de front do projeto para desenhar três retângulos. As três séries usam degraus da rampa do acento (`--color-accent-700`, `-400` e `-200`), **não** as classes `.tag-*`: aquelas são reservadas a situação (§8.1), e série de gráfico é categoria.
+3. **Tabela por veículo** — combustível, manutenção, despesas, total, km rodado e R$/km, do maior total para o menor.
 4. **Tabela de lançamentos** paginada (25 por página, teto de 100 no servidor), com o componente `Paginacao`.
 
 **Dois avisos em `tag-warning`, e ambos existem porque sem eles o número mente:**
 
 - **`N manutenções concluídas sem custo informado não entram neste total`** — `custo` é opcional em `ConcluirManutencaoRequest`, e quem concluiu sem preencher some da soma. A contagem vem do servidor (`manutencoesSemCustoInformado`).
-- **`Manutenção não é atribuída a motorista`**, quando há filtro de motorista ativo. O recorte por pessoa devolve **só abastecimentos**; sem o aviso, "custo do motorista X = R$ 800" seria lido como se incluísse oficina.
+- **`Manutenção não é atribuída a motorista`**, quando há filtro de motorista ativo. O recorte por pessoa devolve **abastecimentos e despesas** (multa tem dono), mas nunca manutenção — é a única das três origens que some inteira nesse filtro. Sem o aviso, "custo do motorista X = R$ 800" seria lido como se incluísse oficina.
 
 Outros detalhes que decidem se o número é confiável:
 
@@ -347,6 +349,37 @@ Outros detalhes que decidem se o número é confiável:
 - `formatCustoPorKm` (`lib/custo.ts`) usa até 4 casas: o valor costuma ficar abaixo de um real, e duas casas transformariam a diferença entre veículos em "R$ 0,50" para todo mundo.
 
 Cache: **`['custos', filtro]`** para a lista e **`['custos', 'resumo', recorte]`** para os totais — o recorte do resumo não carrega paginação, senão trocar de página refaria as somas. Ao contrário de `['auditoria']`, esta chave **é** invalidada de fora: ver a segunda cadeia longa em §6.4.
+
+### 5.9.3 `/despesas` (gestão)
+
+Onde entra o custo que não tinha lugar nenhum: pedágio, multa, IPVA, seguro, licenciamento. É a **terceira origem** de `/custos`, e a única cuja tabela é fonte de verdade — as outras duas são lidas das telas de abastecimento e manutenção.
+
+**Só gestão**, Operador incluído. O Motorista não vê a tela nem o endpoint (403): o lançamento é administrativo e ele não enxerga valor de frota.
+
+| Ação | Quem |
+|---|---|
+| Ver e lançar | Admin, Supervisor, Operador |
+| **Excluir** | **Admin e Supervisor** ⚠️ |
+
+⚠️ **A exclusão pelo Supervisor é a única do app que não é exclusiva do Admin** (§7). Na tela isso é `pode.excluirDespesa`, entrada separada de `pode.excluir` de propósito — afrouxar aquela afetaria todas as outras telas.
+
+Formato de `/abastecimentos`: `InlineForm` acima da tabela, filtros, e rodapé com o total **do que está filtrado**. As diferenças:
+
+- **O motorista é opcional** e o select abre em "Não atribuída". Multa tem dono; IPVA e seguro não. É esse campo que faz o filtro por motorista de `/custos` alcançar a despesa.
+- **O veículo é obrigatório** — sem ele o resumo por veículo não fecharia com os totais.
+- **A correção alcança todos os campos**, inclusive veículo, tipo e motorista. Em `/abastecimentos` a tela diz "exclua e lance de novo" porque a troca reatribuiria um gasto sujeito a recorte por dono; aqui não há recorte, e a auditoria grava o diff campo a campo.
+- **O select de tipo mostra só os ativos** (`['tiposDespesa', 'ativos']`) — lançar em tipo aposentado devolve 422. Quando não há nenhum tipo ativo, um aviso `tag-warning` aparece e o botão "Nova despesa" fica desabilitado: é melhor do que deixar abrir um formulário que não tem como ser enviado.
+- Período padrão "Últimos 30 dias" — é uma tela de lançamento, não de análise como `/custos`.
+
+Cache: `['despesas', filtro]`. Toda mutação invalida também `['custos']` (§6.4).
+
+### 5.9.4 `/tipos-despesa` (Admin / Supervisor)
+
+Gêmeo de `/tipos-manutencao`, sem o campo de intervalo em km. Catálogo por empresa, com nome único, semeado no provisionamento (Pedágio, Multa de trânsito, IPVA, Licenciamento, Seguro, Lavagem, Estacionamento) — as empresas que já existiam foram semeadas pela migration, então a tela nunca abre vazia num cliente antigo.
+
+- **Inativar é o caminho, não excluir**: o atalho na linha tira o tipo do seletor de lançamento sem apagar o histórico. O DELETE de um tipo em uso devolve 422 dizendo exatamente isso, exibido dentro do `ConfirmDialog`.
+- Exclusão é **só Admin** aqui — a exceção do Supervisor vale para a despesa, não para o catálogo.
+- ⚠️ Renomear um tipo muda o que **três** telas exibem: o catálogo, a lista de despesas (que desnormaliza o nome) e a coluna Categoria de `/custos`. Por isso a mutação invalida as três chaves (§6.4).
 
 ### 5.10 `/auditoria` (Admin)
 
@@ -395,7 +428,7 @@ Formulário único, sem tabela: **nome, CPF e data de nascimento** do próprio u
 
 ### 6.4 Chaves do React Query
 
-`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['usuarios']`, `['convites']`, `['perfil']`, `['manutencoes', filtro]`, `['abastecimentos', filtro]`, `['auditoria', filtro]`, `['custos', filtro]`, `['custos', 'resumo', recorte]`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`apps/web/src/lib/queryClient.ts`](apps/web/src/lib/queryClient.ts)).
+`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['usuarios']`, `['convites']`, `['perfil']`, `['manutencoes', filtro]`, `['abastecimentos', filtro]`, `['auditoria', filtro]`, `['custos', filtro]`, `['custos', 'resumo', recorte]`, `['despesas', filtro]`, `['tiposDespesa']`, `['tiposDespesa', 'ativos']`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`apps/web/src/lib/queryClient.ts`](apps/web/src/lib/queryClient.ts)).
 
 ⚠️ `['rotas']` e `['rotas','minhas']` são **listas diferentes**, não pai e filho: a segunda vem de outro endpoint e traz só as rotas do motorista logado. Invalidar pelo prefixo `['rotas']` alcançaria as duas, o que é inofensivo apenas porque nenhuma sessão usa as duas telas. Ao mexer nisso, invalide a chave exata.
 
@@ -408,7 +441,8 @@ Cruzamentos que não são óbvios, conferidos no código:
 - Em `/minhas-rotas`, **abrir** e **encerrar** invalidam `['rotas','minhas']`, `['veiculos']` **e** `['manutencoes']` — a mesma cadeia da tela de gestão, agora que o motorista também lê manutenções e a tela mostra a pendência do veículo escolhido.
 - **Salvar o perfil** invalida `['perfil']`, `['motoristas']` **e** `['usuarios']` ([PerfilPage.tsx](apps/web/src/pages/PerfilPage.tsx)) — as duas listas exibem nome e CPF de quem acabou de se corrigir. É o único cruzamento que parte de uma tela sem tabela.
 - **Lançar, corrigir ou excluir abastecimento** invalida `['abastecimentos']` **e `['custos']`** — o lançamento é só o gasto e não toca no odômetro, então continua fora da cadeia rota → veículo → manutenção; mas o valor é metade do que `/custos` soma. (Ele já esteve na cadeia: enquanto o formulário pedia odômetro, invalidava também `['veiculos']` e `['manutencoes']`.)
-- ⚠️ **`['custos']` é a segunda cadeia longa do app, e a menos óbvia.** Cinco mutações de três telas a alimentam: abastecimento (criar/corrigir/excluir), manutenção (**concluir** — é onde o custo entra —, editar, que pode trocar o veículo a que o custo é atribuído, e excluir) e **encerrar rota**, que apura o `kmPercorrido`: o denominador do R$/km. Encerrar rota passa a invalidar **quatro** chaves. As duas chaves de custo (lista e resumo) compartilham o prefixo `['custos']`, então uma invalidação alcança as duas de propósito — nenhuma tela usa uma sem a outra.
+- ⚠️ **`['custos']` é a segunda cadeia longa do app, e a menos óbvia.** Ela é alimentada por **quatro** telas: abastecimento (criar/corrigir/excluir), manutenção (**concluir** — é onde o custo entra —, editar, que pode trocar o veículo a que o custo é atribuído, e excluir), **despesa** (criar/corrigir/excluir) e **encerrar rota**, que apura o `kmPercorrido`: o denominador do R$/km. Encerrar rota invalida **quatro** chaves. As duas chaves de custo (lista e resumo) compartilham o prefixo `['custos']`, então uma invalidação alcança as duas de propósito — nenhuma tela usa uma sem a outra.
+- **Mutação de tipo de despesa invalida três chaves**: `['tiposDespesa']`, `['despesas']` e `['custos']`. O nome do tipo é desnormalizado na resposta da despesa **e** é a `categoria` da linha de custo — renomear um tipo muda o que as três telas exibem. É o cruzamento mais fácil de esquecer, porque a tela do catálogo não mostra despesa nenhuma.
 - Qualquer mutação no catálogo invalida o prefixo `['tiposManutencao']`, que cobre de uma vez o catálogo completo e a lista de ativos usada no agendamento.
 - ⚠️ **`['auditoria']` é a exceção deliberada: ninguém a invalida.** Praticamente toda mutação do app cria uma linha de trilha, então invalidar de dentro de cada tela espalharia acoplamento pelo front inteiro — cada mutation passaria a conhecer uma tela que ela não afeta. O `staleTime` de 30 s cobre o uso normal, e a tela tem botão "Atualizar" para quem quer ver agora.
 
@@ -427,6 +461,8 @@ Cruzamentos que não são óbvios, conferidos no código:
 | | `POST /convite/aceitar` (anônimo) | AcceptInvitePage — **já devolve sessão autenticada**; leva `cpf`/`dataNascimento` opcionais |
 | **auditoria** | `GET /auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` (Admin) | AuditoriaPage — paginado: `dados` é um `ResultadoPaginado<T>`, não um array |
 | **custo** | `GET /custo?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&origem=&de=&ate=` · `GET /custo/resumo?veiculoId=&motoristaId=&origem=&de=&ate=` (gestão) | CustosPage — a lista é paginada (`ResultadoPaginado<T>`); o resumo é a **única agregação servida pela API** |
+| **despesa** | `GET /despesa?veiculoId=&motoristaId=&tipoDespesaId=&de=&ate=`, `POST`, `PUT /{id}`, `DELETE /{id}` (gestão; **DELETE também pelo Supervisor**) | DespesasPage |
+| **tipodespesa** | `GET /tipodespesa?apenasAtivos=`, `POST`, `PUT /{id}`, `DELETE /{id}` (gestão; escrita Admin+Supervisor, DELETE só Admin) | TiposDespesaPage e o seletor de DespesasPage |
 | **usuario** | `GET /usuario` (Admin) | UsuariosPage, **AuditoriaPage** (select "Quem") |
 | | `PUT /usuario/{id}/role` | muda permissão — revoga a sessão do alvo |
 | | `PUT /usuario/{id}/ativo` | ativa/desativa — idem; último admin ativo → 422 |
@@ -466,12 +502,17 @@ Cruzamentos que não são óbvios, conferidos no código:
 | Criar/editar/concluir manutenções e tipos | ✅ | ✅ | — | — |
 | Lançar e corrigir abastecimento | ✅ | ✅ | ✅ | ✅ (só o que é dele) |
 | Ver os custos consolidados (`/custos`) | ✅ | ✅ | ✅ | — |
+| Lançar e corrigir despesa (`/despesas`) | ✅ | ✅ | ✅ | — |
+| **Excluir despesa** ⚠️ | ✅ | ✅ | — | — |
+| Manter o catálogo de tipos de despesa | ✅ | ✅ | — | — |
 | Excluir qualquer registro | ✅ | — | — | — |
 | Usuários e convites | ✅ | — | — | — |
 | Ver a trilha de auditoria | ✅ | — | — | — |
 | Editar o **próprio** cadastro (`/perfil`) | ✅ | ✅ | ✅ | ✅ |
 
-A última linha é a única em que as quatro colunas são ✅ — e por isso `/perfil` não tem entrada em `pode.*`: um predicado que devolve `true` para todo mundo é ruído, não permissão. Corrigir o cadastro **de outra pessoa** não aparece na matriz porque não existe em papel nenhum, o Admin incluído.
+⚠️ **Excluir despesa é a única exclusão que não é exclusiva do Admin.** É decisão de produto, e por isso `permissions.ts` tem uma entrada separada (`pode.excluirDespesa`) em vez de afrouxar `pode.excluir`, que continua Admin-only e serve todas as outras telas.
+
+A linha do perfil é a única em que as quatro colunas são ✅ — e por isso `/perfil` não tem entrada em `pode.*`: um predicado que devolve `true` para todo mundo é ruído, não permissão. Corrigir o cadastro **de outra pessoa** não aparece na matriz porque não existe em papel nenhum, o Admin incluído.
 
 Na prática: sem permissão de edição, o botão "Novo…" e o ícone de lápis somem; sem permissão de exclusão, some a lixeira; sem nenhuma das duas, a coluna "Ações" inteira desaparece.
 
@@ -532,7 +573,7 @@ Componentes reutilizados pelas telas:
 ## 9. O que ainda não existe
 
 - **Paginação e ordenação** nas demais listas — tudo vem de uma vez. As exceções são `/auditoria` (§5.10) e `/custos` (§5.12), os dois endpoints paginados da API; `ResultadoPaginado<T>` e o componente `Paginacao` já nascem genéricos para as próximas listas que precisarem.
-- **Biblioteca de gráfico**: não há nenhuma no `package.json`. O gráfico de `/custos` é feito com divs e altura em porcentagem — uma dependência nova não se paga por barras empilhadas.
+- **Biblioteca de gráfico**: não há nenhuma no `package.json`. O gráfico de `/custos` é feito com divs e altura em porcentagem — uma dependência nova não se paga por três barras empilhadas.
 - **Toasts globais**: erros e sucessos são exibidos no local da ação, não há notificação central.
 - **Tratamento específico de 429**: a mensagem do rate limit chega como erro comum.
 - **Testes**: não há suíte no front.

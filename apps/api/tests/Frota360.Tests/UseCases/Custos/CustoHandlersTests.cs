@@ -140,13 +140,15 @@ namespace Frota360.Tests.UseCases.Custos
         [Fact]
         public async Task Resumo_DevePivotarAsOrigensDoMesmoVeiculoEmUmaLinha()
         {
+            // As três origens do mesmo veículo viram uma linha com três colunas.
             ConfigurarResumo(
                 porVeiculo:
                 [
                     new(7, "Scania R450", "ABC1D23", OrigemCusto.Abastecimento, 800m, 4),
-                    new(7, "Scania R450", "ABC1D23", OrigemCusto.Manutencao, 1_200m, 1)
+                    new(7, "Scania R450", "ABC1D23", OrigemCusto.Manutencao, 1_200m, 1),
+                    new(7, "Scania R450", "ABC1D23", OrigemCusto.Despesa, 400m, 2)
                 ],
-                km: [new(7, "Scania R450", "ABC1D23", 2_000, 3)]);
+                km: [new(7, "Scania R450", "ABC1D23", 2_400, 3)]);
 
             var handler = CriarHandlerDeResumo();
 
@@ -155,14 +157,16 @@ namespace Frota360.Tests.UseCases.Custos
             var veiculo = Assert.Single(resumo.PorVeiculo);
             Assert.Equal(800m, veiculo.TotalAbastecimento);
             Assert.Equal(1_200m, veiculo.TotalManutencao);
-            Assert.Equal(2_000m, veiculo.Total);
-            Assert.Equal(2_000, veiculo.Km);
+            Assert.Equal(400m, veiculo.TotalDespesa);
+            Assert.Equal(2_400m, veiculo.Total);
+            Assert.Equal(2_400, veiculo.Km);
             Assert.Equal(1.00m, veiculo.CustoPorKm);
 
-            Assert.Equal(2_000m, resumo.Total);
+            Assert.Equal(2_400m, resumo.Total);
             Assert.Equal(800m, resumo.TotalAbastecimento);
             Assert.Equal(1_200m, resumo.TotalManutencao);
-            Assert.Equal(5, resumo.QuantidadeLancamentos);
+            Assert.Equal(400m, resumo.TotalDespesa);
+            Assert.Equal(7, resumo.QuantidadeLancamentos);
         }
 
         [Fact]
@@ -253,7 +257,8 @@ namespace Frota360.Tests.UseCases.Custos
             [
                 new(2026, 8, OrigemCusto.Manutencao, 300m),
                 new(2026, 7, OrigemCusto.Abastecimento, 100m),
-                new(2026, 8, OrigemCusto.Abastecimento, 200m)
+                new(2026, 8, OrigemCusto.Abastecimento, 200m),
+                new(2026, 8, OrigemCusto.Despesa, 50m)
             ]);
 
             var handler = CriarHandlerDeResumo();
@@ -261,9 +266,10 @@ namespace Frota360.Tests.UseCases.Custos
             var resumo = await handler.HandleAsync(new GetResumoCustosQuery(new ResumoCustosRequest()));
 
             Assert.Equal([(2026, 7), (2026, 8)], resumo.PorMes.Select(m => (m.Ano, m.Mes)));
-            Assert.Equal(500m, resumo.PorMes[1].Total);
+            Assert.Equal(550m, resumo.PorMes[1].Total);
             Assert.Equal(200m, resumo.PorMes[1].TotalAbastecimento);
             Assert.Equal(300m, resumo.PorMes[1].TotalManutencao);
+            Assert.Equal(50m, resumo.PorMes[1].TotalDespesa);
         }
 
         [Fact]

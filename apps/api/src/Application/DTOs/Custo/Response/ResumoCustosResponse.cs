@@ -12,6 +12,9 @@ namespace Frota360.Application.DTOs.Custo.Response
 
         public decimal TotalManutencao { get; set; }
 
+        /// <summary>Custos avulsos: pedágio, multa, IPVA, seguro.</summary>
+        public decimal TotalDespesa { get; set; }
+
         public int QuantidadeLancamentos { get; set; }
 
         /// <summary>Km das rotas encerradas no período, somado da frota inteira.</summary>

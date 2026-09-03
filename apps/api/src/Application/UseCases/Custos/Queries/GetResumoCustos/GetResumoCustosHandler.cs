@@ -41,7 +41,8 @@ namespace Frota360.Application.UseCases.Custos.Queries.GetResumoCustos
 
                 var totalAbastecimento = veiculos.Sum(v => v.TotalAbastecimento);
                 var totalManutencao = veiculos.Sum(v => v.TotalManutencao);
-                var total = totalAbastecimento + totalManutencao;
+                var totalDespesa = veiculos.Sum(v => v.TotalDespesa);
+                var total = totalAbastecimento + totalManutencao + totalDespesa;
                 var kmTotal = veiculos.Sum(v => v.Km);
 
                 logger.LogInformation("Custos resumidos. Total {Total} em {Veiculos} veículos, {SemCusto} manutenções sem custo informado",
@@ -52,6 +53,7 @@ namespace Frota360.Application.UseCases.Custos.Queries.GetResumoCustos
                     Total = total,
                     TotalAbastecimento = totalAbastecimento,
                     TotalManutencao = totalManutencao,
+                    TotalDespesa = totalDespesa,
                     QuantidadeLancamentos = porVeiculo.Sum(v => v.Quantidade),
                     KmTotal = kmTotal,
                     CustoPorKm = PorKm(total, kmTotal),
@@ -78,33 +80,29 @@ namespace Frota360.Application.UseCases.Custos.Queries.GetResumoCustos
             var km = quilometragens.ToDictionary(k => k.VeiculoId);
 
             var linhas = totais
-            .GroupBy(t => t.VeiculoId)
-            .Select(g =>
-            {
-                decimal totalAbastecimento = 0;
-                decimal totalManutencao = 0;
-
-                foreach (var item in g)
+                .GroupBy(t => t.VeiculoId)
+                .Select(g =>
                 {
-                    if (item.Origem == OrigemCusto.Abastecimento) totalAbastecimento += item.Total;
-                    else if (item.Origem == OrigemCusto.Manutencao) totalManutencao += item.Total;
-                }
+                    var totalAbastecimento = g.Where(t => t.Origem == OrigemCusto.Abastecimento).Sum(t => t.Total);
+                    var totalManutencao = g.Where(t => t.Origem == OrigemCusto.Manutencao).Sum(t => t.Total);
+                    var totalDespesa = g.Where(t => t.Origem == OrigemCusto.Despesa).Sum(t => t.Total);
+                    var totalDoVeiculo = totalAbastecimento + totalManutencao + totalDespesa;
+                    var quilometragem = km.TryGetValue(g.Key, out var k) ? k.Km : 0;
 
-                var quilometragem = km.TryGetValue(g.Key, out var k) ? k.Km : 0;
-
-                return new CustoPorVeiculoResponse
-                {
-                    VeiculoId = g.Key,
-                    VeiculoNome = g.First().VeiculoNome,
-                    VeiculoPlaca = g.First().VeiculoPlaca,
-                    TotalAbastecimento = totalAbastecimento,
-                    TotalManutencao = totalManutencao,
-                    Total = totalAbastecimento + totalManutencao,
-                    Km = quilometragem,
-                    CustoPorKm = PorKm(totalAbastecimento + totalManutencao, quilometragem)
-                };
-            })
-            .ToList();
+                    return new CustoPorVeiculoResponse
+                    {
+                        VeiculoId = g.Key,
+                        VeiculoNome = g.First().VeiculoNome,
+                        VeiculoPlaca = g.First().VeiculoPlaca,
+                        TotalAbastecimento = totalAbastecimento,
+                        TotalManutencao = totalManutencao,
+                        TotalDespesa = totalDespesa,
+                        Total = totalDoVeiculo,
+                        Km = quilometragem,
+                        CustoPorKm = PorKm(totalDoVeiculo, quilometragem)
+                    };
+                })
+                .ToList();
 
             var comCusto = linhas.Select(l => l.VeiculoId).ToHashSet();
 
@@ -130,6 +128,7 @@ namespace Frota360.Application.UseCases.Custos.Queries.GetResumoCustos
                     Mes = g.Key.Mes,
                     TotalAbastecimento = g.Where(t => t.Origem == OrigemCusto.Abastecimento).Sum(t => t.Total),
                     TotalManutencao = g.Where(t => t.Origem == OrigemCusto.Manutencao).Sum(t => t.Total),
+                    TotalDespesa = g.Where(t => t.Origem == OrigemCusto.Despesa).Sum(t => t.Total),
                     Total = g.Sum(t => t.Total)
                 })
                 .OrderBy(m => m.Ano).ThenBy(m => m.Mes)];

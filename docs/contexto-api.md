@@ -73,7 +73,7 @@ Rota agora resolve motorista e veículo por `GetByIdAsync(id, currentUser.Empres
 ## Fluxos
 
 ### 1. Provisionamento (venda assistida)
-`POST /backoffice/empresa` com header `X-Backoffice-Key` → cria `Empresa`, semeia os 10 `TiposManutencaoPadrao` e dispara convite de Admin. Sem `Backoffice:ApiKey` configurada, o endpoint responde 401 sempre.
+`POST /backoffice/empresa` com header `X-Backoffice-Key` → cria `Empresa`, semeia os 10 `TiposManutencaoPadrao` e os 7 `TiposDespesaPadrao`, e dispara convite de Admin. Sem `Backoffice:ApiKey` configurada, o endpoint responde 401 sempre.
 
 ### 2. Convite → conta
 Admin cria convite (token aleatório de 64 bytes, **só o hash SHA vai ao banco**, validade 7 dias, convites pendentes anteriores do mesmo e-mail são apagados) → e-mail com link `{Frontend}/convite?token=` → `POST /convite/aceitar` (anônimo) cria o `Usuario` já com role do convite e devolve sessão autenticada — token e refresh token via cookie (ver §3), sem exigir login.
@@ -124,7 +124,7 @@ A sessão **não** é revogada (diferente da troca de papel): mudar o próprio n
 
 
 - **Placa (RN09).** Formato Mercosul (`ABC1D23`) ou antigo (`ABC1234`), nos dois validators. A comparação é **case-insensitive** e o handler grava sempre em maiúsculas (`Trim().ToUpperInvariant()`): a RN09 é regra de formato, não de caixa — recusar `abc1d23` com 422 puniria um cliente da API por algo que só o front normalizava. No update, a normalização acontece **antes** do `AlteracoesBuilder`, senão reenviar a mesma placa em caixa diferente entraria no diff como alteração fantasma.
-- **Exclusão (RN08).** Veículo com rota associada não é excluído: 422 com *"Não é possível excluir um veículo com rotas associadas. Encerre ou remova as rotas antes."* — `DeleteVeiculoHandler` consulta `IRotaRepository.ExisteComVeiculoAsync`, mesmo desenho de `DeleteTipoManutencaoHandler`. A rota guarda o histórico de quilometragem da frota e ficaria apontando para um registro inexistente.
+- **Exclusão (RN08).** Veículo com rota associada não é excluído: 422 com *"Não é possível excluir um veículo com rotas associadas. Encerre ou remova as rotas antes."* — `DeleteVeiculoHandler` consulta `IRotaRepository.ExisteComVeiculoAsync`, mesmo desenho de `DeleteTipoManutencaoHandler`. A rota guarda o histórico de quilometragem da frota e ficaria apontando para um registro inexistente. São **três** guardas hoje, na ordem rota → abastecimento → despesa (§ 8.1 e § 8.3); a primeira que bater é a que responde.
 - **A metade "motorista" da RN08 não se aplica ao modelo atual**: não há DELETE de motorista, e a FK `Restrict` de `Rota.CodigoMotorista` → `Usuario` já garante o mesmo efeito pelo banco. Usuário é desativado, nunca excluído.
 
 ### 5. Manutenção — a parte mais interessante do domínio
@@ -234,33 +234,71 @@ O resumo por veículo inclui **veículo que rodou sem custo lançado**, com tota
 
 **Índice:** `(EmpresaId, DataRealizacao)` filtrado em `"DataRealizacao" IS NOT NULL` (migration `IndiceDeCustoPorPeriodo`). O índice que já existia em `Manutencao` não tem data, e pendência é a maioria das linhas.
 
-#### Evolução prevista: despesas avulsas (`Despesa`)
+#### Evolução prevista: despesas avulsas — **implementada em 01/09/2026**
 
-**O gatilho** é o primeiro custo que **não tem tela própria** — pedágio, multa, IPVA, seguro, licenciamento, pneu, lavagem. Aí a tabela não é espelho de nada: é fonte de verdade de um terceiro tipo de lançamento, e passa a ser a decisão certa.
+Esta seção previa a entidade `Despesa` como próximo passo; ela existe desde 01/09/2026, na **§ 8.3** logo abaixo. O que o esboço acertou: `OrigemCusto` ganhou um valor, o repositório ganhou uma terceira perna, e **`LancamentoCustoResponse` não mudou** — a tela de custos absorveu a origem nova somando uma coluna, não sendo reescrita. É o que o discriminador comprou.
+
+O esboço errou em três pontos, corrigidos na implementação e explicados na § 8.3: `RotaId` e `UsuarioId` não se sustentaram, e `VeiculoId` virou obrigatório.
+
+### 8.3 Despesa — a terceira origem de custo (01/09/2026)
+
+Custos que **não têm tela própria**: pedágio, multa, IPVA, seguro, licenciamento. Antes deles, o gasto ou era lançado como "observação" em outro registro ou simplesmente não entrava no sistema.
+
+**Aqui a decisão de armazenamento se inverte em relação à § 8.2.** Abastecimento e manutenção têm tela própria, e por isso uma tabela de custos seria espelho — o argumento que sustenta o read model. `Despesa` não espelha nada: é a **fonte de verdade** de um lançamento que não existe em lugar nenhum. Por isso é entidade de escrita completa, com CRUD, validators, auditoria e tela.
+
+O read model não sabe da diferença: as três origens entram como `LancamentoCusto` e o resto do sistema as trata igual.
+
+**Modelo:**
 
 ```
 TipoDespesa   Id, EmpresaId, Nome (100), Ativo, DataInclusao
-              índice único (EmpresaId, Nome) — molde de TipoManutencao
+              índice único (EmpresaId, Nome) — gêmeo de TipoManutencao
 
 Despesa       Id, EmpresaId
+              VeiculoId     : int    OBRIGATÓRIO
               TipoDespesaId : int
-              VeiculoId     : int?   nulo = custo da frota (seguro do grupo)
-              MotoristaId   : int?   nulo = não atribuível a pessoa (IPVA); multa tem dono
-              RotaId        : int?   derivado no servidor, como em Abastecimento
+              MotoristaId   : int?   nulo = não atribuível (IPVA, seguro); multa tem dono
               Valor         : decimal(10,2)
               DataDespesa   : DateTime
               Observacao    : string? (500)
               DataInclusao
               índices (EmpresaId, VeiculoId, DataDespesa) e (EmpresaId, MotoristaId, DataDespesa)
+              FKs todas Restrict — despesa é histórico financeiro, não some em cascata
 ```
 
-**O que o desenho atual já garante:** `OrigemCusto` ganha `Despesa = 2`, o repositório ganha uma terceira perna na união com `Categoria = TipoDespesa.Nome`, e **`LancamentoCustoResponse` não muda**. No front, só a união `OrigemCusto` ganha `'Despesa'` e o select de origem ganha uma opção — a tela de custos e os relatórios absorvem a origem nova sem reescrita. É exatamente o que o discriminador compra.
+**Os três desvios do esboço, e por quê:**
 
-**O que não vem de graça:**
+- **Sem `RotaId`.** No abastecimento ele é derivado da rota aberta *de quem está dirigindo*; com lançamento só pela gestão não existe esse gatilho, e nenhum consumidor o lê (o read model de custos ignora `RotaId`). Seria derivação sem leitor.
+- **Sem `UsuarioId` ("quem lançou").** O abastecimento o carrega porque o **recorte** do motorista depende de separar dono de digitador. Aqui não há recorte, e a auditoria já registra o autor — a coluna seria duplicata do `LogAuditoria`.
+- **`VeiculoId` obrigatório**, e não nulável para "custo da frota". IPVA, seguro e licenciamento já são por veículo na prática, então perde-se pouco; em troca, o resumo por veículo continua fechando com os totais e o R$/km funciona sem caso especial. Custo genuinamente da frota (taxa administrativa) ainda não tem lugar — quando tiver, volta a discussão da linha "Sem veículo".
 
-- despesa com `VeiculoId` nulo não cabe no resumo por veículo — ou vira linha "Sem veículo", ou fica só no total geral;
-- `Despesa` é escrita, então precisa de CRUD, validators, tela e **auditoria**: `EntidadesAuditadas.Despesa` + `Criou`/`Atualizou`/`Excluiu`, com `AlteracoesBuilder` montado antes da mutação;
-- RN08 (exclusão de veículo) hoje barra por rota e abastecimento — teria que considerar despesa também.
+**Diferença que importa no filtro por motorista:** despesa **tem** motorista quando é multa, então o recorte por pessoa a inclui (filtrada pela coluna); as sem dono ficam de fora. A manutenção continua sendo a **única** origem que some inteira nesse recorte. O aviso da tela de custos diz isso.
+
+**Resolução de FK**, no molde de `CreateManutencaoHandler`: veículo, tipo e motorista passam por `GetByIdAsync(id, currentUser.EmpresaId)` antes de gravar — id de outra empresa "não existe" e cai em 422. O motorista usa `GetMotoristaByIdAsync`, que filtra empresa **e** role.
+
+**Tipo inativo:** o create recusa (422 `O tipo "X" está inativo e não aceita lançamentos novos.`); o update só recusa quando o `TipoDespesaId` **muda** — senão corrigir o valor de uma despesa antiga quebraria por causa de um tipo aposentado depois do lançamento. Tipo em uso não é excluído, é inativado: some do seletor e continua nomeando o histórico.
+
+**O `PUT` altera tudo**, inclusive veículo, tipo e motorista — divergência consciente do abastecimento, onde só valor/data/observação são editáveis. Lá a trava existe porque a troca reatribuiria um gasto sujeito a recorte por dono; aqui não há recorte, e a auditoria grava o diff campo a campo. Exigir "exclua e lance de novo" para corrigir um IPVA digitado no veículo errado seria atrito sem regra por trás.
+
+**Papéis — e uma exceção deliberada:**
+
+| Ação | Quem |
+|---|---|
+| Ler e lançar despesa | Admin, Supervisor, Operador (`Roles.Gestao`) |
+| **Excluir despesa** | **Admin e Supervisor** ⚠️ |
+| Ler o catálogo | `Roles.Gestao` |
+| Criar/editar tipo | Admin, Supervisor |
+| Excluir tipo | Admin |
+
+⚠️ **A exclusão de despesa pelo Supervisor rompe a regra "Admin é o único que exclui"** que vale no resto da API. É decisão de produto, não descuido — está anotada no atributo do `DespesaController` e em `apps/api/CLAUDE.md`. O catálogo mantém a regra original.
+
+O Motorista recebe **403** em `/despesa` e `/tipodespesa`: o lançamento é administrativo e ele não vê valor de frota. Como em `/custo`, é isso que dispensa os handlers de replicar a regra de `ManutencaoVisibilidade.SemCustoParaMotorista`.
+
+**RN08 ganhou a terceira guarda:** veículo com despesa lançada não é excluído (422). As FKs são `Restrict`, então sem a guarda o usuário veria 500 em vez da explicação. A ordem das guardas é rota → abastecimento → despesa, e a primeira que bater é a que responde.
+
+**Catálogo semeado em dois lugares.** `BackofficeService.SemearTiposDespesaAsync` cobre empresa nova, a partir de `TiposDespesaPadrao.Itens` (Pedágio, Multa de trânsito, IPVA, Licenciamento, Seguro, Lavagem, Estacionamento). As empresas que já existiam foram semeadas por um `INSERT` no `Up` da migration `DespesasAvulsas` — sem ele, todo cliente atual abriria a tela com o seletor de tipo vazio, sem conseguir lançar nada. ⚠️ **A lista está duplicada nos dois lugares de propósito**: migration é artefato histórico e não acompanha mudanças na constante. Acrescentar um item em `TiposDespesaPadrao` vale só para empresa nova.
+
+**No read model de custos** (`CustoRepository`), a despesa é a terceira perna: `Categoria` sai de `TipoDespesa.Nome`, o período recorta por `DataDespesa`, e o desempate da ordenação (`Data` desc → `Origem` → `OrigemId` desc) agora separa **três** fontes de id colidente. `ResumoCustosResponse`, `CustoPorVeiculoResponse` e `CustoPorMesResponse` ganharam `TotalDespesa`.
 
 ### 9. Auditoria — quem alterou o quê
 
@@ -279,7 +317,7 @@ Nome, e-mail e papel de quem agiu ficam **desnormalizados** na linha — o log �
 1. **Auditoria não derruba negócio.** `AuditoriaService` roda depois de o repositório já ter feito `SaveChangesAsync`, portanto fora daquela transação, e engole a exceção em log de erro. Perder uma linha de trilha é ruim; devolver 500 numa edição que já foi persistida é pior.
 2. **Nada de segredo no diff.** Ele é montado à mão, campo a campo, por `AlteracoesBuilder` — chamado **antes** de a entidade ser mutada, já que os handlers a alteram in-place. Hash de senha, refresh token, token de reset e de convite nunca entram.
 
-**Os 23 pontos de registro:**
+**Os 29 pontos de registro:**
 
 | Origem | Entidade · Ação | Diff |
 |---|---|---|
@@ -292,6 +330,8 @@ Nome, e-mail e papel de quem agiu ficam **desnormalizados** na linha — o log �
 | `ConcluirManutencaoHandler` | Manutencao · Concluiu | ✅ status, km, custo, odômetro |
 | `Create/Update/DeleteAbastecimentoHandler` | Abastecimento · Criou/Atualizou/Excluiu | ✅ no update (valor, data, observação) |
 | `Create/Update/DeleteTipoManutencaoHandler` | TipoManutencao · Criou/Atualizou/Excluiu | ✅ no update |
+| `Create/Update/DeleteDespesaHandler` | Despesa · Criou/Atualizou/Excluiu | ✅ no update (veículo, tipo e motorista pelo nome, não pelo id) |
+| `Create/Update/DeleteTipoDespesaHandler` | TipoDespesa · Criou/Atualizou/Excluiu | ✅ no update |
 | `UsuarioService.AtualizarPerfilAsync` | Usuario · Atualizou | ✅ nome, CPF e nascimento — o ator é também o objeto |
 | `UsuarioService.AlterarRoleAsync` | Usuario · AlterouPermissao | ✅ papel anterior → novo |
 | `UsuarioService.DefinirAtivoAsync` | Usuario · Ativou/Desativou | — |
@@ -334,6 +374,8 @@ Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou 
 | GET | `/veiculo` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**) — a resposta traz `emRota` derivado |
 | GET | `/manutencao?veiculoId=&status=&de=&ate=` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**, sem `custo`) |
 | GET/POST/PUT | `/abastecimento?veiculoId=&motoristaId=&de=&ate=` (+ `/{id}`) | qualquer autenticado — o Motorista só alcança o que é dele, e `motoristaId` é ignorado para ele |
+| GET/POST/PUT | `/despesa?veiculoId=&motoristaId=&tipoDespesaId=&de=&ate=` (+ `/{id}`) — custo avulso; **DELETE aqui é Admin *e* Supervisor** | Admin, Supervisor, Operador |
+| GET | `/tipodespesa?apenasAtivos=` (+ `/{id}`) — catálogo; POST/PUT Admin+Supervisor, DELETE só Admin | Admin, Supervisor, Operador |
 | GET | `/motorista` (+ `/{id}`) — **somente leitura**: os usuários com a role Motorista | Admin, Supervisor, Operador |
 | GET | `/rota`, `/tipomanutencao?apenasAtivos=` (+ `/{id}`) | Admin, Supervisor, Operador |
 | GET | `/rota/minhas` | **Motorista** (rotas do próprio, pelo `sub` do token) |

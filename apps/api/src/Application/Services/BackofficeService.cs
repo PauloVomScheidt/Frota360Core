@@ -11,6 +11,7 @@ namespace Frota360.Application.Services
     public class BackofficeService(IEmpresaRepository empresaRepository,
                                    IConviteService conviteService,
                                    ITipoManutencaoRepository tipoManutencaoRepository,
+                                   ITipoDespesaRepository tipoDespesaRepository,
                                    ILogger<BackofficeService> logger) : IBackofficeService
     {
         public async Task<EmpresaProvisionadaResponse> ProvisionarEmpresaAsync(ProvisionarEmpresaRequest request)
@@ -27,6 +28,7 @@ namespace Frota360.Application.Services
             });
 
             await SemearTiposManutencaoAsync(empresa.Id);
+            await SemearTiposDespesaAsync(empresa.Id);
 
             var convite = await conviteService.CriarParaEmpresaAsync(
                 empresa.Id, criadoPorUsuarioId: null, request.EmailAdmin, Roles.Admin);
@@ -63,6 +65,27 @@ namespace Frota360.Application.Services
 
             logger.LogInformation("Catálogo padrão de manutenção semeado para a empresa {EmpresaId} ({Quantidade} tipos)",
                 empresaId, TiposManutencaoPadrao.Itens.Count);
+        }
+
+        /// <summary>
+        /// Mesmo motivo do catálogo de manutenção: sem tipo cadastrado, a tela de despesas
+        /// abre com o seletor vazio e não aceita lançamento nenhum.
+        /// </summary>
+        private async Task SemearTiposDespesaAsync(int empresaId)
+        {
+            var agora = DateTime.Now;
+
+            await tipoDespesaRepository.AddRangeAsync(
+                TiposDespesaPadrao.Itens.Select(nome => new TipoDespesa
+                {
+                    EmpresaId = empresaId,
+                    Nome = nome,
+                    Ativo = true,
+                    DataInclusao = agora
+                }));
+
+            logger.LogInformation("Catálogo padrão de despesa semeado para a empresa {EmpresaId} ({Quantidade} tipos)",
+                empresaId, TiposDespesaPadrao.Itens.Count);
         }
     }
 }

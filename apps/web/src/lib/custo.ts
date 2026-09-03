@@ -3,6 +3,7 @@ import type { OrigemCusto } from '../api/types'
 export const ROTULO_ORIGEM: Record<OrigemCusto, string> = {
   Abastecimento: 'Abastecimento',
   Manutencao: 'Manutenção',
+  Despesa: 'Despesa',
 }
 
 const MESES = [

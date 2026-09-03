@@ -304,6 +304,8 @@ export type EntidadeAuditada =
   | 'Manutencao'
   | 'Abastecimento'
   | 'TipoManutencao'
+  | 'Despesa'
+  | 'TipoDespesa'
   | 'Usuario'
   | 'Convite'
 
@@ -427,7 +429,7 @@ export interface AbastecimentoResponse {
  * Espelha o enum `OrigemCusto` do Domain — mexeu numa, mexa na outra. Custo avulso
  * (pedágio, multa, IPVA) entra aqui como uma origem nova, e nada mais neste arquivo muda.
  */
-export type OrigemCusto = 'Abastecimento' | 'Manutencao'
+export type OrigemCusto = 'Abastecimento' | 'Manutencao' | 'Despesa'
 
 /** Uma linha de custo, já normalizada entre as origens. */
 export interface LancamentoCustoResponse {
@@ -469,6 +471,7 @@ export interface CustoPorVeiculoResponse {
   veiculoPlaca: string
   totalAbastecimento: number
   totalManutencao: number
+  totalDespesa: number
   total: number
   /** Km das rotas encerradas no período. Zero quando nenhuma foi encerrada. */
   km: number
@@ -482,6 +485,7 @@ export interface CustoPorMesResponse {
   mes: number
   totalAbastecimento: number
   totalManutencao: number
+  totalDespesa: number
   total: number
 }
 
@@ -493,6 +497,8 @@ export interface ResumoCustosResponse {
   total: number
   totalAbastecimento: number
   totalManutencao: number
+  /** Custos avulsos: pedágio, multa, IPVA, seguro. */
+  totalDespesa: number
   quantidadeLancamentos: number
   kmTotal: number
   /**
@@ -509,4 +515,76 @@ export interface ResumoCustosResponse {
   porVeiculo: CustoPorVeiculoResponse[]
   /** Em ordem cronológica; só os meses que tiveram lançamento. */
   porMes: CustoPorMesResponse[]
+}
+
+// ---------- Tipo de despesa ----------
+
+/** Catálogo de tipos da empresa; alimenta o select da tela de despesas. */
+export interface TipoDespesaRequest {
+  nome: string
+}
+
+/** O PUT aceita o mesmo shape do POST mais o `ativo` — inativar é o caminho quando o DELETE dá 422. */
+export interface TipoDespesaUpdateRequest extends TipoDespesaRequest {
+  ativo: boolean
+}
+
+export interface TipoDespesaResponse {
+  id: number
+  nome: string
+  ativo: boolean
+  dataInclusao: string
+}
+
+// ---------- Despesa ----------
+
+/**
+ * Custo avulso: pedágio, multa, IPVA, seguro, licenciamento. É a terceira origem da tela
+ * de custos, e a única cuja tabela é fonte de verdade — as outras duas são lidas das telas
+ * de abastecimento e manutenção.
+ *
+ * Só a gestão lança, então não há aqui o par motorista/usuário do abastecimento: quem
+ * lançou fica na trilha de auditoria.
+ */
+export interface DespesaRequest {
+  /** Obrigatório — IPVA, seguro e licenciamento já são por veículo na prática. */
+  veiculoId: number
+  tipoDespesaId: number
+  /** Opcional: multa tem dono, IPVA não. */
+  motoristaId?: number | null
+  valor: number
+  dataDespesa: string
+  observacao?: string | null
+}
+
+/**
+ * O PUT altera **tudo**, inclusive veículo, tipo e motorista — diferente do abastecimento,
+ * onde só valor, data e observação são editáveis. Lá a trava existe porque a troca
+ * reatribuiria um gasto sujeito a recorte por dono; aqui não há recorte.
+ */
+export type AtualizarDespesaRequest = DespesaRequest
+
+export interface DespesaFiltro {
+  veiculoId?: number
+  motoristaId?: number
+  tipoDespesaId?: number
+  /** `yyyy-MM-dd`; `ate` é inclusivo (o servidor estende até o fim do dia). */
+  de?: string
+  ate?: string
+}
+
+export interface DespesaResponse {
+  id: number
+  veiculoId: number
+  veiculoNome: string
+  veiculoPlaca: string
+  tipoDespesaId: number
+  tipoDespesaNome: string
+  /** Nulo quando a despesa não é de ninguém em particular (IPVA, seguro). */
+  motoristaId?: number | null
+  motoristaNome?: string | null
+  valor: number
+  dataDespesa: string
+  observacao?: string | null
+  dataInclusao: string
 }

@@ -376,6 +376,144 @@ namespace Frota360.IntegrationTests
             Assert.Equal("Scania R450", doVeiculo.VeiculoNome);
         }
 
+        [Fact]
+        public async Task Custos_DeveUnirAsTresOrigensNumaListaSo()
+        {
+            await using var contexto = fixture.CriarContexto();
+            var c = await MontarAsync(contexto);
+            var tipoDespesa = await NovoTipoDespesaAsync(contexto, c);
+            var dia = new DateTime(2026, 9, 1);
+
+            contexto.Abastecimentos.Add(NovoAbastecimento(c, dia, 250m));
+            contexto.Manutencoes.Add(NovaManutencao(c, StatusManutencao.Realizada, 110_000,
+                custo: 1_200m, dataRealizacao: dia));
+            contexto.Despesas.Add(NovaDespesa(c, tipoDespesa, dia, 100m));
+            await contexto.SaveChangesAsync();
+
+            var repositorio = new CustoRepository(contexto);
+            var (itens, total) = await repositorio.ConsultarAsync(c.EmpresaId, new FiltroCusto(), 1, 25);
+
+            Assert.Equal(3, total);
+            Assert.Equal(1_550m, itens.Sum(l => l.Valor));
+
+            // A categoria da despesa vem do nome do tipo, via navegação lida dentro do Select.
+            var despesa = Assert.Single(itens, l => l.Origem == OrigemCusto.Despesa);
+            Assert.StartsWith("Pedagio", despesa.Categoria);
+            Assert.False(string.IsNullOrWhiteSpace(despesa.VeiculoPlaca));
+        }
+
+        [Fact]
+        public async Task Custos_FiltradosPorMotorista_DevemTrazerAbastecimentoEDespesaMasNaoManutencao()
+        {
+            // A diferença entre as três origens no recorte por pessoa: abastecimento sempre
+            // tem dono, despesa tem quando é multa, e manutenção nunca tem.
+            await using var contexto = fixture.CriarContexto();
+            var c = await MontarAsync(contexto);
+            var tipoDespesa = await NovoTipoDespesaAsync(contexto, c);
+            var dia = new DateTime(2026, 9, 1);
+
+            contexto.Abastecimentos.Add(NovoAbastecimento(c, dia, 250m));
+            contexto.Manutencoes.Add(NovaManutencao(c, StatusManutencao.Realizada, 110_000,
+                custo: 1_200m, dataRealizacao: dia));
+            contexto.Despesas.AddRange(
+                NovaDespesa(c, tipoDespesa, dia, 100m, motoristaId: c.MotoristaId),
+                NovaDespesa(c, tipoDespesa, dia, 900m)); // sem dono (IPVA)
+            await contexto.SaveChangesAsync();
+
+            var repositorio = new CustoRepository(contexto);
+            var (itens, total) = await repositorio.ConsultarAsync(
+                c.EmpresaId, new FiltroCusto(MotoristaId: c.MotoristaId), 1, 25);
+
+            Assert.Equal(2, total);
+            Assert.Equal(350m, itens.Sum(l => l.Valor));
+            Assert.Contains(itens, l => l.Origem == OrigemCusto.Abastecimento);
+            Assert.Contains(itens, l => l.Origem == OrigemCusto.Despesa);
+            Assert.DoesNotContain(itens, l => l.Origem == OrigemCusto.Manutencao);
+        }
+
+        [Fact]
+        public async Task Custos_DevePaginarSemRepetirLinhaEntreAsTresOrigens()
+        {
+            // Ids de três tabelas diferentes colidem entre si; o desempate por origem antes
+            // do id é o que impede a mesma linha de aparecer em duas páginas.
+            await using var contexto = fixture.CriarContexto();
+            var c = await MontarAsync(contexto);
+            var tipoDespesa = await NovoTipoDespesaAsync(contexto, c);
+            var dia = new DateTime(2026, 9, 1);
+
+            for (var i = 0; i < 3; i++)
+            {
+                contexto.Abastecimentos.Add(NovoAbastecimento(c, dia, 100m + i));
+                contexto.Manutencoes.Add(NovaManutencao(c, StatusManutencao.Realizada,
+                    110_000 + i, custo: 500m + i, dataRealizacao: dia));
+                contexto.Despesas.Add(NovaDespesa(c, tipoDespesa, dia, 50m + i));
+            }
+            await contexto.SaveChangesAsync();
+
+            var repositorio = new CustoRepository(contexto);
+            var chaves = new List<(OrigemCusto, int)>();
+
+            for (var pagina = 1; pagina <= 3; pagina++)
+            {
+                var (itens, _) = await repositorio.ConsultarAsync(c.EmpresaId, new FiltroCusto(), pagina, 3);
+                chaves.AddRange(itens.Select(l => (l.Origem, l.OrigemId)));
+            }
+
+            Assert.Equal(9, chaves.Count);
+            Assert.Equal(9, chaves.Distinct().Count());
+        }
+
+        [Fact]
+        public async Task Custos_DeveSomarADespesaNosAgregadosERecortarPelaEmpresa()
+        {
+            await using var contexto = fixture.CriarContexto();
+            var minha = await MontarAsync(contexto);
+            var outra = await MontarAsync(contexto);
+            var tipoMinha = await NovoTipoDespesaAsync(contexto, minha);
+            var tipoOutra = await NovoTipoDespesaAsync(contexto, outra);
+            var dia = new DateTime(2026, 9, 1);
+
+            contexto.Despesas.AddRange(
+                NovaDespesa(minha, tipoMinha, dia, 300m),
+                NovaDespesa(outra, tipoOutra, dia, 999m));
+            await contexto.SaveChangesAsync();
+
+            var repositorio = new CustoRepository(contexto);
+            var filtro = new FiltroCusto();
+
+            var porVeiculo = await repositorio.SomarPorVeiculoAsync(minha.EmpresaId, filtro);
+            var linha = Assert.Single(porVeiculo);
+            Assert.Equal(OrigemCusto.Despesa, linha.Origem);
+            Assert.Equal(300m, linha.Total);
+            Assert.False(string.IsNullOrWhiteSpace(linha.VeiculoPlaca));
+
+            var porMes = await repositorio.SomarPorMesAsync(minha.EmpresaId, filtro);
+            var mes = Assert.Single(porMes);
+            Assert.Equal((2026, 9, 300m), (mes.Ano, mes.Mes, mes.Total));
+        }
+
+        [Fact]
+        public async Task Custos_FiltradosPorOrigemDespesa_DevemDeixarDeForaAsOutrasDuas()
+        {
+            await using var contexto = fixture.CriarContexto();
+            var c = await MontarAsync(contexto);
+            var tipoDespesa = await NovoTipoDespesaAsync(contexto, c);
+            var dia = new DateTime(2026, 9, 1);
+
+            contexto.Abastecimentos.Add(NovoAbastecimento(c, dia, 250m));
+            contexto.Manutencoes.Add(NovaManutencao(c, StatusManutencao.Realizada, 110_000,
+                custo: 1_200m, dataRealizacao: dia));
+            contexto.Despesas.Add(NovaDespesa(c, tipoDespesa, dia, 100m));
+            await contexto.SaveChangesAsync();
+
+            var repositorio = new CustoRepository(contexto);
+            var (itens, total) = await repositorio.ConsultarAsync(
+                c.EmpresaId, new FiltroCusto(Origem: OrigemCusto.Despesa), 1, 25);
+
+            Assert.Equal(1, total);
+            Assert.Equal(100m, Assert.Single(itens).Valor);
+        }
+
         private static Abastecimento NovoAbastecimento(Cenario c, DateTime data, decimal valor) => new()
         {
             EmpresaId = c.EmpresaId,
@@ -397,6 +535,36 @@ namespace Frota360.IntegrationTests
             Status = status,
             Custo = custo,
             DataRealizacao = dataRealizacao,
+            DataInclusao = DateTime.Now
+        };
+
+        /// <summary>
+        /// Cria o tipo de despesa da empresa do cenário e devolve o id. O catálogo não é
+        /// semeado por <c>MontarAsync</c> porque só a despesa precisa dele.
+        /// </summary>
+        private static async Task<int> NovoTipoDespesaAsync(Frota360DbContext contexto, Cenario c)
+        {
+            var tipo = new TipoDespesa
+            {
+                EmpresaId = c.EmpresaId,
+                Nome = Unicos.Texto("Pedagio"),
+                Ativo = true,
+                DataInclusao = DateTime.Now
+            };
+            contexto.TiposDespesa.Add(tipo);
+            await contexto.SaveChangesAsync();
+            return tipo.Id;
+        }
+
+        private static Despesa NovaDespesa(Cenario c, int tipoDespesaId, DateTime data, decimal valor,
+            int? motoristaId = null) => new()
+        {
+            EmpresaId = c.EmpresaId,
+            VeiculoId = c.VeiculoId,
+            TipoDespesaId = tipoDespesaId,
+            MotoristaId = motoristaId,
+            Valor = valor,
+            DataDespesa = data,
             DataInclusao = DateTime.Now
         };
 

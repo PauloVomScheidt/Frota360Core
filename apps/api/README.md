@@ -240,6 +240,9 @@ Base: `api/v1/{controller}`. A versão também é aceita via header `api-version
 | GET | `/rota/minhas` | **Motorista** (as próprias, pelo `sub` do token) |
 | GET/POST/PUT | `/abastecimento?veiculoId=&motoristaId=&de=&ate=` (+ `/{id}`) | qualquer autenticado — o Motorista só alcança o que é dele |
 | GET | `/custo?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&origem=&de=&ate=` · `/custo/resumo?…` | Admin, Supervisor, Operador |
+| GET/POST/PUT | `/despesa?veiculoId=&motoristaId=&tipoDespesaId=&de=&ate=` (+ `/{id}`) — custo avulso | Admin, Supervisor, Operador |
+| DELETE | `/despesa/{id}` — ⚠️ **exceção**: o Supervisor também exclui | Admin, **Supervisor** |
+| GET | `/tipodespesa?apenasAtivos=` (+ `/{id}`) — catálogo; POST/PUT Admin+Supervisor, DELETE só Admin | Admin, Supervisor, Operador |
 | GET | `/auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` | Admin |
 | POST/PUT | `/veiculo`, `/tipomanutencao`, `/manutencao`, `/manutencao/{id}/concluir` | Admin, Supervisor |
 | POST/PUT | `/rota`, `/rota/{id}/encerrar` | qualquer autenticado (inclui Operador) |
@@ -248,7 +251,7 @@ Base: `api/v1/{controller}`. A versão também é aceita via header `api-version
 
 Transição de estado é sempre **endpoint próprio**, nunca PUT: `POST /manutencao/{id}/concluir`, `POST /rota/{id}/encerrar`.
 
-`/auditoria` e `/custo` são os dois endpoints paginados — o `dados` do envelope vem como `ResultadoPaginado<T>`, não como array. **`/custo` não tem tabela por trás**: é um read model que une `Abastecimento.Valor` e `Manutencao.Custo` na leitura, e `/custo/resumo` é a única agregação servida pela API.
+`/auditoria` e `/custo` são os dois endpoints paginados — o `dados` do envelope vem como `ResultadoPaginado<T>`, não como array. `/custo` une **três origens** na leitura — `Abastecimento.Valor`, `Manutencao.Custo` e `Despesa.Valor` —, e `/custo/resumo` é a única agregação servida pela API. Só a `Despesa` tem tabela própria: as outras duas são lidas das telas de origem, e o read model não guarda nada.
 
 ---
 

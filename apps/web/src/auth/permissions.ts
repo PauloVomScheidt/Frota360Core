@@ -49,6 +49,8 @@ export const pode = {
    * esconde dele o custo da manutenção).
    */
   verCustos: gestao,
+  /** Tela `/despesas`: custos avulsos (pedágio, multa, IPVA). Lançamento administrativo. */
+  verDespesas: gestao,
 
   // ----- Ações -----
   /** Cadastrar, editar e encerrar rota na tela de gestão (`/rotas`). */
@@ -62,6 +64,16 @@ export const pode = {
    * lançamento de outra pessoa (404 para o motorista), não esta entrada.
    */
   lancarAbastecimento: (role?: Role) => role !== undefined,
+  /** Lançar e corrigir despesa — toda a gestão, Operador incluído. */
+  lancarDespesa: gestao,
+  /** Manter o catálogo de tipos de despesa (todos da gestão apenas visualizam). */
+  editarTiposDespesa: (role?: Role) => role === 'Admin' || role === 'Supervisor',
+  /**
+   * ⚠️ **Exceção deliberada** à regra de que só o Admin exclui (`pode.excluir`): por decisão
+   * de produto, o Supervisor também apaga despesa. Entrada separada de propósito — mexer em
+   * `pode.excluir` afetaria todas as outras telas.
+   */
+  excluirDespesa: (role?: Role) => role === 'Admin' || role === 'Supervisor',
 }
 
 /**

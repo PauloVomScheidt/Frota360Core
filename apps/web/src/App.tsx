@@ -16,6 +16,8 @@ import { ConvitesPage } from './pages/ConvitesPage'
 import { AuditoriaPage } from './pages/AuditoriaPage'
 import { AbastecimentosPage } from './pages/AbastecimentosPage'
 import { CustosPage } from './pages/CustosPage'
+import { DespesasPage } from './pages/DespesasPage'
+import { TiposDespesaPage } from './pages/TiposDespesaPage'
 import { PerfilPage } from './pages/PerfilPage'
 import { RequireAuth, RequirePode } from './components/RequireAuth'
 import { pode } from './auth/permissions'
@@ -56,6 +58,9 @@ export default function App() {
           <Route element={<RequirePode permitido={pode.verAbastecimentos} />}>
             <Route path="/abastecimentos" element={<AbastecimentosPage />} />
           </Route>
+          <Route element={<RequirePode permitido={pode.verDespesas} />}>
+            <Route path="/despesas" element={<DespesasPage />} />
+          </Route>
           <Route element={<RequirePode permitido={pode.verCustos} />}>
             <Route path="/custos" element={<CustosPage />} />
           </Route>
@@ -64,6 +69,9 @@ export default function App() {
           </Route>
           <Route element={<RequirePode permitido={pode.editarTiposManutencao} />}>
             <Route path="/tipos-manutencao" element={<TiposManutencaoPage />} />
+          </Route>
+          <Route element={<RequirePode permitido={pode.editarTiposDespesa} />}>
+            <Route path="/tipos-despesa" element={<TiposDespesaPage />} />
           </Route>
           <Route element={<RequirePode permitido={pode.gerenciarUsuarios} />}>
             <Route path="/usuarios" element={<UsuariosPage />} />

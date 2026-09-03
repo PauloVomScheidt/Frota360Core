@@ -49,9 +49,11 @@ A URL da API vem de `VITE_API_URL` (`.env.development` / `.env.production`).
 | `/rotas` | gestão | Lista e cadastro de rotas |
 | `/manutencoes` | autenticado (edição: Admin/Supervisor) | Plano de manutenção; o Motorista não vê custo |
 | `/abastecimentos` | autenticado | Lançar o gasto; o Motorista vê só o que é dele |
-| `/custos` | gestão | Abastecimentos e manutenções consolidados, com totais e R$/km |
+| `/despesas` | gestão | Custos avulsos: pedágio, multa, IPVA, seguro |
+| `/custos` | gestão | Abastecimentos, manutenções e despesas consolidados, com totais e R$/km |
 | `/minhas-rotas` | Motorista | Abrir e encerrar as próprias rotas |
 | `/tipos-manutencao` | Admin/Supervisor | Catálogo de tipos de manutenção |
+| `/tipos-despesa` | Admin/Supervisor | Catálogo de tipos de despesa |
 | `/usuarios` | Admin | Alterar permissão, ativar/desativar |
 | `/convites` | Admin | Criar, listar e cancelar convites |
 | `/auditoria` | Admin | Trilha do que a equipe alterou (somente leitura) |

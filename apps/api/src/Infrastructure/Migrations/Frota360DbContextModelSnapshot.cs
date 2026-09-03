@@ -130,6 +130,57 @@ namespace Frota360.Infrastructure.Migrations
                     b.ToTable("Convite", (string)null);
                 });
 
+            modelBuilder.Entity("Frota360.Domain.Entities.Despesa", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("DataDespesa")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<DateTime>("DataInclusao")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp without time zone")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
+
+                    b.Property<int>("EmpresaId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MotoristaId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Observacao")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("TipoDespesaId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("Valor")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<int>("VeiculoId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MotoristaId");
+
+                    b.HasIndex("TipoDespesaId");
+
+                    b.HasIndex("VeiculoId");
+
+                    b.HasIndex("EmpresaId", "MotoristaId", "DataDespesa");
+
+                    b.HasIndex("EmpresaId", "VeiculoId", "DataDespesa");
+
+                    b.ToTable("Despesa", (string)null);
+                });
+
             modelBuilder.Entity("Frota360.Domain.Entities.Empresa", b =>
                 {
                     b.Property<int>("Id")
@@ -362,6 +413,40 @@ namespace Frota360.Infrastructure.Migrations
                     b.ToTable("Rota", (string)null);
                 });
 
+            modelBuilder.Entity("Frota360.Domain.Entities.TipoDespesa", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Ativo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTime>("DataInclusao")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp without time zone")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
+
+                    b.Property<int>("EmpresaId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmpresaId", "Nome")
+                        .IsUnique();
+
+                    b.ToTable("TipoDespesa", (string)null);
+                });
+
             modelBuilder.Entity("Frota360.Domain.Entities.TipoManutencao", b =>
                 {
                     b.Property<int>("Id")
@@ -580,6 +665,38 @@ namespace Frota360.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Frota360.Domain.Entities.Despesa", b =>
+                {
+                    b.HasOne("Frota360.Domain.Entities.Empresa", null)
+                        .WithMany()
+                        .HasForeignKey("EmpresaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Frota360.Domain.Entities.Usuario", "Motorista")
+                        .WithMany()
+                        .HasForeignKey("MotoristaId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Frota360.Domain.Entities.TipoDespesa", "Tipo")
+                        .WithMany()
+                        .HasForeignKey("TipoDespesaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Frota360.Domain.Entities.Veiculo", "Veiculo")
+                        .WithMany()
+                        .HasForeignKey("VeiculoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Motorista");
+
+                    b.Navigation("Tipo");
+
+                    b.Navigation("Veiculo");
+                });
+
             modelBuilder.Entity("Frota360.Domain.Entities.LogAuditoria", b =>
                 {
                     b.HasOne("Frota360.Domain.Entities.Empresa", null)
@@ -643,6 +760,15 @@ namespace Frota360.Infrastructure.Migrations
                     b.Navigation("Motorista");
 
                     b.Navigation("Veiculo");
+                });
+
+            modelBuilder.Entity("Frota360.Domain.Entities.TipoDespesa", b =>
+                {
+                    b.HasOne("Frota360.Domain.Entities.Empresa", null)
+                        .WithMany()
+                        .HasForeignKey("EmpresaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Frota360.Domain.Entities.TipoManutencao", b =>
