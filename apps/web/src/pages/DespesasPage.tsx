@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { despesasApi } from '../api/despesas'
 import { tiposDespesaApi } from '../api/tiposDespesa'
@@ -25,7 +25,7 @@ import {
   SecaoCampos,
   TableStates,
 } from '../components/Table'
-import { usePaginacao } from '../lib/paginacao'
+import { usePaginacaoServidor } from '../lib/paginacao'
 import { formatDate, formatMoeda, hojeInputDate, paraInputDate } from '../lib/format'
 import { intervaloDoPeriodo, type Periodo } from '../lib/periodo'
 
@@ -310,7 +310,10 @@ export function DespesasPage() {
   const [periodo, setPeriodo] = useState<Periodo>('30dias')
 
   const intervalo = intervaloDoPeriodo(periodo)
-  const filtro: DespesaFiltro = {
+  const paginacao = usePaginacaoServidor()
+
+  /** O recorte da tela, sem paginação — é ele que o resumo do rodapé também usa. */
+  const recorte: DespesaFiltro = {
     veiculoId: filtroVeiculo === '' ? undefined : Number(filtroVeiculo),
     tipoDespesaId: filtroTipo === '' ? undefined : Number(filtroTipo),
     motoristaId: filtroMotorista === '' ? undefined : Number(filtroMotorista),
@@ -318,9 +321,24 @@ export function DespesasPage() {
     ate: intervalo.ate,
   }
 
+  const filtro: DespesaFiltro = {
+    ...recorte,
+    pagina: paginacao.pagina,
+    tamanhoPagina: paginacao.tamanhoPagina,
+  }
+
   const despesasQuery = useQuery({
     queryKey: ['despesas', filtro],
     queryFn: () => despesasApi.getAll(filtro),
+  })
+
+  /**
+   * O `tfoot` "N lançamentos · Total: R$ X" vem do servidor, somando o **filtro inteiro**.
+   * A chave carrega só o `recorte`: virar de página não a invalida.
+   */
+  const resumoQuery = useQuery({
+    queryKey: ['despesas', 'resumo', recorte],
+    queryFn: () => despesasApi.resumo(recorte),
   })
 
   const veiculosQuery = useQuery({ queryKey: ['veiculos'], queryFn: veiculosApi.getAll })
@@ -413,20 +431,19 @@ export function DespesasPage() {
     setFiltroTipo('')
     setFiltroMotorista('')
     setPeriodo('todos')
+    paginacao.resetar()
   }
 
-  const despesas = despesasQuery.data ?? []
-  const p = usePaginacao(despesas)
+  const dados = despesasQuery.data
+  const despesas = dados?.itens ?? []
   const tipos = tiposQuery.data ?? []
   const temFiltro = filtroVeiculo !== '' || filtroTipo !== '' || filtroMotorista !== '' || periodo !== 'todos'
   const mostrarAcoes = podeLancar || podeExcluir
   const colunas = mostrarAcoes ? 7 : 6
 
-  /** Total do que está filtrado, não da frota inteira — como em `/abastecimentos`. */
-  const total = useMemo(
-    () => (despesasQuery.data ?? []).reduce((soma, d) => soma + d.valor, 0),
-    [despesasQuery.data],
-  )
+  // ⚠️ Contagem e total do **filtro inteiro**, vindos do servidor. Somar `despesas` (a
+  // página) faria os dois números mudarem a cada virada de página.
+  const resumo = resumoQuery.data
 
   // Sem tipo cadastrado não há o que selecionar — o aviso evita o 422 sem explicação.
   const semTipos = tiposQuery.isSuccess && tipos.length === 0
@@ -482,10 +499,22 @@ export function DespesasPage() {
         filtroMotorista={filtroMotorista}
         periodo={periodo}
         temFiltro={temFiltro}
-        onFiltroVeiculoChange={setFiltroVeiculo}
-        onFiltroTipoChange={setFiltroTipo}
-        onFiltroMotoristaChange={setFiltroMotorista}
-        onPeriodoChange={setPeriodo}
+        onFiltroVeiculoChange={(v) => {
+          setFiltroVeiculo(v)
+          paginacao.resetar()
+        }}
+        onFiltroTipoChange={(v) => {
+          setFiltroTipo(v)
+          paginacao.resetar()
+        }}
+        onFiltroMotoristaChange={(v) => {
+          setFiltroMotorista(v)
+          paginacao.resetar()
+        }}
+        onPeriodoChange={(v) => {
+          setPeriodo(v)
+          paginacao.resetar()
+        }}
         onLimpar={limparFiltros}
       />
 
@@ -516,7 +545,7 @@ export function DespesasPage() {
                   : 'Nenhuma despesa lançada ainda.'
               }
             />
-            {p.itensDaPagina.map((d) => (
+            {despesas.map((d) => (
               <tr key={d.id}>
                 <td>{formatDate(d.dataDespesa)}</td>
                 <td className="font-semibold">
@@ -548,14 +577,14 @@ export function DespesasPage() {
               </tr>
             ))}
           </tbody>
-          {despesas.length > 0 && (
+          {resumo && resumo.quantidade > 0 && (
             <tfoot>
               <tr>
                 <td colSpan={4} style={{ color: mutedText }}>
-                  {despesas.length} {despesas.length === 1 ? 'lançamento' : 'lançamentos'}
+                  {resumo.quantidade} {resumo.quantidade === 1 ? 'lançamento' : 'lançamentos'}
                 </td>
                 <td className="font-semibold">
-                  Total: <strong>{formatMoeda(total)}</strong>
+                  Total: <strong>{formatMoeda(resumo.valorTotal)}</strong>
                 </td>
                 <td colSpan={mostrarAcoes ? 2 : 1} />
               </tr>
@@ -564,7 +593,7 @@ export function DespesasPage() {
         </table>
       </div>
 
-      <Paginacao {...p} pending={despesasQuery.isFetching} />
+      <Paginacao {...paginacao.props(dados)} pending={despesasQuery.isFetching} />
 
       {paraExcluir && (
         <ConfirmDialog

@@ -1,4 +1,5 @@
-﻿using Frota360.Domain.Entities;
+﻿using Frota360.Domain.Common;
+using Frota360.Domain.Entities;
 using Frota360.Domain.Enums;
 using Frota360.Domain.Interfaces.Repositories;
 using Frota360.Infrastructure.Data;
@@ -8,9 +9,11 @@ namespace Frota360.Infrastructure.Repositories
 {
     public class ManutencaoRepository(Frota360DbContext context) : IManutencaoRepository
     {
-        public async Task<IEnumerable<Manutencao>> GetAllAsync(int empresaId, int? veiculoId = null,
-            StatusManutencao? status = null, DateTime? de = null, DateTime? ate = null)
+        public async Task<(IEnumerable<Manutencao> Itens, int Total)> ConsultarAsync(
+            int empresaId, FiltroManutencao filtro)
         {
+            var (veiculoId, status, de, ate) = (filtro.VeiculoId, filtro.Status, filtro.De, filtro.Ate);
+
             var consulta = context.Manutencoes.AsNoTracking()
                 .Include(m => m.Veiculo)
                 .Include(m => m.Tipo)
@@ -49,10 +52,20 @@ namespace Frota360.Infrastructure.Repositories
             // Status é persistido como texto, então OrderBy(Status) sairia em ordem
             // alfabética. O que a tela quer é o que ainda precisa de ação primeiro,
             // e dentro disso o que vence antes.
-            return await consulta
+            var total = await consulta.CountAsync();
+
+            // ⚠️ `ThenBy(Id)` fecha a ordenação. Sem ele, duas manutenções do mesmo status e da
+            // mesma quilometragem prevista podem trocar de lugar entre consultas — e a página 2
+            // repetiria uma linha que a 1 já mostrou.
+            var itens = await consulta
                 .OrderBy(m => m.Status == StatusManutencao.Pendente ? 0 : 1)
                 .ThenBy(m => m.QuilometragemPrevista)
+                .ThenBy(m => m.Id)
+                .Skip((filtro.Pagina - 1) * filtro.TamanhoPagina)
+                .Take(filtro.TamanhoPagina)
                 .ToListAsync();
+
+            return (itens, total);
         }
 
         // Rastreado (sem AsNoTracking): serve tanto para leitura quanto para update/conclusão.

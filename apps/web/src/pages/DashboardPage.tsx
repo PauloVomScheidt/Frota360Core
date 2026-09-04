@@ -6,6 +6,7 @@ import { rotasApi } from '../api/rotas'
 import { AppLayout, PageHeader } from '../components/AppLayout'
 import { Paginacao, TableStates } from '../components/Table'
 import { usePaginacao } from '../lib/paginacao'
+import { intervaloDoPeriodo } from '../lib/periodo'
 import { formatDate, formatKm } from '../lib/format'
 import {
   ClipboardIcon,
@@ -30,32 +31,39 @@ export function DashboardPage() {
 
   const veiculosQuery = useQuery({ queryKey: ['veiculos'], queryFn: veiculosApi.getAll })
   const motoristasQuery = useQuery({ queryKey: ['motoristas'], queryFn: motoristasApi.getAll })
-  const rotasQuery = useQuery({ queryKey: ['rotas'], queryFn: rotasApi.getAll })
+
+  /**
+   * Os dois números de rota vêm do servidor desde que `/rota` passou a paginar — antes esta
+   * tela baixava a lista inteira para contar e somar no cliente.
+   *
+   * A contagem não precisou de endpoint: `total` do `ResultadoPaginado` já é a contagem do
+   * filtro, então `tamanhoPagina: 1` traz o número com uma linha de payload.
+   */
+  const rotasAtivasQuery = useQuery({
+    queryKey: ['rotas', { ativo: true, tamanhoPagina: 1 }],
+    queryFn: () => rotasApi.getAll({ ativo: true, pagina: 1, tamanhoPagina: 1 }),
+  })
+
+  const totalRotasQuery = useQuery({
+    queryKey: ['rotas', { tamanhoPagina: 1 }],
+    queryFn: () => rotasApi.getAll({ pagina: 1, tamanhoPagina: 1 }),
+  })
+
+  /**
+   * Km rodado no mês corrente: soma de `kmPercorrido` das rotas encerradas dentro do mês (o
+   * recorte é por `dataFim`, o momento em que a quilometragem foi apurada). O `SUM` é do
+   * banco — `kmPercorrido` é persistido pela API e nunca recalculado a partir de
+   * kmInicial/kmFinal.
+   */
+  const mes = intervaloDoPeriodo('esteMes')
+  const kmDoMesQuery = useQuery({
+    queryKey: ['rotas', 'resumo', mes],
+    queryFn: () => rotasApi.resumo(mes.de!, mes.ate!),
+  })
 
   const veiculos = veiculosQuery.data ?? []
   const motoristas = motoristasQuery.data ?? []
-  const rotas = rotasQuery.data ?? []
-
-  /**
-   * Km rodado no mês corrente: soma de `kmPercorrido` das rotas encerradas dentro do
-   * mês (o recorte é por `dataFim`, o momento em que a quilometragem foi apurada).
-   * `kmPercorrido` é persistido pela API — nunca recalcular a partir de kmInicial/kmFinal.
-   */
-  const kmDoMes = useMemo(() => {
-    const agora = new Date()
-    return (rotasQuery.data ?? []).reduce(
-      (acumulado, rota) => {
-        if (rota.kmPercorrido == null || !rota.dataFim) return acumulado
-        const fim = new Date(rota.dataFim)
-        if (Number.isNaN(fim.getTime())) return acumulado
-        if (fim.getFullYear() !== agora.getFullYear() || fim.getMonth() !== agora.getMonth()) {
-          return acumulado
-        }
-        return { km: acumulado.km + rota.kmPercorrido, rotas: acumulado.rotas + 1 }
-      },
-      { km: 0, rotas: 0 },
-    )
-  }, [rotasQuery.data])
+  const kmDoMes = kmDoMesQuery.data
 
   const kpis: Kpi[] = [
     {
@@ -72,8 +80,8 @@ export function DashboardPage() {
     },
     {
       label: 'Rotas ativas',
-      value: rotasQuery.isSuccess ? String(rotas.filter((r) => r.ativo).length) : '—',
-      detail: rotasQuery.isSuccess ? `de ${rotas.length} rotas no total` : '',
+      value: rotasAtivasQuery.isSuccess ? String(rotasAtivasQuery.data.total) : '—',
+      detail: totalRotasQuery.isSuccess ? `de ${totalRotasQuery.data.total} rotas no total` : '',
       icon: <RouteIcon />,
     },
     {
@@ -86,9 +94,9 @@ export function DashboardPage() {
     },
     {
       label: 'Km rodado',
-      value: rotasQuery.isSuccess ? kmDoMes.km.toLocaleString('pt-BR') : '—',
-      detail: rotasQuery.isSuccess
-        ? `no mês · ${kmDoMes.rotas} ${kmDoMes.rotas === 1 ? 'rota encerrada' : 'rotas encerradas'}`
+      value: kmDoMes ? kmDoMes.kmTotal.toLocaleString('pt-BR') : '—',
+      detail: kmDoMes
+        ? `no mês · ${kmDoMes.quantidade} ${kmDoMes.quantidade === 1 ? 'rota encerrada' : 'rotas encerradas'}`
         : '',
       icon: <ClipboardIcon />,
     },

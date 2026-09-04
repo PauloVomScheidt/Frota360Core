@@ -4,6 +4,7 @@ using Frota360.Application.UseCases.Despesas.Commands.CreateDespesa;
 using Frota360.Application.UseCases.Despesas.Commands.DeleteDespesa;
 using Frota360.Application.UseCases.Despesas.Commands.UpdateDespesa;
 using Frota360.Application.UseCases.Despesas.Queries.GetAllDespesas;
+using Frota360.Application.UseCases.Despesas.Queries.GetResumoDespesas;
 using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
@@ -41,6 +42,19 @@ namespace Frota360.Tests.UseCases.Despesas
 
         private GetAllDespesasHandler CriarGetAllHandler() =>
             new(_repository, _currentUser, NullLogger<GetAllDespesasHandler>.Instance);
+
+        private static ConsultarDespesasRequest Consulta(int pagina = 1, int tamanhoPagina = 15,
+            int? veiculoId = null, int? motoristaId = null, int? tipoDespesaId = null,
+            DateTime? de = null, DateTime? ate = null) => new()
+        {
+            Pagina = pagina,
+            TamanhoPagina = tamanhoPagina,
+            VeiculoId = veiculoId,
+            MotoristaId = motoristaId,
+            TipoDespesaId = tipoDespesaId,
+            De = de,
+            Ate = ate
+        };
 
         private static Veiculo NovoVeiculo(int id = 5) => new()
         {
@@ -322,16 +336,50 @@ namespace Frota360.Tests.UseCases.Despesas
         [Fact]
         public async Task GetAll_DeveEscoparNaEmpresaERepassarOFiltro()
         {
-            _repository.GetAllAsync(Arg.Any<int>(), Arg.Any<int?>(), Arg.Any<int?>(),
-                Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>()).Returns([NovaDespesa()]);
+            _repository.ConsultarAsync(Arg.Any<int>(), Arg.Any<FiltroDespesa>())
+                .Returns((new[] { NovaDespesa() }, 1));
 
             var handler = CriarGetAllHandler();
-            await handler.HandleAsync(new GetAllDespesasQuery(
-                VeiculoId: 5, MotoristaId: 7, TipoDespesaId: 3,
-                De: new DateTime(2026, 9, 1), Ate: new DateTime(2026, 9, 30)));
+            await handler.HandleAsync(new GetAllDespesasQuery(Consulta(
+                veiculoId: 5, motoristaId: 7, tipoDespesaId: 3,
+                de: new DateTime(2026, 9, 1), ate: new DateTime(2026, 9, 30))));
 
-            await _repository.Received(1).GetAllAsync(1, 5, 7, 3,
-                new DateTime(2026, 9, 1), new DateTime(2026, 9, 30));
+            await _repository.Received(1).ConsultarAsync(1, Arg.Is<FiltroDespesa>(f =>
+                f.VeiculoId == 5 && f.MotoristaId == 7 && f.TipoDespesaId == 3 &&
+                f.De == new DateTime(2026, 9, 1) && f.Ate == new DateTime(2026, 9, 30)));
+        }
+
+        [Fact]
+        public async Task GetAll_DeveRepassarAPaginacaoEEcoarNaResposta()
+        {
+            _repository.ConsultarAsync(Arg.Any<int>(), Arg.Any<FiltroDespesa>())
+                .Returns((new[] { NovaDespesa() }, 42));
+
+            var pagina = await CriarGetAllHandler().HandleAsync(
+                new GetAllDespesasQuery(Consulta(pagina: 2, tamanhoPagina: 10)));
+
+            await _repository.Received(1).ConsultarAsync(1,
+                Arg.Is<FiltroDespesa>(f => f.Pagina == 2 && f.TamanhoPagina == 10));
+            Assert.Equal(2, pagina.Pagina);
+            Assert.Equal(10, pagina.TamanhoPagina);
+            Assert.Equal(42, pagina.Total);   // o total ignora a paginação
+        }
+
+        [Fact]
+        public async Task GetResumo_DeveUsarOMesmoFiltroDaListagem()
+        {
+            // Se lista e rodapé divergirem, a tela soma um conjunto que a tabela não mostra.
+            _repository.ResumirAsync(Arg.Any<int>(), Arg.Any<FiltroDespesa>())
+                .Returns(new ResumoLancamentos(4, 1200m));
+
+            var handler = new GetResumoDespesasHandler(_repository, _currentUser,
+                NullLogger<GetResumoDespesasHandler>.Instance);
+
+            var resumo = await handler.HandleAsync(new GetResumoDespesasQuery(Consulta(veiculoId: 5)));
+
+            Assert.Equal(4, resumo.Quantidade);
+            Assert.Equal(1200m, resumo.ValorTotal);
+            await _repository.Received(1).ResumirAsync(1, Arg.Is<FiltroDespesa>(f => f.VeiculoId == 5));
         }
 
         [Fact]
@@ -340,8 +388,8 @@ namespace Frota360.Tests.UseCases.Despesas
             var handler = CriarGetAllHandler();
 
             await Assert.ThrowsAsync<InvalidOperationException>(
-                () => handler.HandleAsync(new GetAllDespesasQuery(
-                    De: new DateTime(2026, 9, 30), Ate: new DateTime(2026, 9, 1))));
+                () => handler.HandleAsync(new GetAllDespesasQuery(Consulta(
+                    de: new DateTime(2026, 9, 30), ate: new DateTime(2026, 9, 1)))));
         }
     }
 }

@@ -7,6 +7,7 @@ using Frota360.Application.UseCases.Despesas.Commands.CreateDespesa;
 using Frota360.Application.UseCases.Despesas.Commands.DeleteDespesa;
 using Frota360.Application.UseCases.Despesas.Commands.UpdateDespesa;
 using Frota360.Application.UseCases.Despesas.Queries.GetAllDespesas;
+using Frota360.Application.UseCases.Despesas.Queries.GetResumoDespesas;
 using Frota360.Application.UseCases.Despesas.Queries.GetDespesaById;
 using Frota360.Domain.Common;
 using Microsoft.AspNetCore.Authorization;
@@ -27,23 +28,50 @@ namespace Frota360.Api.Controllers
     [Route("api/v{version:apiVersion}/[controller]")]
     public class DespesaController(IDispatcher dispatcher,
                                    IValidator<CreateDespesaRequest> createValidator,
-                                   IValidator<UpdateDespesaRequest> updateValidator) : ControllerBase
+                                   IValidator<UpdateDespesaRequest> updateValidator,
+                                   IValidator<ConsultarDespesasRequest> consultarValidator) : ControllerBase
     {
         /// <summary>Despesas da empresa, das mais recentes para as mais antigas. (Gestão)</summary>
         /// <response code="200">Lista retornada com sucesso</response>
         /// <response code="403">Sem permissão</response>
         /// <response code="422">Período com data final anterior à inicial</response>
         [HttpGet]
-        [ProducesResponseType<ApiResponse<IEnumerable<DespesaResponse>>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<ResultadoPaginado<DespesaResponse>>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status422UnprocessableEntity)]
-        public async Task<IActionResult> GetAll([FromQuery] int? veiculoId, [FromQuery] int? motoristaId,
-            [FromQuery] int? tipoDespesaId, [FromQuery] DateTime? de, [FromQuery] DateTime? ate)
+        public async Task<IActionResult> GetAll([FromQuery] ConsultarDespesasRequest request)
         {
-            var despesas = await dispatcher.SendAsync(
-                new GetAllDespesasQuery(veiculoId, motoristaId, tipoDespesaId, de, ate));
+            var validation = await consultarValidator.ValidateAsync(request);
+            if (!validation.IsValid)
+                return BadRequest(ApiResponse<object>.Fail("Dados inválidos.",
+                    validation.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}")));
 
-            return Ok(ApiResponse<IEnumerable<DespesaResponse>>.Ok(despesas));
+            var pagina = await dispatcher.SendAsync(new GetAllDespesasQuery(request));
+            return Ok(ApiResponse<ResultadoPaginado<DespesaResponse>>.Ok(pagina));
+        }
+
+        /// <summary>
+        /// Contagem e soma do <b>filtro inteiro</b>, para o rodapé da tela — não da página.
+        /// Aceita exatamente os mesmos filtros da listagem. (Gestão)
+        /// </summary>
+        /// <response code="200">Resumo retornado com sucesso</response>
+        /// <response code="400">Filtro inválido</response>
+        /// <response code="422">Data final anterior à inicial</response>
+        [HttpGet("resumo")]
+        [ProducesResponseType<ApiResponse<ResumoDespesasResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status422UnprocessableEntity)]
+        public async Task<IActionResult> GetResumo([FromQuery] ConsultarDespesasRequest request)
+        {
+            var validation = await consultarValidator.ValidateAsync(request);
+            if (!validation.IsValid)
+                return BadRequest(ApiResponse<object>.Fail("Dados inválidos.",
+                    validation.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}")));
+
+            var resumo = await dispatcher.SendAsync(new GetResumoDespesasQuery(request));
+            return Ok(ApiResponse<ResumoDespesasResponse>.Ok(resumo));
         }
 
         /// <summary>Retorna uma despesa pelo id.</summary>

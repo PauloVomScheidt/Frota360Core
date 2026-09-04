@@ -4,8 +4,10 @@ using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Abastecimentos.Commands.CreateAbastecimento;
 using Frota360.Application.UseCases.Abastecimentos.Commands.DeleteAbastecimento;
 using Frota360.Application.UseCases.Abastecimentos.Commands.UpdateAbastecimento;
+using Frota360.Application.UseCases.Abastecimentos.Queries.GetAbastecimentoAnterior;
 using Frota360.Application.UseCases.Abastecimentos.Queries.GetAbastecimentoById;
 using Frota360.Application.UseCases.Abastecimentos.Queries.GetAllAbastecimentos;
+using Frota360.Application.UseCases.Abastecimentos.Queries.GetResumoAbastecimentos;
 using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
@@ -32,7 +34,7 @@ namespace Frota360.Tests.UseCases.Abastecimentos
             _currentUser.Role.Returns(Roles.Supervisor);
 
             // Sem rota aberta é o caso comum; os testes de rota sobrescrevem.
-            _rotaRepository.GetAllByMotoristaAsync(Arg.Any<int>(), Arg.Any<int>()).Returns([]);
+            _rotaRepository.GetRotaAbertaDoMotoristaAsync(Arg.Any<int>(), Arg.Any<int>()).Returns((Rota?)null);
         }
 
         private void ComoMotorista(int usuarioId)
@@ -127,6 +129,22 @@ namespace Frota360.Tests.UseCases.Abastecimentos
 
         private GetAllAbastecimentosHandler CriarGetAllHandler() =>
             new(_repository, _currentUser, NullLogger<GetAllAbastecimentosHandler>.Instance);
+
+        private static ConsultarAbastecimentosRequest Consulta(int pagina = 1, int tamanhoPagina = 15,
+            int? veiculoId = null, int? motoristaId = null, DateTime? de = null, DateTime? ate = null) => new()
+        {
+            Pagina = pagina,
+            TamanhoPagina = tamanhoPagina,
+            VeiculoId = veiculoId,
+            MotoristaId = motoristaId,
+            De = de,
+            Ate = ate
+        };
+
+        /// <summary>Sem isto o substituto devolve uma tupla default e o handler quebra ao projetar.</summary>
+        private void ConsultaVazia() =>
+            _repository.ConsultarAsync(Arg.Any<int>(), Arg.Any<FiltroAbastecimento>())
+                .Returns((Array.Empty<Abastecimento>(), 0));
 
         private static CreateAbastecimentoRequest RequisicaoValida(int veiculoId = 1, int? motoristaId = 7) => new()
         {
@@ -235,7 +253,7 @@ namespace Frota360.Tests.UseCases.Abastecimentos
         {
             ComoMotorista(7);
             PrepararCreate();
-            _rotaRepository.GetAllByMotoristaAsync(1, 7).Returns(new[] { RotaAberta(veiculoId: 1) });
+            _rotaRepository.GetRotaAbertaDoMotoristaAsync(1, 7).Returns(RotaAberta(veiculoId: 1));
 
             await CriarCreateHandler().HandleAsync(new CreateAbastecimentoCommand(RequisicaoValida()));
 
@@ -252,7 +270,7 @@ namespace Frota360.Tests.UseCases.Abastecimentos
             ComoMotorista(7);
             _veiculoRepository.GetByIdAsync(1, 1).Returns(NovoVeiculo());
             _usuarioRepository.GetMotoristaByIdAsync(7, 1).Returns(NovoMotorista());
-            _rotaRepository.GetAllByMotoristaAsync(1, 7).Returns(new[] { RotaAberta(veiculoId: 2) });
+            _rotaRepository.GetRotaAbertaDoMotoristaAsync(1, 7).Returns(RotaAberta(veiculoId: 2));
 
             var erro = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 CriarCreateHandler().HandleAsync(new CreateAbastecimentoCommand(RequisicaoValida())));
@@ -267,11 +285,9 @@ namespace Frota360.Tests.UseCases.Abastecimentos
         {
             ComoMotorista(7);
             PrepararCreate();
-            // Rota já encerrada: não trava nem vincula.
-            _rotaRepository.GetAllByMotoristaAsync(1, 7).Returns(new[]
-            {
-                new Rota { Id = 40, EmpresaId = 1, CodigoMotorista = 7, CodigoVeiculo = 2, Ativo = false, DataFim = new DateTime(2026, 8, 20) }
-            });
+            // Rota já encerrada não é "aberta", então a consulta não a devolve: não trava
+            // nem vincula. (O default da fixture já é nulo; explícito aqui pela clareza do caso.)
+            _rotaRepository.GetRotaAbertaDoMotoristaAsync(1, 7).Returns((Rota?)null);
 
             await CriarCreateHandler().HandleAsync(new CreateAbastecimentoCommand(RequisicaoValida()));
 
@@ -286,7 +302,7 @@ namespace Frota360.Tests.UseCases.Abastecimentos
         public async Task Create_ComoGestao_ComRotaAbertaDoMotoristaNaqueleVeiculo_DeveVincularARota()
         {
             PrepararCreate();
-            _rotaRepository.GetAllByMotoristaAsync(1, 7).Returns(new[] { RotaAberta(veiculoId: 1) });
+            _rotaRepository.GetRotaAbertaDoMotoristaAsync(1, 7).Returns(RotaAberta(veiculoId: 1));
 
             await CriarCreateHandler().HandleAsync(new CreateAbastecimentoCommand(RequisicaoValida()));
 
@@ -297,7 +313,7 @@ namespace Frota360.Tests.UseCases.Abastecimentos
         public async Task Create_ComoGestao_ComRotaAbertaDoMotoristaEmOutroVeiculo_DeveLancarSemRota()
         {
             PrepararCreate();
-            _rotaRepository.GetAllByMotoristaAsync(1, 7).Returns(new[] { RotaAberta(veiculoId: 2) });
+            _rotaRepository.GetRotaAbertaDoMotoristaAsync(1, 7).Returns(RotaAberta(veiculoId: 2));
 
             await CriarCreateHandler().HandleAsync(new CreateAbastecimentoCommand(RequisicaoValida()));
 
@@ -322,11 +338,11 @@ namespace Frota360.Tests.UseCases.Abastecimentos
         public async Task GetAll_ComoMotorista_DeveRecortarPeloProprioMotorista()
         {
             ComoMotorista(7);
-            _repository.GetAllAsync(1, null, 7, null, null).Returns([]);
+            ConsultaVazia();
 
-            await CriarGetAllHandler().HandleAsync(new GetAllAbastecimentosQuery());
+            await CriarGetAllHandler().HandleAsync(new GetAllAbastecimentosQuery(Consulta()));
 
-            await _repository.Received(1).GetAllAsync(1, null, 7, null, null);
+            await _repository.Received(1).ConsultarAsync(1, Arg.Is<FiltroAbastecimento>(f => f.MotoristaId == 7));
         }
 
         /// <summary>O filtro do cliente não vale para o motorista: o recorte sai sempre do token.</summary>
@@ -334,41 +350,120 @@ namespace Frota360.Tests.UseCases.Abastecimentos
         public async Task GetAll_ComoMotorista_DeveIgnorarOFiltroDeMotoristaDoCliente()
         {
             ComoMotorista(7);
-            _repository.GetAllAsync(1, null, 7, null, null).Returns([]);
+            ConsultaVazia();
 
-            await CriarGetAllHandler().HandleAsync(new GetAllAbastecimentosQuery(MotoristaId: 9));
+            await CriarGetAllHandler().HandleAsync(new GetAllAbastecimentosQuery(Consulta(motoristaId: 9)));
 
-            await _repository.Received(1).GetAllAsync(1, null, 7, null, null);
+            await _repository.Received(1).ConsultarAsync(1, Arg.Is<FiltroAbastecimento>(f => f.MotoristaId == 7));
+        }
+
+        /// <summary>
+        /// O recorte precisa estar <b>no filtro</b> que vai ao banco, não aplicado depois: é o que
+        /// faz o COUNT da paginação sair recortado também. Sem isso o `total` da resposta —
+        /// e o rodapé que sai do mesmo filtro — entregaria o volume da empresa ao motorista.
+        /// </summary>
+        [Fact]
+        public async Task GetAll_ComoMotorista_TotalDeveVirDaConsultaRecortada()
+        {
+            ComoMotorista(7);
+            _repository.ConsultarAsync(1, Arg.Is<FiltroAbastecimento>(f => f.MotoristaId == 7))
+                .Returns((new[] { NovoAbastecimento(1, motoristaId: 7) }, 3));
+
+            var pagina = await CriarGetAllHandler().HandleAsync(new GetAllAbastecimentosQuery(Consulta()));
+
+            Assert.Equal(3, pagina.Total);
+            Assert.Single(pagina.Itens);
         }
 
         [Fact]
         public async Task GetAll_ComoGestao_SemFiltro_NaoDeveRecortarPorMotorista()
         {
-            _repository.GetAllAsync(1, null, null, null, null).Returns([]);
+            ConsultaVazia();
 
-            await CriarGetAllHandler().HandleAsync(new GetAllAbastecimentosQuery());
+            await CriarGetAllHandler().HandleAsync(new GetAllAbastecimentosQuery(Consulta()));
 
-            await _repository.Received(1).GetAllAsync(1, null, null, null, null);
+            await _repository.Received(1).ConsultarAsync(1, Arg.Is<FiltroAbastecimento>(f => f.MotoristaId == null));
         }
 
         [Fact]
         public async Task GetAll_ComoGestao_ComFiltroDeMotorista_DeveRepassar()
         {
-            _repository.GetAllAsync(1, null, 7, null, null).Returns([]);
+            ConsultaVazia();
 
-            await CriarGetAllHandler().HandleAsync(new GetAllAbastecimentosQuery(MotoristaId: 7));
+            await CriarGetAllHandler().HandleAsync(new GetAllAbastecimentosQuery(Consulta(motoristaId: 7)));
 
-            await _repository.Received(1).GetAllAsync(1, null, 7, null, null);
+            await _repository.Received(1).ConsultarAsync(1, Arg.Is<FiltroAbastecimento>(f => f.MotoristaId == 7));
+        }
+
+        [Fact]
+        public async Task GetAll_DeveRepassarAPaginacaoEEcoarNaResposta()
+        {
+            ConsultaVazia();
+
+            var pagina = await CriarGetAllHandler().HandleAsync(
+                new GetAllAbastecimentosQuery(Consulta(pagina: 3, tamanhoPagina: 20)));
+
+            await _repository.Received(1).ConsultarAsync(1,
+                Arg.Is<FiltroAbastecimento>(f => f.Pagina == 3 && f.TamanhoPagina == 20));
+            Assert.Equal(3, pagina.Pagina);
+            Assert.Equal(20, pagina.TamanhoPagina);
         }
 
         [Fact]
         public async Task GetAll_ComPeriodoInvertido_DeveLancar()
         {
             var erro = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                CriarGetAllHandler().HandleAsync(new GetAllAbastecimentosQuery(
-                    De: new DateTime(2026, 8, 28), Ate: new DateTime(2026, 8, 1))));
+                CriarGetAllHandler().HandleAsync(new GetAllAbastecimentosQuery(Consulta(
+                    de: new DateTime(2026, 8, 28), ate: new DateTime(2026, 8, 1)))));
 
             Assert.Equal("A data final do período não pode ser anterior à inicial.", erro.Message);
+        }
+
+        // ---------- /resumo: o rodapé obedece ao mesmo recorte da listagem ----------
+
+        [Fact]
+        public async Task GetResumo_ComoMotorista_DeveSomarSoOQueEDele()
+        {
+            ComoMotorista(7);
+            _repository.ResumirAsync(1, Arg.Is<FiltroAbastecimento>(f => f.MotoristaId == 7))
+                .Returns(new ResumoLancamentos(2, 500m));
+
+            var handler = new GetResumoAbastecimentosHandler(_repository, _currentUser,
+                NullLogger<GetResumoAbastecimentosHandler>.Instance);
+
+            var resumo = await handler.HandleAsync(new GetResumoAbastecimentosQuery(Consulta(motoristaId: 9)));
+
+            Assert.Equal(2, resumo.Quantidade);
+            Assert.Equal(500m, resumo.ValorTotal);
+            await _repository.Received(1).ResumirAsync(1, Arg.Is<FiltroAbastecimento>(f => f.MotoristaId == 7));
+        }
+
+        // ---------- /anterior: a referência da estimativa de km/l ----------
+
+        [Fact]
+        public async Task GetAnterior_DeveConsultarPorOdometroEDevolverSoDataEOdometro()
+        {
+            _repository.GetAnteriorPorOdometroAsync(1, 4, 152340, null)
+                .Returns(NovoAbastecimento(9, motoristaId: 99));
+
+            var handler = new GetAbastecimentoAnteriorHandler(_repository, _currentUser,
+                NullLogger<GetAbastecimentoAnteriorHandler>.Instance);
+
+            var anterior = await handler.HandleAsync(new GetAbastecimentoAnteriorQuery(4, 152340));
+
+            Assert.NotNull(anterior);
+            await _repository.Received(1).GetAnteriorPorOdometroAsync(1, 4, 152340, null);
+        }
+
+        [Fact]
+        public async Task GetAnterior_SemAnterior_DeveRetornarNull()
+        {
+            _repository.GetAnteriorPorOdometroAsync(1, 4, 100, null).Returns((Abastecimento?)null);
+
+            var handler = new GetAbastecimentoAnteriorHandler(_repository, _currentUser,
+                NullLogger<GetAbastecimentoAnteriorHandler>.Instance);
+
+            Assert.Null(await handler.HandleAsync(new GetAbastecimentoAnteriorQuery(4, 100)));
         }
 
         [Fact]

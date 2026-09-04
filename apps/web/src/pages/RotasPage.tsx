@@ -22,7 +22,7 @@ import {
   SecaoCampos,
   TableStates,
 } from '../components/Table'
-import { usePaginacao } from '../lib/paginacao'
+import { usePaginacaoServidor } from '../lib/paginacao'
 import { CheckIcon } from '../components/icons'
 import { formatDate, formatKm, hojeInputDate, paraInputDate } from '../lib/format'
 import { statusDaRota } from '../lib/rota'
@@ -189,7 +189,6 @@ function RotaFormulario({
 /** A tabela — situação de cada rota e as ações por linha (encerrar/editar/excluir). */
 function TabelaRotas({
   rotas,
-  veiculoPorId,
   colunas,
   mostrarAcoes,
   podeCadastrar,
@@ -202,7 +201,6 @@ function TabelaRotas({
   onExcluir,
 }: {
   rotas: RotaResponse[]
-  veiculoPorId: Map<number, VeiculoResponse>
   colunas: number
   mostrarAcoes: boolean
   podeCadastrar: boolean
@@ -249,7 +247,7 @@ function TabelaRotas({
                 {/* Desnormalizado: um motorista rebaixado sai da lista, mas a rota
                     dele continua identificada. */}
                 <td>{rota.nomeMotorista ?? `#${rota.codigoMotorista}`}</td>
-                <td>{veiculoPorId.get(rota.codigoVeiculo)?.placa ?? `#${rota.codigoVeiculo}`}</td>
+                <td>{rota.veiculoPlaca ?? `#${rota.codigoVeiculo}`}</td>
                 <td>{formatDate(rota.dataInicio)}</td>
                 <td>{formatDate(rota.dataFim)}</td>
                 <td>
@@ -384,18 +382,24 @@ export function RotasPage() {
   const [paraExcluir, setParaExcluir] = useState<RotaResponse | null>(null)
   const [errosExclusao, setErrosExclusao] = useState<string[]>([])
 
-  const rotasQuery = useQuery({ queryKey: ['rotas'], queryFn: rotasApi.getAll })
+  const paginacao = usePaginacaoServidor()
+
+  const rotasQuery = useQuery({
+    queryKey: ['rotas', paginacao.pagina, paginacao.tamanhoPagina],
+    queryFn: () => rotasApi.getAll({ pagina: paginacao.pagina, tamanhoPagina: paginacao.tamanhoPagina }),
+  })
   const motoristasQuery = useQuery({ queryKey: ['motoristas'], queryFn: motoristasApi.getAll })
   const veiculosQuery = useQuery({ queryKey: ['veiculos'], queryFn: veiculosApi.getAll })
 
   const motoristas = motoristasQuery.data ?? []
   const veiculos = veiculosQuery.data ?? []
-  const rotas = rotasQuery.data ?? []
-  const p = usePaginacao(rotas)
+  const dados = rotasQuery.data
+  const rotas = dados?.itens ?? []
 
-  // O nome do motorista vem desnormalizado na resposta; só a placa precisa de
-  // cruzamento. Memoizado sobre `*.data` (e não sobre o array com fallback `?? []`,
-  // que muda de identidade a cada render); o mapa também alimenta a sugestão de km.
+  // Nome do motorista **e placa do veículo** agora vêm desnormalizados na resposta — a
+  // tabela não cruza mais nada. O mapa sobreviveu só para as sugestões de quilometragem
+  // (abertura e encerramento), que precisam do odômetro atual do veículo, e para isso a
+  // tela já carrega a lista de veículos por causa do select do formulário.
   const veiculoPorId = useMemo(
     () => new Map((veiculosQuery.data ?? []).map((v) => [v.id, v])),
     [veiculosQuery.data],
@@ -604,8 +608,7 @@ export function RotasPage() {
       )}
 
       <TabelaRotas
-        rotas={p.itensDaPagina}
-        veiculoPorId={veiculoPorId}
+        rotas={rotas}
         colunas={colunas}
         mostrarAcoes={mostrarAcoes}
         podeCadastrar={podeCadastrar}
@@ -621,12 +624,12 @@ export function RotasPage() {
         }}
       />
 
-      <Paginacao {...p} pending={rotasQuery.isFetching} />
+      <Paginacao {...paginacao.props(dados)} pending={rotasQuery.isFetching} />
 
       {paraEncerrar && (
         <EncerramentoRotaFormulario
           paraEncerrar={paraEncerrar}
-          placa={veiculoPorId.get(paraEncerrar.codigoVeiculo)?.placa ?? `#${paraEncerrar.codigoVeiculo}`}
+          placa={paraEncerrar.veiculoPlaca ?? `#${paraEncerrar.codigoVeiculo}`}
           form={formEncerramento}
           onFormChange={setFormEncerramento}
           onSubmit={handleEncerrar}

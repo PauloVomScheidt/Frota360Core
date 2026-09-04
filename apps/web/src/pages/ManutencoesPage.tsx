@@ -26,7 +26,7 @@ import {
   SecaoCampos,
   TableStates,
 } from '../components/Table'
-import { usePaginacao } from '../lib/paginacao'
+import { usePaginacaoServidor } from '../lib/paginacao'
 import { CheckIcon } from '../components/icons'
 import { formatDate, formatKm, formatMoeda, hojeInputDate, paraInputDate } from '../lib/format'
 import { badgeDaManutencao, estaVencendo, textoKmRestantes } from '../lib/manutencao'
@@ -535,11 +535,15 @@ function useManutencoesController() {
   // O período vira `de`/`ate` aqui: a API não conhece "últimos 7 dias".
   const { de, ate } = intervaloDoPeriodo(periodo)
 
+  const paginacao = usePaginacaoServidor()
+
   const filtro: ManutencaoFiltro = {
     veiculoId: filtroVeiculo === '' ? undefined : Number(filtroVeiculo),
     status: filtroStatus === '' ? undefined : (filtroStatus as StatusManutencao),
     de,
     ate,
+    pagina: paginacao.pagina,
+    tamanhoPagina: paginacao.tamanhoPagina,
   }
 
   const temFiltro = filtroVeiculo !== '' || filtroStatus !== '' || periodo !== 'todos'
@@ -555,8 +559,8 @@ function useManutencoesController() {
     queryFn: () => tiposManutencaoApi.getAll(true),
   })
 
-  const manutencoes = manutencoesQuery.data ?? []
-  const paginacao = usePaginacao(manutencoes)
+  const dados = manutencoesQuery.data
+  const manutencoes = dados?.itens ?? []
   const veiculos = veiculosQuery.data ?? []
   const tipos = tiposQuery.data ?? []
 
@@ -758,6 +762,7 @@ function useManutencoesController() {
     temFiltro,
     manutencoesQuery,
     manutencoes,
+    dados,
     paginacao,
     veiculos,
     tipos,
@@ -847,18 +852,28 @@ export function ManutencoesPage() {
         filtroStatus={c.filtroStatus}
         periodo={c.periodo}
         temFiltro={c.temFiltro}
-        onFiltroVeiculoChange={c.setFiltroVeiculo}
-        onFiltroStatusChange={c.setFiltroStatus}
-        onPeriodoChange={c.setPeriodo}
+        onFiltroVeiculoChange={(v) => {
+          c.setFiltroVeiculo(v)
+          c.paginacao.resetar()
+        }}
+        onFiltroStatusChange={(v) => {
+          c.setFiltroStatus(v)
+          c.paginacao.resetar()
+        }}
+        onPeriodoChange={(v) => {
+          c.setPeriodo(v)
+          c.paginacao.resetar()
+        }}
         onLimpar={() => {
           c.setFiltroVeiculo('')
           c.setFiltroStatus('')
           c.setPeriodo('todos')
+          c.paginacao.resetar()
         }}
       />
 
       <TabelaManutencoes
-        manutencoes={c.paginacao.itensDaPagina}
+        manutencoes={c.manutencoes}
         colunas={c.colunas}
         mostrarCusto={c.mostrarCusto}
         mostrarAcoes={c.mostrarAcoes}
@@ -876,7 +891,7 @@ export function ManutencoesPage() {
         }}
       />
 
-      <Paginacao {...c.paginacao} pending={c.manutencoesQuery.isFetching} />
+      <Paginacao {...c.paginacao.props(c.dados)} pending={c.manutencoesQuery.isFetching} />
 
       {c.paraConcluir && (
         <ConclusaoManutencaoFormulario

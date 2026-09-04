@@ -13,7 +13,7 @@ import type {
 } from '../api/types'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
 import { FormDialog, Paginacao, SecaoCampos, TableStates } from '../components/Table'
-import { usePaginacao } from '../lib/paginacao'
+import { usePaginacaoServidor } from '../lib/paginacao'
 import { CheckIcon } from '../components/icons'
 import { formatDate, formatKm, hojeInputDate, paraInputDate } from '../lib/format'
 import { estaVencendo } from '../lib/manutencao'
@@ -35,8 +35,8 @@ const ENCERRAMENTO_VAZIO = {
   dataFim: '',
 }
 
-// Pendências da frota inteira numa consulta só, em vez de uma por veículo escolhido:
-// a lista é curta e o cruzamento é local. Mesma chave da tela de manutenções.
+// Consultado por veículo escolhido — o escopo de um caminhão é curto, e a paginação de
+// `/manutencao` tirou a opção de baixar a frota inteira e agrupar aqui.
 const FILTRO_PENDENTES = { status: 'Pendente' as const }
 
 type FormularioMinhaRota = typeof FORM_VAZIO
@@ -426,18 +426,41 @@ export function MinhasRotasPage() {
   const [formEncerramento, setFormEncerramento] = useState(ENCERRAMENTO_VAZIO)
   const [errosEncerramento, setErrosEncerramento] = useState<string[]>([])
 
-  // Chave própria: o conteúdo é um recorte de `['rotas']`, e as duas telas nunca
-  // convivem na mesma sessão — misturá-las serviria dado errado no login seguinte.
-  const rotasQuery = useQuery({ queryKey: ['rotas', 'minhas'], queryFn: rotasApi.getMinhas })
-  const veiculosQuery = useQuery({ queryKey: ['veiculos'], queryFn: veiculosApi.getAll })
-  const manutencoesQuery = useQuery({
-    queryKey: ['manutencoes', FILTRO_PENDENTES],
-    queryFn: () => manutencoesApi.getAll(FILTRO_PENDENTES),
+  const paginacao = usePaginacaoServidor()
+
+  /**
+   * Chave própria: o conteúdo é um recorte de `['rotas']`, e as duas telas nunca convivem na
+   * mesma sessão — misturá-las serviria dado errado no login seguinte.
+   *
+   * Duas consultas desde que `/rota/minhas` passou a paginar: a rota em andamento não pode
+   * depender de estar na página exibida do histórico.
+   */
+  const rotaAtivaQuery = useQuery({
+    queryKey: ['rotas', 'minhas', 'ativa'],
+    queryFn: () => rotasApi.getMinhas({ ativo: true, pagina: 1, tamanhoPagina: 1 }),
   })
 
-  const rotas = rotasQuery.data ?? []
+  const historicoQuery = useQuery({
+    queryKey: ['rotas', 'minhas', 'historico', paginacao.pagina, paginacao.tamanhoPagina],
+    queryFn: () =>
+      rotasApi.getMinhas({ ativo: false, pagina: paginacao.pagina, tamanhoPagina: paginacao.tamanhoPagina }),
+  })
+
+  const veiculosQuery = useQuery({ queryKey: ['veiculos'], queryFn: veiculosApi.getAll })
+
+  /**
+   * Pendências **do veículo escolhido**, não da frota inteira: antes a tela baixava todas as
+   * manutenções pendentes e agrupava por veículo no cliente, o que a paginação inviabilizou.
+   * O escopo de um veículo é naturalmente pequeno — e trafega menos do que antes.
+   */
+  const manutencoesQuery = useQuery({
+    queryKey: ['manutencoes', { ...FILTRO_PENDENTES, veiculoId: Number(form.codigoVeiculo) }],
+    queryFn: () =>
+      manutencoesApi.getAll({ ...FILTRO_PENDENTES, veiculoId: Number(form.codigoVeiculo), tamanhoPagina: 50 }),
+    enabled: form.codigoVeiculo !== '',
+  })
+
   const veiculos = veiculosQuery.data ?? []
-  const manutencoes = manutencoesQuery.data ?? []
 
   // A resposta traz só o código do veículo — o cruzamento com placa/odômetro é aqui.
   const veiculoPorId = useMemo(
@@ -445,21 +468,14 @@ export function MinhasRotasPage() {
     [veiculosQuery.data],
   )
 
-  // Pendências por veículo, com as atrasadas primeiro — é a que muda a decisão de sair.
-  const pendenciasPorVeiculo = useMemo(() => {
-    const mapa = new Map<number, typeof manutencoes>()
-    for (const m of manutencoesQuery.data ?? []) {
-      const lista = mapa.get(m.veiculoId) ?? []
-      lista.push(m)
-      mapa.set(m.veiculoId, lista)
-    }
-    for (const lista of mapa.values()) {
-      lista.sort((a, b) => Number(b.atrasada) - Number(a.atrasada))
-    }
-    return mapa
-  }, [manutencoesQuery.data])
-
-  const pendenciasDoVeiculoEscolhido = pendenciasPorVeiculo.get(Number(form.codigoVeiculo)) ?? []
+  // Atrasadas primeiro — é a que muda a decisão de sair.
+  const pendenciasDoVeiculoEscolhido = useMemo(
+    () =>
+      [...(manutencoesQuery.data?.itens ?? [])].sort(
+        (a, b) => Number(b.atrasada) - Number(a.atrasada),
+      ),
+    [manutencoesQuery.data],
+  )
   const atrasadasDoVeiculoEscolhido = pendenciasDoVeiculoEscolhido.filter((m) => m.atrasada)
   const vencendoDoVeiculoEscolhido = pendenciasDoVeiculoEscolhido.filter(estaVencendo)
 
@@ -473,10 +489,10 @@ export function MinhasRotasPage() {
         : 'var(--color-divider)'
 
   // Só existe uma rota ativa por vez na prática: ela vira o destaque do topo, e o
-  // resto é histórico.
-  const rotaAtiva = rotas.find((r) => r.ativo) ?? null
-  const historico = rotas.filter((r) => !r.ativo)
-  const p = usePaginacao(historico)
+  // resto é histórico — agora cada um na sua consulta.
+  const rotaAtiva = (rotaAtivaQuery.data?.itens ?? [])[0] ?? null
+  const dadosHistorico = historicoQuery.data
+  const historico = dadosHistorico?.itens ?? []
 
   function descreverVeiculo(codigoVeiculo: number): string {
     const veiculo = veiculoPorId.get(codigoVeiculo)
@@ -632,23 +648,23 @@ export function MinhasRotasPage() {
       )}
 
       <RotaAtivaCard
-        pending={rotasQuery.isPending}
-        error={rotasQuery.error}
-        isSuccess={rotasQuery.isSuccess}
+        pending={rotaAtivaQuery.isPending}
+        error={rotaAtivaQuery.error}
+        isSuccess={rotaAtivaQuery.isSuccess}
         rotaAtiva={rotaAtiva}
         descreverVeiculo={descreverVeiculo}
         onEncerrar={abrirEncerramento}
       />
 
       <HistoricoRotasTabela
-        historico={p.itensDaPagina}
+        historico={historico}
         veiculoPorId={veiculoPorId}
-        pending={rotasQuery.isPending}
-        error={rotasQuery.error}
-        isSuccess={rotasQuery.isSuccess}
+        pending={historicoQuery.isPending}
+        error={historicoQuery.error}
+        isSuccess={historicoQuery.isSuccess}
       />
 
-      <Paginacao {...p} pending={rotasQuery.isFetching} />
+      <Paginacao {...paginacao.props(dadosHistorico)} pending={historicoQuery.isFetching} />
 
       {paraEncerrar && (
         <EncerramentoMinhaRotaFormulario

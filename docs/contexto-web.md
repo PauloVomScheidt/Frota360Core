@@ -3,7 +3,7 @@
 > Documento **único** de referência do front-end (React + Vite): arquitetura, rotas, endpoints consumidos, o que cada tela faz e as armadilhas conhecidas.
 > Complementa [`contexto-api.md`](contexto-api.md): lá está o contrato do servidor, aqui está o que a aplicação faz com ele.
 > **Caminhos**: relativos à raiz do monorepo — o código do front vive em `apps/web/`, e os comandos `npm` rodam de lá.
-> Última atualização: 2026-09-04 — duas rodadas no mesmo dia. (1) **Todo cadastro/edição virou modal** (§8): o `InlineForm` acima da tabela saiu, o `FormDialog` passou a servir as onze telas de escrita e os campos agora se agrupam em `SecaoCampos` por categoria. (2) **Toda listagem pagina** (§8.2), com seletor de 10/15/20 lembrado no navegador — e `/custos` (§5.12) perdeu a tabela de lançamentos da tela principal: agora é um botão por linha de "Por veículo" abrindo o detalhe daquele veículo em modal.
+> Última atualização: 2026-09-04 — **as quatro listas transacionais passaram a paginar no servidor** (`/abastecimento`, `/despesa`, `/manutencao`, `/rota`), de forma obrigatória. Com elas vieram os agregados que os rodapés passaram a exigir (`/abastecimento/resumo`, `/despesa/resumo`, `/rota/resumo`), a placa desnormalizada em `RotaResponse`, o filtro `?ativo=` e o `GET /abastecimento/anterior` — que de quebra corrige o km/l inflado que o motorista via. As dez listas limitadas pela frota seguem paginando no cliente (§8.2).
 
 ---
 
@@ -498,7 +498,7 @@ Cruzamentos que não são óbvios, conferidos no código:
 | | `POST /convite/aceitar` (anônimo) | AcceptInvitePage — **já devolve sessão autenticada**; leva `cpf`/`dataNascimento` opcionais |
 | **auditoria** | `GET /auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` (Admin) | AuditoriaPage — paginado: `dados` é um `ResultadoPaginado<T>`, não um array |
 | **custo** | `GET /custo?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&origem=&de=&ate=` · `GET /custo/resumo?veiculoId=&motoristaId=&origem=&de=&ate=` (gestão) | CustosPage — a lista é paginada (`ResultadoPaginado<T>`); o resumo é a **única agregação servida pela API** |
-| **despesa** | `GET /despesa?veiculoId=&motoristaId=&tipoDespesaId=&de=&ate=`, `POST`, `PUT /{id}`, `DELETE /{id}` (gestão; **DELETE também pelo Supervisor**) | DespesasPage |
+| **despesa** | `GET /despesa?pagina=&tamanhoPagina=&veiculoId=&tipoDespesaId=&motoristaId=&de=&ate=` · `GET /despesa/resumo?<mesmos filtros>` | DespesasPage |
 | **tipodespesa** | `GET /tipodespesa?apenasAtivos=`, `POST`, `PUT /{id}`, `DELETE /{id}` (gestão; escrita Admin+Supervisor, DELETE só Admin) | TiposDespesaPage e o seletor de DespesasPage |
 | **tipocombustivel** | `GET /tipocombustivel?apenasAtivos=` (**qualquer autenticado**, Motorista incluído), `POST`, `PUT /{id}` (Admin+Supervisor), `DELETE /{id}` (Admin) | TiposCombustivelPage e o seletor de AbastecimentosPage — a query **não** usa `enabled`, ao contrário de `['motoristas']` |
 | **posto** | `GET /posto?apenasAtivos=` (**qualquer autenticado**), `POST`, `PUT /{id}` (Admin+Supervisor), `DELETE /{id}` (Admin) | PostosPage e o seletor de AbastecimentosPage; item em uso no DELETE → **422** pedindo para inativar |
@@ -508,19 +508,19 @@ Cruzamentos que não são óbvios, conferidos no código:
 | | `GET /usuario/perfil` (**qualquer autenticado**) | PerfilPage — o próprio cadastro; `GET /usuario` é Admin e não serve ao Motorista |
 | | `PUT /usuario/perfil` (**qualquer autenticado**) | PerfilPage — nome/CPF/nascimento; alvo pelo token, CPF duplicado na empresa → 422 |
 | **motorista** | `GET /motorista`, `GET /motorista/{id}` | MotoristasPage, RotasPage (select) — **somente leitura**: são os usuários com a role Motorista |
-| **manutencao** | `GET /manutencao?status=Pendente` | MinhasRotasPage — alimenta o aviso de pendência do veículo escolhido |
-| **abastecimento** | `GET /abastecimento?veiculoId=&motoristaId=&de=&ate=` | AbastecimentosPage — `motoristaId` serve à gestão; para o Motorista a API o sobrescreve com o do token |
+| **manutencao** | `GET /manutencao?pagina=&tamanhoPagina=&veiculoId=&status=&de=&ate=` | MinhasRotasPage — alimenta o aviso de pendência do veículo escolhido |
+| **abastecimento** | `GET /abastecimento?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&de=&ate=` · `GET /abastecimento/resumo?<mesmos filtros>` · `GET /abastecimento/anterior?veiculoId=&odometro=&ignorarId=` | AbastecimentosPage — **paginado**. `motoristaId` serve à gestão; para o Motorista a API o sobrescreve com o do token, **inclusive no `total` e no `/resumo`**. O `/anterior` é a referência do km/l e enxerga o histórico do veículo (não o do motorista), devolvendo só data e odômetro |
 | | `POST /abastecimento` | lançamento — a API resolve motorista (token, para a role Motorista) e rota, **calcula o `valor`** (litros × R$/l; o corpo não o envia) e **avança o odômetro do veículo**; veículo fora da rota aberta, combustível/posto inativo ou de outra empresa → **422** |
 | | `PUT /abastecimento/{id}` | correção de todo o apontamento **menos** veículo e motorista; lançamento de outro motorista → 404 para ele |
 | | `DELETE /abastecimento/{id}` (Admin) | exclusão |
 | **veiculo** | `GET/POST /veiculo`, `GET/PUT/DELETE /veiculo/{id}` | VeiculosPage, Dashboard — a resposta traz `emRota` derivado (existe rota aberta com o veículo); placa nos dois formatos, normalizada em maiúsculas pelo servidor; DELETE com rota **ou abastecimento** associado → **422** (RN08) |
-| **rota** | `GET/POST /rota`, `GET/PUT/DELETE /rota/{id}` | RotasPage, Dashboard — o POST leva `kmInicial` e **pode avançar o odômetro do veículo**; o PUT não mexe em `kmInicial`, `ativo` nem `dataFim` |
+| **rota** | `GET /rota?pagina=&tamanhoPagina=&ativo=` · `GET /rota/minhas?<idem>` · `GET /rota/resumo?de=&ate=` · `POST /rota`, `GET/PUT/DELETE /rota/{id}` | RotasPage, Dashboard — o POST leva `kmInicial` e **pode avançar o odômetro do veículo**; o PUT não mexe em `kmInicial`, `ativo` nem `dataFim` |
 | | `GET /rota/minhas` (Motorista) | MinhasRotasPage — sem parâmetro: o motorista vem da claim |
 | | `POST /rota` sem `codigoMotorista` | MinhasRotasPage (`abrirMinha`) — a API grava o id do usuário logado |
 | | `POST /rota/{id}/encerrar` | encerramento — apura `kmPercorrido` e **pode avançar o odômetro do veículo**; para o motorista, rota alheia → 404 |
 | **tipomanutencao** | `GET /tipomanutencao?apenasAtivos=` | catálogo (sem filtro) / select de agendamento (`true`) |
 | | `POST`, `PUT /{id}`, `DELETE /{id}` | TiposManutencaoPage |
-| **manutencao** | `GET /manutencao?veiculoId=&status=&de=&ate=` | ManutencoesPage — todos os filtros vão para o servidor, período incluído |
+| **manutencao** | `GET /manutencao?pagina=&tamanhoPagina=&veiculoId=&status=&de=&ate=` | ManutencoesPage — todos os filtros vão para o servidor, período incluído |
 | | `POST /manutencao`, `PUT /manutencao/{id}` | agendar / replanejar (só pendente) |
 | | `POST /manutencao/{id}/concluir` | conclusão — **pode avançar o odômetro do veículo** |
 | | `DELETE /manutencao/{id}` (Admin) | descarte (não há endpoint de cancelar) |
@@ -612,11 +612,20 @@ Os helpers que decidem rótulo e classe vivem em `lib/`, nunca dentro da página
 
 `lib/paginacao.ts` é o dono da regra. **`usePaginacao(itens)`** recebe a lista já filtrada e devolve a fatia junto com as props do `Paginacao`; **`useTamanhoPagina()`** é só a preferência, para quem pagina no servidor. O tamanho (10/15/20, padrão 15) fica no `localStorage` (`frota360.itensPorPagina`) e vale para o painel inteiro — quem prefere 20 escolhe uma vez.
 
-**Por que no cliente.** Não foi economia de trabalho: `/abastecimentos` e `/despesas` fecham com "N lançamentos · Total: R$ X" somando o **filtro inteiro**, e paginar no servidor reduziria esses números à página visível. Consertar isso exigiria um endpoint de agregação novo em cada recurso, só para desfazer uma regressão. Enquanto a lista couber numa requisição, fatiar no cliente mantém o rodapé honesto de graça. Em `/abastecimentos` a contagem chega ao componente da tabela pela prop **`quantidade`**, separada das linhas, justamente para não haver confusão entre as duas.
+⚠️ **Desde 04/09/2026 há duas paginações, e a escolha é por recurso, não por gosto:**
 
-⚠️ **O `usePaginacao` clampa a página no render** (`Math.min(pagina, totalPaginas)`), então uma lista que encolhe por um filtro nunca deixa a tela vazia — e **nenhuma tela precisa chamar `resetarPaginacao()` ao filtrar**. Como consequência, página vazia só existe quando a lista inteira é vazia; é por isso que passar a fatia para o `empty` de um `TableStates` continua correto.
+| | Quem | Hook |
+|---|---|---|
+| **Servidor** | as quatro listas que crescem sem teto (`/abastecimentos`, `/despesas`, `/manutencoes`, `/rotas`) + `/auditoria` e `/custos` | `usePaginacaoServidor` |
+| **Cliente** | as dez limitadas pela frota e pela equipe (veículos, motoristas, usuários, convites, catálogos) | `usePaginacao` |
 
-**As duas exceções paginam no servidor** e seguem regra própria: `/auditoria` e `/custos` mandam `tamanhoPagina` na consulta e **precisam voltar para a página 1 a cada filtro**, porque o clamp do cliente não alcança o que o servidor recortou. O teto do servidor é 100 nos dois validators.
+As limitadas **continuam no cliente de propósito**: são o que alimenta os dropdowns de todo formulário, e paginá-las obrigaria a criar um endpoint de opções para cada uma.
+
+**O que o corte no servidor custou, e como foi pago.** Os rodapés "N lançamentos · Total: R$ X" somavam o array recebido — com uma página só, passariam a mentir. A resposta foram os endpoints `/abastecimento/resumo` e `/despesa/resumo`, que devolvem `{quantidade, valorTotal}` do **filtro inteiro** com `COUNT`+`SUM` no banco. A chave de cache deles carrega só o recorte, sem paginação: **virar de página não dispara nova soma**. Em `/abastecimentos` a contagem chega ao componente da tabela pela prop **`quantidade`**, separada das linhas, para não haver confusão entre as duas.
+
+⚠️ **O `usePaginacao` clampa a página no render** (`Math.min(pagina, totalPaginas)`), então uma lista que encolhe por um filtro nunca deixa a tela vazia — e **nenhuma tela de cliente precisa chamar `resetar()` ao filtrar**. Como consequência, página vazia só existe quando a lista inteira é vazia; é por isso que passar a fatia para o `empty` de um `TableStates` continua correto. **No servidor a regra se inverte**: o clamp não alcança o que o banco recortou, então toda tela do `usePaginacaoServidor` chama `resetar()` em cada `onChange` de filtro — sem isso, filtrar estando na página 4 abre a tela vazia.
+
+O teto do servidor é **100** em todos os validators de listagem, aplicado por `AplicarRegrasDePaginacao` (`Application/Common/RegrasDePaginacao.cs`) — um lugar só, em vez da constante repetida por recurso.
 
 Componentes reutilizados pelas telas:
 

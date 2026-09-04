@@ -1,6 +1,8 @@
 using Frota360.Application.Abstractions.Messaging;
+using Frota360.Application.DTOs.Despesa.Request;
 using Frota360.Application.DTOs.Despesa.Response;
 using Frota360.Application.Interfaces;
+using Frota360.Domain.Common;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
 
@@ -9,22 +11,35 @@ namespace Frota360.Application.UseCases.Despesas.Queries.GetAllDespesas
     public sealed class GetAllDespesasHandler(IDespesaRepository repository,
                                               ICurrentUserService currentUser,
                                               ILogger<GetAllDespesasHandler> logger)
-        : IQueryHandler<GetAllDespesasQuery, IEnumerable<DespesaResponse>>
+        : IQueryHandler<GetAllDespesasQuery, ResultadoPaginado<DespesaResponse>>
     {
-        public async Task<IEnumerable<DespesaResponse>> HandleAsync(GetAllDespesasQuery query, CancellationToken cancellationToken = default)
+        public async Task<ResultadoPaginado<DespesaResponse>> HandleAsync(
+            GetAllDespesasQuery query, CancellationToken cancellationToken = default)
         {
-            logger.LogInformation("Buscando despesas | Veículo {VeiculoId} | Motorista {MotoristaId} | Tipo {TipoId} | De {De} | Até {Ate}",
-                query.VeiculoId, query.MotoristaId, query.TipoDespesaId, query.De, query.Ate);
+            var f = query.Filtro;
 
-            if (query.De is not null && query.Ate is not null && query.Ate < query.De)
+            logger.LogInformation("Buscando despesas | Página {Pagina} | Veículo {VeiculoId} | Motorista {MotoristaId} | Tipo {TipoId} | De {De} | Até {Ate}",
+                f.Pagina, f.VeiculoId, f.MotoristaId, f.TipoDespesaId, f.De, f.Ate);
+
+            if (f.De is not null && f.Ate is not null && f.Ate < f.De)
                 throw new InvalidOperationException("A data final do período não pode ser anterior à inicial.");
 
-            var despesas = await repository.GetAllAsync(
-                currentUser.EmpresaId, query.VeiculoId, query.MotoristaId, query.TipoDespesaId, query.De, query.Ate);
+            var (itens, total) = await repository.ConsultarAsync(currentUser.EmpresaId, Filtro(f));
 
-            logger.LogInformation("Foram encontradas {Quantidade} despesas", despesas.Count());
+            logger.LogInformation("Foram encontradas {Quantidade} despesas na página, {Total} no total",
+                itens.Count(), total);
 
-            return despesas.Select(d => d.ToResponse());
+            return new ResultadoPaginado<DespesaResponse>
+            {
+                Itens = itens.Select(d => d.ToResponse()),
+                Pagina = f.Pagina,
+                TamanhoPagina = f.TamanhoPagina,
+                Total = total
+            };
         }
+
+        /// <summary>Compartilhado com o handler do resumo para que lista e rodapé nunca divirjam.</summary>
+        internal static FiltroDespesa Filtro(ConsultarDespesasRequest f)
+            => new(f.Pagina, f.TamanhoPagina, f.VeiculoId, f.MotoristaId, f.TipoDespesaId, f.De, f.Ate);
     }
 }

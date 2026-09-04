@@ -506,13 +506,15 @@ namespace Frota360.Tests.UseCases.Rotas
         [Fact]
         public async Task GetAll_DeveMapearTodasAsRotas()
         {
-            _repository.GetAllAsync(1).Returns(new[] { NovaRota(1), NovaRota(2), NovaRota(3) });
+            _repository.ConsultarAsync(1, Arg.Any<FiltroRota>())
+                .Returns((new[] { NovaRota(1), NovaRota(2), NovaRota(3) }, 3));
 
             var handler = new GetAllRotasHandler(_repository, _currentUser, NullLogger<GetAllRotasHandler>.Instance);
 
-            var resposta = (await handler.HandleAsync(new GetAllRotasQuery())).ToList();
+            var resposta = await handler.HandleAsync(new GetAllRotasQuery(ConsultaRota()));
 
-            Assert.Equal(3, resposta.Count);
+            Assert.Equal(3, resposta.Itens.Count());
+            Assert.Equal(3, resposta.Total);
         }
 
         // ------------------------------------------------- Nome e ficha do veículo
@@ -534,11 +536,11 @@ namespace Frota360.Tests.UseCases.Rotas
         {
             // É o que mantém a rota identificável depois que a pessoa é rebaixada e some
             // da lista de motoristas.
-            _repository.GetAllAsync(1).Returns(new[] { NovaRota(1) });
+            _repository.ConsultarAsync(1, Arg.Any<FiltroRota>()).Returns((new[] { NovaRota(1) }, 1));
 
             var handler = new GetAllRotasHandler(_repository, _currentUser, NullLogger<GetAllRotasHandler>.Instance);
 
-            var resposta = (await handler.HandleAsync(new GetAllRotasQuery())).Single();
+            var resposta = (await handler.HandleAsync(new GetAllRotasQuery(ConsultaRota()))).Itens.Single();
 
             Assert.Equal("João da Silva", resposta.NomeMotorista);
         }
@@ -599,13 +601,15 @@ namespace Frota360.Tests.UseCases.Rotas
         public async Task GetMinhasRotas_DeveConsultarEscopadoNaEmpresaENoMotoristaDaClaim()
         {
             ComoMotorista(2);
-            _repository.GetAllByMotoristaAsync(1, 2).Returns(new[] { NovaRota(1, codigoMotorista: 2), NovaRota(2, codigoMotorista: 2) });
+            _repository.ConsultarDoMotoristaAsync(1, 2, Arg.Any<FiltroRota>())
+                .Returns((new[] { NovaRota(1, codigoMotorista: 2), NovaRota(2, codigoMotorista: 2) }, 2));
 
-            var resposta = (await CriarMinhasRotasHandler().HandleAsync(new GetMinhasRotasQuery())).ToList();
+            var resposta = await CriarMinhasRotasHandler().HandleAsync(new GetMinhasRotasQuery(ConsultaRota()));
 
-            Assert.Equal(2, resposta.Count);
-            await _repository.Received(1).GetAllByMotoristaAsync(1, 2);
-            await _repository.DidNotReceive().GetAllAsync(Arg.Any<int>());
+            Assert.Equal(2, resposta.Itens.Count());
+            await _repository.Received(1).ConsultarDoMotoristaAsync(1, 2, Arg.Any<FiltroRota>());
+            // A consulta da gestão nunca é usada aqui: o recorte do motorista não é opcional.
+            await _repository.DidNotReceive().ConsultarAsync(Arg.Any<int>(), Arg.Any<FiltroRota>());
         }
 
 
@@ -703,5 +707,23 @@ namespace Frota360.Tests.UseCases.Rotas
             await _auditoria.Received(1).RegistrarAsync(
                 EntidadesAuditadas.Rota, AcoesAuditoria.Excluiu, 5, Arg.Any<string>(), Arg.Any<IEnumerable<AlteracaoCampo>>());
         }
+        private static ConsultarRotasRequest ConsultaRota(int pagina = 1, int tamanhoPagina = 15,
+            bool? ativo = null) => new() { Pagina = pagina, TamanhoPagina = tamanhoPagina, Ativo = ativo };
+
+        [Fact]
+        public async Task GetAll_DeveRepassarOFiltroDeAtivoEAPaginacao()
+        {
+            // `ativo` é o que substituiu o `find(r => r.ativo)` do cliente — e, como o Total sai
+            // do mesmo filtro, é também a contagem de rotas abertas do dashboard.
+            _repository.ConsultarAsync(1, Arg.Any<FiltroRota>()).Returns((Array.Empty<Rota>(), 7));
+
+            var handler = new GetAllRotasHandler(_repository, _currentUser, NullLogger<GetAllRotasHandler>.Instance);
+            var resposta = await handler.HandleAsync(new GetAllRotasQuery(ConsultaRota(tamanhoPagina: 1, ativo: true)));
+
+            await _repository.Received(1).ConsultarAsync(1,
+                Arg.Is<FiltroRota>(f => f.Ativo == true && f.TamanhoPagina == 1));
+            Assert.Equal(7, resposta.Total);
+        }
+
     }
 }

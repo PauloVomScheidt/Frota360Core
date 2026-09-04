@@ -46,6 +46,44 @@ export function useTamanhoPagina() {
 }
 
 /**
+ * O par `pagina` + `tamanhoPagina` de quem pagina **no servidor** — as quatro listas
+ * transacionais, mais `/auditoria` e `/custos`. Devolve as props do componente `Paginacao`
+ * já montadas a partir do `ResultadoPaginado` que a API respondeu.
+ *
+ * ⚠️ Diferente do `usePaginacao`, aqui **é obrigatório chamar `resetar()` a cada mudança de
+ * filtro**: o clamp do cliente não alcança o que o servidor recortou, e sem o reset a tela
+ * abre vazia ao filtrar estando na página 4.
+ */
+export function usePaginacaoServidor() {
+  const { tamanhoPagina, setTamanhoPagina } = useTamanhoPagina()
+  const [pagina, setPagina] = useState(1)
+
+  function resetar() {
+    setPagina(1)
+  }
+
+  /**
+   * As props do rodapé. `dados` é o que a API devolveu — enquanto a primeira consulta não
+   * volta, o rodapé some sozinho (total 0), que é o comportamento certo.
+   */
+  function props(dados: { pagina: number; totalPaginas: number; total: number; tamanhoPagina: number } | undefined) {
+    return {
+      pagina: dados?.pagina ?? pagina,
+      totalPaginas: dados?.totalPaginas ?? 1,
+      total: dados?.total ?? 0,
+      tamanhoPagina: dados?.tamanhoPagina ?? tamanhoPagina,
+      onMudar: setPagina,
+      onMudarTamanho: (t: TamanhoPagina) => {
+        setTamanhoPagina(t)
+        resetar()
+      },
+    }
+  }
+
+  return { pagina, tamanhoPagina, resetar, props }
+}
+
+/**
  * Fatia uma lista **já filtrada** na página corrente. O retorno é o conjunto exato de props
  * do componente `Paginacao`, mais os itens — daí dar para espalhar:
  *

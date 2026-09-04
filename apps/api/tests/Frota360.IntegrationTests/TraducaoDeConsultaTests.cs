@@ -18,6 +18,14 @@ namespace Frota360.IntegrationTests
         private sealed record Cenario(int EmpresaId, int VeiculoId, int MotoristaId, int TipoId,
                                       int TipoCombustivelId, int PostoId);
 
+        /// <summary>
+        /// Filtro de abastecimento do cenário. Página grande por padrão — a maioria dos testes
+        /// daqui é sobre o `Where`, não sobre a paginação; quem testa paginação passa os dois.
+        /// </summary>
+        private static FiltroAbastecimento Filtro(Cenario c, int pagina = 1, int tamanhoPagina = 50,
+            DateTime? de = null, DateTime? ate = null)
+            => new(pagina, tamanhoPagina, VeiculoId: null, MotoristaId: null, De: de, Ate: ate);
+
         private async Task<Cenario> MontarAsync(Frota360DbContext contexto)
         {
             var empresa = new Empresa { Nome = Unicos.Texto("Empresa"), DataInclusao = DateTime.Now };
@@ -149,7 +157,8 @@ namespace Frota360.IntegrationTests
             contexto.ChangeTracker.Clear();
 
             var repositorio = new AbastecimentoRepository(contexto);
-            var lido = (await repositorio.GetAllAsync(c.EmpresaId)).Single();
+            var (itens, _) = await repositorio.ConsultarAsync(c.EmpresaId, Filtro(c));
+            var lido = itens.Single();
 
             Assert.NotNull(lido.TipoCombustivel);
             Assert.NotNull(lido.Posto);
@@ -173,9 +182,10 @@ namespace Frota360.IntegrationTests
             await contexto.SaveChangesAsync();
 
             var repositorio = new AbastecimentoRepository(contexto);
-            var noDia = await repositorio.GetAllAsync(c.EmpresaId, de: dia, ate: dia);
+            var (noDia, total) = await repositorio.ConsultarAsync(c.EmpresaId, Filtro(c, de: dia, ate: dia));
 
             var valores = noDia.Select(a => a.Valor).ToList();
+            Assert.Equal(1, total);
             Assert.Single(valores);
             Assert.Equal(200m, valores[0]);
         }
@@ -194,9 +204,11 @@ namespace Frota360.IntegrationTests
             await contexto.SaveChangesAsync();
 
             var repositorio = new AbastecimentoRepository(contexto);
-            var intervalo = await repositorio.GetAllAsync(c.EmpresaId, de: dia.AddDays(-1), ate: dia.AddDays(1));
+            var (intervalo, total) = await repositorio.ConsultarAsync(c.EmpresaId,
+                Filtro(c, de: dia.AddDays(-1), ate: dia.AddDays(1)));
 
             Assert.Equal(3, intervalo.Count());
+            Assert.Equal(3, total);
         }
 
         [Fact]
@@ -219,7 +231,8 @@ namespace Frota360.IntegrationTests
             Assert.Equal(["Realizada"], comoTexto);
 
             var repositorio = new ManutencaoRepository(contexto);
-            var filtradas = await repositorio.GetAllAsync(c.EmpresaId, status: StatusManutencao.Realizada);
+            var (filtradas, _) = await repositorio.ConsultarAsync(c.EmpresaId,
+                new FiltroManutencao(1, 50, Status: StatusManutencao.Realizada));
             Assert.Single(filtradas);
         }
 
@@ -239,7 +252,8 @@ namespace Frota360.IntegrationTests
             await contexto.SaveChangesAsync();
 
             var repositorio = new ManutencaoRepository(contexto);
-            var ordenadas = (await repositorio.GetAllAsync(c.EmpresaId)).ToList();
+            var (pagina, _) = await repositorio.ConsultarAsync(c.EmpresaId, new FiltroManutencao(1, 50));
+            var ordenadas = pagina.ToList();
 
             Assert.Equal(StatusManutencao.Pendente, ordenadas[0].Status);
             Assert.Equal(120_000, ordenadas[0].QuilometragemPrevista);
@@ -261,10 +275,107 @@ namespace Frota360.IntegrationTests
             await contexto.SaveChangesAsync();
 
             var repositorio = new AbastecimentoRepository(contexto);
-            var meus = await repositorio.GetAllAsync(minha.EmpresaId);
+            var (meus, total) = await repositorio.ConsultarAsync(minha.EmpresaId, Filtro(minha));
 
             Assert.Single(meus);
             Assert.Equal(100m, meus.Single().Valor);
+            // O COUNT da paginação também é recortado — senão o total vazaria o volume da outra.
+            Assert.Equal(1, total);
+        }
+
+        /// <summary>
+        /// A paginação prova-se no banco: `Skip`/`Take` sobre uma ordenação total. Sem o desempate
+        /// por id, duas linhas do mesmo dia podem trocar de lugar entre as consultas e a página 2
+        /// repetir o que a 1 mostrou.
+        /// </summary>
+        [Fact]
+        public async Task Consultar_DevePaginarSemRepetirNemPularLinhas()
+        {
+            await using var contexto = fixture.CriarContexto();
+            var c = await MontarAsync(contexto);
+            var dia = new DateTime(2026, 8, 30);
+
+            // Todos no mesmo dia de propósito: é o caso em que só o desempate por id salva.
+            for (var i = 0; i < 5; i++)
+                contexto.Abastecimentos.Add(NovoAbastecimento(c, dia, 100m + i));
+            await contexto.SaveChangesAsync();
+            contexto.ChangeTracker.Clear();
+
+            var repositorio = new AbastecimentoRepository(contexto);
+            var (p1, total) = await repositorio.ConsultarAsync(c.EmpresaId, Filtro(c, pagina: 1, tamanhoPagina: 2));
+            var (p2, _) = await repositorio.ConsultarAsync(c.EmpresaId, Filtro(c, pagina: 2, tamanhoPagina: 2));
+            var (p3, _) = await repositorio.ConsultarAsync(c.EmpresaId, Filtro(c, pagina: 3, tamanhoPagina: 2));
+
+            Assert.Equal(5, total);           // o total ignora a paginação
+            Assert.Equal(2, p1.Count());
+            Assert.Equal(2, p2.Count());
+            Assert.Single(p3);                // a última página é a parcial
+
+            var ids = p1.Concat(p2).Concat(p3).Select(a => a.Id).ToList();
+            Assert.Equal(5, ids.Distinct().Count());   // nenhuma linha repetida entre páginas
+        }
+
+        [Fact]
+        public async Task Resumir_DeveSomarOFiltroInteiroIgnorandoAPagina()
+        {
+            // O rodapé da tela não pode mudar ao virar de página — é a razão de o resumo existir.
+            await using var contexto = fixture.CriarContexto();
+            var c = await MontarAsync(contexto);
+            var dia = new DateTime(2026, 8, 30);
+
+            contexto.Abastecimentos.AddRange(
+                NovoAbastecimento(c, dia, 100m),
+                NovoAbastecimento(c, dia, 200m),
+                NovoAbastecimento(c, dia, 300m));
+            await contexto.SaveChangesAsync();
+
+            var repositorio = new AbastecimentoRepository(contexto);
+            var resumo = await repositorio.ResumirAsync(c.EmpresaId, Filtro(c, pagina: 2, tamanhoPagina: 1));
+
+            Assert.Equal(3, resumo.Quantidade);
+            Assert.Equal(600m, resumo.ValorTotal);
+        }
+
+        [Fact]
+        public async Task Resumir_SemLancamentos_DeveVoltarZerado()
+        {
+            await using var contexto = fixture.CriarContexto();
+            var c = await MontarAsync(contexto);
+
+            var repositorio = new AbastecimentoRepository(contexto);
+            var resumo = await repositorio.ResumirAsync(c.EmpresaId, Filtro(c));
+
+            Assert.Equal(0, resumo.Quantidade);
+            Assert.Equal(0m, resumo.ValorTotal);
+        }
+
+        [Fact]
+        public async Task GetAnteriorPorOdometro_DevePegarOMaiorAbaixoEIgnorarOProprio()
+        {
+            await using var contexto = fixture.CriarContexto();
+            var c = await MontarAsync(contexto);
+            var dia = new DateTime(2026, 8, 30);
+
+            // Odômetros fora de ordem de data de propósito: a referência sai do odômetro,
+            // não da data — é o que impede lançamento retroativo de virar km negativo.
+            var a1 = NovoAbastecimento(c, dia.AddDays(-2), 100m); a1.Odometro = 1000;
+            var a2 = NovoAbastecimento(c, dia, 200m); a2.Odometro = 3000;
+            var a3 = NovoAbastecimento(c, dia.AddDays(-1), 300m); a3.Odometro = 2000;
+            contexto.Abastecimentos.AddRange(a1, a2, a3);
+            await contexto.SaveChangesAsync();
+            contexto.ChangeTracker.Clear();
+
+            var repositorio = new AbastecimentoRepository(contexto);
+
+            var anterior = await repositorio.GetAnteriorPorOdometroAsync(c.EmpresaId, a1.VeiculoId, 3000);
+            Assert.Equal(2000, anterior!.Odometro);
+
+            // Corrigindo o de 2000: ele sai da conta e a referência recua para 1000.
+            var ignorando = await repositorio.GetAnteriorPorOdometroAsync(c.EmpresaId, a1.VeiculoId, 3000, a3.Id);
+            Assert.Equal(1000, ignorando!.Odometro);
+
+            // Primeiro do veículo: não há de onde partir.
+            Assert.Null(await repositorio.GetAnteriorPorOdometroAsync(c.EmpresaId, a1.VeiculoId, 1000));
         }
 
         [Fact]

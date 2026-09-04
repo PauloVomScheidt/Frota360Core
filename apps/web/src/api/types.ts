@@ -198,6 +198,13 @@ export interface EncerrarRotaRequest {
 export interface RotaResponse extends RotaRequest {
   id: number
   nomeMotorista?: string | null
+  /**
+   * Placa e nome do veículo, desnormalizados pelo servidor como em `ManutencaoResponse` e
+   * `AbastecimentoResponse`. Antes as telas de rota montavam um `Map` a partir de
+   * `['veiculos']` para achar a placa — dependência que a paginação no servidor inviabilizou.
+   */
+  veiculoPlaca?: string | null
+  veiculoNome?: string | null
   ativo: boolean
   dataFim?: string | null
   kmInicial: number
@@ -252,6 +259,9 @@ export interface ConcluirManutencaoRequest {
 }
 
 export interface ManutencaoFiltro {
+  /** Paginação do servidor. Sem eles a API assume página 1 com 15 itens; teto de 100. */
+  pagina?: number
+  tamanhoPagina?: number
   veiculoId?: number
   status?: StatusManutencao
   /**
@@ -405,6 +415,9 @@ export type AtualizarAbastecimentoRequest = Omit<
 >
 
 export interface AbastecimentoFiltro {
+  /** Paginação do servidor. Sem eles a API assume página 1 com 15 itens; teto de 100. */
+  pagina?: number
+  tamanhoPagina?: number
   veiculoId?: number
   /** Só vale para a gestão; para a role `Motorista` o servidor sobrescreve com o do token. */
   motoristaId?: number
@@ -653,12 +666,54 @@ export interface DespesaRequest {
 export type AtualizarDespesaRequest = DespesaRequest
 
 export interface DespesaFiltro {
+  /** Paginação do servidor. Sem eles a API assume página 1 com 15 itens; teto de 100. */
+  pagina?: number
+  tamanhoPagina?: number
   veiculoId?: number
   motoristaId?: number
   tipoDespesaId?: number
   /** `yyyy-MM-dd`; `ate` é inclusivo (o servidor estende até o fim do dia). */
   de?: string
   ate?: string
+}
+
+/**
+ * Contagem e soma do **filtro inteiro**, servidos por `/abastecimento/resumo` e
+ * `/despesa/resumo`. É o que sustenta o rodapé "N lançamentos · Total: R$ X" depois que a
+ * lista passou a vir paginada — somar a página diria outro número a cada virada.
+ */
+export interface ResumoLancamentos {
+  quantidade: number
+  valorTotal: number
+}
+
+/**
+ * A referência da estimativa de km/l: o abastecimento de maior odômetro abaixo do digitado
+ * naquele veículo. Só data e odômetro — a consulta enxerga o histórico do veículo inteiro,
+ * inclusive lançamentos de outra pessoa, e devolver valor ou nome vazaria gasto alheio.
+ */
+export interface AbastecimentoAnteriorResponse {
+  dataAbastecimento: string
+  odometro: number
+}
+
+/** Agregados de `/rota/resumo`: rotas encerradas no período e o km que somaram. */
+export interface ResumoRotas {
+  quantidade: number
+  kmTotal: number
+}
+
+/** Filtro de `/rota` e `/rota/minhas`. */
+export interface RotaFiltro {
+  /** Paginação do servidor. Sem eles a API assume página 1 com 15 itens; teto de 100. */
+  pagina?: number
+  tamanhoPagina?: number
+  /**
+   * `true` traz só as rotas em andamento, `false` só o histórico, omitido traz tudo.
+   * É como a tela do motorista acha a rota ativa e como o dashboard conta as abertas
+   * (pedindo `tamanhoPagina: 1` e lendo o `total`).
+   */
+  ativo?: boolean
 }
 
 export interface DespesaResponse {

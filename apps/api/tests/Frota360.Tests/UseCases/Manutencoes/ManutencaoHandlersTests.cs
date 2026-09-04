@@ -264,15 +264,17 @@ namespace Frota360.Tests.UseCases.Manutencoes
         [Fact]
         public async Task GetAll_DeveRepassarFiltrosEMapear()
         {
-            _repository.GetAllAsync(1, 1, StatusManutencao.Pendente)
-                .Returns(new[] { NovaManutencao(1), NovaManutencao(2) });
+            _repository.ConsultarAsync(1, Arg.Is<FiltroManutencao>(f =>
+                    f.VeiculoId == 1 && f.Status == StatusManutencao.Pendente))
+                .Returns((new[] { NovaManutencao(1), NovaManutencao(2) }, 2));
 
             var handler = new GetAllManutencoesHandler(_repository, _currentUser, NullLogger<GetAllManutencoesHandler>.Instance);
 
-            var resposta = (await handler.HandleAsync(new GetAllManutencoesQuery(1, StatusManutencao.Pendente))).ToList();
+            var resposta = await handler.HandleAsync(new GetAllManutencoesQuery(
+                ConsultaManutencao(veiculoId: 1, status: StatusManutencao.Pendente)));
 
-            Assert.Equal(2, resposta.Count);
-            await _repository.Received(1).GetAllAsync(1, 1, StatusManutencao.Pendente);
+            Assert.Equal(2, resposta.Itens.Count());
+            Assert.Equal(2, resposta.Total);
         }
 
         [Fact]
@@ -281,14 +283,46 @@ namespace Frota360.Tests.UseCases.Manutencoes
             var de = new DateTime(2026, 8, 1);
             var ate = new DateTime(2026, 8, 11);
 
-            _repository.GetAllAsync(1, null, null, de, ate).Returns([]);
+            ConsultaManutencaoVazia();
 
             var handler = new GetAllManutencoesHandler(_repository, _currentUser, NullLogger<GetAllManutencoesHandler>.Instance);
 
-            await handler.HandleAsync(new GetAllManutencoesQuery(De: de, Ate: ate));
+            await handler.HandleAsync(new GetAllManutencoesQuery(ConsultaManutencao(de: de, ate: ate)));
 
-            await _repository.Received(1).GetAllAsync(1, null, null, de, ate);
+            await _repository.Received(1).ConsultarAsync(1,
+                Arg.Is<FiltroManutencao>(f => f.De == de && f.Ate == ate));
         }
+
+        [Fact]
+        public async Task GetAll_DeveRepassarAPaginacaoEEcoarNaResposta()
+        {
+            ConsultaManutencaoVazia();
+
+            var handler = new GetAllManutencoesHandler(_repository, _currentUser, NullLogger<GetAllManutencoesHandler>.Instance);
+
+            var pagina = await handler.HandleAsync(new GetAllManutencoesQuery(
+                ConsultaManutencao(pagina: 4, tamanhoPagina: 10)));
+
+            await _repository.Received(1).ConsultarAsync(1,
+                Arg.Is<FiltroManutencao>(f => f.Pagina == 4 && f.TamanhoPagina == 10));
+            Assert.Equal(4, pagina.Pagina);
+            Assert.Equal(10, pagina.TamanhoPagina);
+        }
+
+        private static ConsultarManutencoesRequest ConsultaManutencao(int pagina = 1, int tamanhoPagina = 15,
+            int? veiculoId = null, StatusManutencao? status = null, DateTime? de = null, DateTime? ate = null) => new()
+        {
+            Pagina = pagina,
+            TamanhoPagina = tamanhoPagina,
+            VeiculoId = veiculoId,
+            Status = status,
+            De = de,
+            Ate = ate
+        };
+
+        private void ConsultaManutencaoVazia() =>
+            _repository.ConsultarAsync(Arg.Any<int>(), Arg.Any<FiltroManutencao>())
+                .Returns((Array.Empty<Manutencao>(), 0));
 
         /// <summary>
         /// Intervalo invertido devolveria lista vazia sem explicar o porquê — vira 422 com
@@ -300,12 +334,11 @@ namespace Frota360.Tests.UseCases.Manutencoes
             var handler = new GetAllManutencoesHandler(_repository, _currentUser, NullLogger<GetAllManutencoesHandler>.Instance);
 
             var erro = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                handler.HandleAsync(new GetAllManutencoesQuery(
-                    De: new DateTime(2026, 8, 11), Ate: new DateTime(2026, 8, 1))));
+                handler.HandleAsync(new GetAllManutencoesQuery(ConsultaManutencao(
+                    de: new DateTime(2026, 8, 11), ate: new DateTime(2026, 8, 1)))));
 
             Assert.Equal("A data final do período não pode ser anterior à inicial.", erro.Message);
-            await _repository.DidNotReceive().GetAllAsync(
-                Arg.Any<int>(), Arg.Any<int?>(), Arg.Any<StatusManutencao?>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>());
+            await _repository.DidNotReceive().ConsultarAsync(Arg.Any<int>(), Arg.Any<FiltroManutencao>());
         }
 
         [Fact]

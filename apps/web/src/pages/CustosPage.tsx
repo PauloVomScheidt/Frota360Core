@@ -15,7 +15,7 @@ import type {
 } from '../api/types'
 import { AppLayout, PageHeader } from '../components/AppLayout'
 import { FiltroPeriodo, PainelDialog, Paginacao, TableStates } from '../components/Table'
-import { useTamanhoPagina } from '../lib/paginacao'
+import { usePaginacaoServidor } from '../lib/paginacao'
 import { DinheiroIcon, FuelIcon, ReciboIcon, RouteIcon, WrenchIcon } from '../components/icons'
 import { formatDate, formatKm, formatMoeda } from '../lib/format'
 import { formatConsumo, formatCustoPorKm, rotuloDoMes, ROTULO_ORIGEM } from '../lib/custo'
@@ -425,14 +425,13 @@ function LancamentosDoVeiculoDialog({
   temFiltro: boolean
   onFechar: () => void
 }) {
-  const [pagina, setPagina] = useState(1)
-  const { tamanhoPagina, setTamanhoPagina } = useTamanhoPagina()
+  const paginacao = usePaginacaoServidor()
 
   const filtro: CustoFiltro = {
     ...recorte,
     veiculoId: veiculo.veiculoId,
-    pagina,
-    tamanhoPagina,
+    pagina: paginacao.pagina,
+    tamanhoPagina: paginacao.tamanhoPagina,
   }
 
   // Mesmo prefixo `['custos']` das outras consultas — a invalidação de abastecimento,
@@ -458,20 +457,7 @@ function LancamentosDoVeiculoDialog({
         temFiltro={temFiltro}
       />
 
-      {dados && (
-        <Paginacao
-          pagina={dados.pagina}
-          totalPaginas={dados.totalPaginas}
-          total={dados.total}
-          tamanhoPagina={dados.tamanhoPagina}
-          onMudar={setPagina}
-          onMudarTamanho={(t) => {
-            setTamanhoPagina(t)
-            setPagina(1)
-          }}
-          pending={query.isFetching}
-        />
-      )}
+      <Paginacao {...paginacao.props(dados)} pending={query.isFetching} />
     </PainelDialog>
   )
 }

@@ -414,9 +414,27 @@ Dois casos fogem do padrão:
 
 ### Paginação — `ResultadoPaginado<T>`
 
-`/auditoria` e `/custo` são os **dois endpoints paginados** do sistema; as demais listas ainda vêm inteiras. `ResultadoPaginado<T>` (`Domain/Common`) traz `Itens`, `Pagina`, `TamanhoPagina`, `Total` e `TotalPaginas`, e vai **dentro** de `ApiResponse<T>.Dados` — o envelope não muda: `ApiResponse<ResultadoPaginado<LogAuditoriaResponse>>`.
+**Seis endpoints paginam**: `/auditoria` e `/custo` desde sempre, e desde 04/09/2026 as quatro listas que crescem sem teto com o tempo — `/abastecimento`, `/despesa`, `/manutencao` e `/rota` (mais `/rota/minhas`). As demais (veículo, motorista, usuário, convite, catálogos) **continuam vindo inteiras de propósito**: são limitadas pelo tamanho da frota e da equipe, e paginá-las obrigaria a criar um endpoint de opções para cada seletor do front.
 
-`ConsultarAuditoriaValidator` impõe teto de **100** por página. Sem ele, um `tamanhoPagina=999999` materializaria a trilha inteira da empresa em memória. Reutilize esse tipo ao paginar qualquer outra lista.
+`ResultadoPaginado<T>` (`Domain/Common`) traz `Itens`, `Pagina`, `TamanhoPagina`, `Total` e `TotalPaginas`, e vai **dentro** de `ApiResponse<T>.Dados` — o envelope não muda: `ApiResponse<ResultadoPaginado<LogAuditoriaResponse>>`.
+
+**A receita, ao paginar uma lista nova.** O request implementa `IRequestPaginado` (`Application/Common/RegrasDePaginacao.cs`) e o validator chama `this.AplicarRegrasDePaginacao()`, que impõe página > 0 e o teto de **100** por página num lugar só — sem ele, um `tamanhoPagina=999999` materializaria o histórico inteiro da empresa em memória. O filtro vira um record em `Domain/Common` (`FiltroAbastecimento`, `FiltroDespesa`, …) **sem `EmpresaId`**, que continua sendo parâmetro separado do repositório para que nenhum caminho consiga consultar sem escopo.
+
+⚠️ **Ordenação total é requisito, não capricho.** `Skip`/`Take` sobre uma ordenação ambígua faz a página 2 repetir ou pular linhas que a 1 já mostrou — todos os repositórios paginados desempatam por `Id` no fim do `OrderBy`. `TraducaoDeConsultaTests.Consultar_DevePaginarSemRepetirNemPularLinhas` prova isso contra o Postgres de verdade, com todas as linhas na mesma data.
+
+⚠️ **Recorte de segurança entra no filtro, não depois da consulta.** Em `/abastecimento` o handler sobrescreve `MotoristaId` com o `sub` do token **antes** de montar o `FiltroAbastecimento`; aplicado depois, o `COUNT` da paginação — e o `/resumo`, que sai do mesmo filtro — devolveriam ao motorista o volume da empresa inteira.
+
+### Os agregados que a paginação exigiu
+
+Com uma página só na mão, o front não consegue mais somar o que exibe. Três endpoints preenchem a lacuna, todos com **os mesmos filtros da listagem** e ignorando a paginação:
+
+| Endpoint | Devolve | Serve |
+|---|---|---|
+| `GET /abastecimento/resumo` | `{quantidade, valorTotal}` | o rodapé "N lançamentos · Total: R$ X" — ⚠️ **obedece ao mesmo recorte de motorista** da listagem |
+| `GET /despesa/resumo` | `{quantidade, valorTotal}` | idem, em `/despesas` |
+| `GET /rota/resumo?de=&ate=` | `{quantidade, kmTotal}` | o KPI "Km da frota" do dashboard (rotas **encerradas** no período, recorte por `DataFim`) |
+
+Há ainda um quarto, que não é agregado mas nasceu do mesmo problema: **`GET /abastecimento/anterior?veiculoId=&odometro=&ignorarId=`** devolve o abastecimento de maior odômetro **abaixo** do informado — a referência da estimativa de km/l, que antes o front achava baixando o histórico inteiro do veículo. Ele enxerga o histórico **do veículo**, sem recorte por motorista (o consumo é do caminhão, não de quem dirigiu), e por isso a resposta carrega **só data e odômetro**: devolver valor ou nome transformaria a correção num vazamento de gasto alheio. É o que consertou o km/l inflado que o motorista via quando o abastecimento anterior daquele caminhão tinha sido lançado por outra pessoa.
 
 ## Endpoints
 
@@ -432,6 +450,10 @@ Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou 
 | GET | `/usuario` · PUT `/usuario/{id}/role` · `/{id}/ativo` | Admin |
 | GET/PUT | `/usuario/perfil` — o próprio cadastro (nome, CPF, nascimento); alvo pelo `sub` do token | **qualquer autenticado** (inclui Motorista) |
 | GET | `/auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` — paginado; somente leitura | Admin |
+| GET | `/abastecimento?pagina=&tamanhoPagina=&…` · `/abastecimento/resumo` · `/abastecimento/anterior` — paginado | autenticado (recorte por motorista) |
+| GET | `/despesa?pagina=&tamanhoPagina=&…` · `/despesa/resumo` — paginado | Admin, Supervisor, Operador |
+| GET | `/manutencao?pagina=&tamanhoPagina=&…` — paginado | autenticado |
+| GET | `/rota?pagina=&tamanhoPagina=&ativo=` · `/rota/minhas` · `/rota/resumo?de=&ate=` — paginado | gestão / Motorista em `minhas` |
 | GET | `/custo?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&origem=&de=&ate=` — paginado; read model das duas origens, sem tabela própria | Admin, Supervisor, Operador |
 | GET | `/custo/resumo?veiculoId=&motoristaId=&origem=&de=&ate=` — **a única agregação da API**: totais por origem, por veículo (com R$/km **e km/l**) e por mês | Admin, Supervisor, Operador |
 | GET | `/veiculo` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**) — a resposta traz `emRota` derivado |

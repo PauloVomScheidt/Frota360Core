@@ -8,6 +8,7 @@ import { rotasApi } from '../api/rotas'
 import { veiculosApi } from '../api/veiculos'
 import { mensagensDeErro } from '../api/errors'
 import type {
+  AbastecimentoAnteriorResponse,
   AbastecimentoFiltro,
   AbastecimentoResponse,
   MotoristaResponse,
@@ -28,7 +29,7 @@ import {
   SecaoCampos,
   TableStates,
 } from '../components/Table'
-import { usePaginacao } from '../lib/paginacao'
+import { usePaginacaoServidor } from '../lib/paginacao'
 import {
   formatConsumo,
   formatDate,
@@ -64,7 +65,7 @@ type FormularioAbastecimento = typeof FORM_VAZIO
  * que o cálculo pegou o lançamento certo — ou o errado.
  */
 type ConsumoEstimado = {
-  anterior: AbastecimentoResponse
+  anterior: AbastecimentoAnteriorResponse
   km: number
   kmPorLitro: number
 }
@@ -615,11 +616,20 @@ export function AbastecimentosPage() {
   // O período vira `de`/`ate` aqui: a API não conhece "últimos 7 dias".
   const { de, ate } = intervaloDoPeriodo(periodo)
 
-  const filtro: AbastecimentoFiltro = {
+  const paginacao = usePaginacaoServidor()
+
+  /** O recorte da tela, sem paginação — é ele que o resumo do rodapé também usa. */
+  const recorte: AbastecimentoFiltro = {
     veiculoId: filtroVeiculo === '' ? undefined : Number(filtroVeiculo),
     motoristaId: filtroMotorista === '' ? undefined : Number(filtroMotorista),
     de,
     ate,
+  }
+
+  const filtro: AbastecimentoFiltro = {
+    ...recorte,
+    pagina: paginacao.pagina,
+    tamanhoPagina: paginacao.tamanhoPagina,
   }
 
   const temFiltro = filtroVeiculo !== '' || filtroMotorista !== '' || periodo !== 'todos'
@@ -627,6 +637,16 @@ export function AbastecimentosPage() {
   const abastecimentosQuery = useQuery({
     queryKey: ['abastecimentos', filtro],
     queryFn: () => abastecimentosApi.getAll(filtro),
+  })
+
+  /**
+   * O rodapé "N lançamentos · Total: R$ X" vem do servidor, somando o **filtro inteiro**.
+   * Somar a página diria um número diferente a cada virada — e é justamente por isso que o
+   * endpoint existe. A chave carrega só o `recorte`: mudar de página não a invalida.
+   */
+  const resumoQuery = useQuery({
+    queryKey: ['abastecimentos', 'resumo', recorte],
+    queryFn: () => abastecimentosApi.resumo(recorte),
   })
   const veiculosQuery = useQuery({ queryKey: ['veiculos'], queryFn: veiculosApi.getAll })
 
@@ -639,9 +659,11 @@ export function AbastecimentosPage() {
 
   // O motorista lança no carro da rota aberta, quando tem uma. É a mesma derivação de
   // MinhasRotasPage — "ativa" não é um endpoint, é `ativo` na lista dele.
+  // Uma linha, não o histórico inteiro: `ativo=true` com página de 1 é o que substituiu o
+  // `find(r => r.ativo)` sobre a lista completa, que a paginação do servidor inviabilizou.
   const minhasRotasQuery = useQuery({
-    queryKey: ['rotas', 'minhas'],
-    queryFn: rotasApi.getMinhas,
+    queryKey: ['rotas', 'minhas', 'ativa'],
+    queryFn: () => rotasApi.getMinhas({ ativo: true, pagina: 1, tamanhoPagina: 1 }),
     enabled: motorista,
   })
 
@@ -659,25 +681,27 @@ export function AbastecimentosPage() {
   })
 
   /**
-   * O histórico daquele veículo, **sem recorte de data** — o abastecimento anterior pode ser
-   * de qualquer época, e o filtro da listagem (que abre no mês corrente) esconderia
-   * justamente o que serve de referência. Só busca com o formulário aberto.
+   * A referência da estimativa de km/l — o abastecimento de maior odômetro abaixo do
+   * digitado, naquele veículo. Antes a tela baixava o histórico inteiro e procurava no
+   * cliente; agora é uma consulta de uma linha, e o servidor enxerga o histórico do veículo
+   * (não o do motorista logado), o que corrige o número inflado que a role Motorista via.
    *
    * A chave começa com `['abastecimentos']`, então o `invalidar()` já a alcança.
    */
-  const historicoQuery = useQuery({
-    queryKey: ['abastecimentos', 'doVeiculo', Number(form.veiculoId)],
-    queryFn: () => abastecimentosApi.getAll({ veiculoId: Number(form.veiculoId) }),
-    enabled: aberto && form.veiculoId !== '',
+  const anteriorQuery = useQuery({
+    queryKey: ['abastecimentos', 'anterior', Number(form.veiculoId), Number(form.odometro), editando?.id ?? null],
+    queryFn: () =>
+      abastecimentosApi.anterior(Number(form.veiculoId), Number(form.odometro), editando?.id),
+    enabled: aberto && form.veiculoId !== '' && Number(form.odometro) > 0,
   })
 
-  const abastecimentos = abastecimentosQuery.data ?? []
-  const p = usePaginacao(abastecimentos)
+  const dados = abastecimentosQuery.data
+  const abastecimentos = dados?.itens ?? []
   const veiculos = veiculosQuery.data ?? []
   const motoristas = motoristasQuery.data ?? []
   const combustiveis = combustiveisQuery.data ?? []
   const postos = postosQuery.data ?? []
-  const rotaAtiva = (minhasRotasQuery.data ?? []).find((r) => r.ativo) ?? null
+  const rotaAtiva = (minhasRotasQuery.data?.itens ?? [])[0] ?? null
 
   // Com rota aberta o veículo é um só: mostrar a frota inteira seria oferecer o que o
   // servidor vai recusar com 422.
@@ -707,31 +731,23 @@ export function AbastecimentosPage() {
    * Consumo desde o abastecimento anterior daquele veículo, no método tanque a tanque: os
    * litros que estão sendo colocados agora são os que repuseram o trecho percorrido.
    *
-   * A referência é o abastecimento de **maior odômetro abaixo do digitado** — ordenar por
-   * odômetro e não por data é o que impede um lançamento retroativo de virar km negativo.
-   * Em modo de correção o próprio registro fica de fora.
-   *
-   * ⚠️ Para a role Motorista o número pode sair inflado: a lista dele vem recortada pelo
-   * servidor, então se o abastecimento anterior daquele caminhão foi de outra pessoa a
-   * referência será um lançamento mais antigo dele mesmo. É por isso que a tela nomeia a
-   * data e o odômetro da referência em vez de mostrar só a média.
+   * Quem escolhe a referência é o servidor (maior odômetro abaixo do digitado, ignorando o
+   * próprio registro em modo de correção); aqui só se faz a divisão. A tela continua nomeando
+   * a data e o odômetro da referência, para quem lança ver que a conta pegou o lançamento
+   * certo — ou o errado.
    */
   const consumoEstimado = useMemo<ConsumoEstimado | null>(() => {
+    const anterior = anteriorQuery.data
     const odometro = Number(form.odometro)
     const litros = Number(form.litros)
 
-    if (!Number.isFinite(odometro) || !Number.isFinite(litros) || litros <= 0) return null
-
-    const anterior = (historicoQuery.data ?? [])
-      .filter((a) => a.id !== editando?.id && a.odometro < odometro)
-      .sort((a, b) => b.odometro - a.odometro)[0]
-
-    if (anterior === undefined) return null
+    if (!anterior || !Number.isFinite(odometro) || !Number.isFinite(litros) || litros <= 0) return null
 
     const km = odometro - anterior.odometro
+    if (km <= 0) return null
 
     return { anterior, km, kmPorLitro: km / litros }
-  }, [historicoQuery.data, form.odometro, form.litros, editando])
+  }, [anteriorQuery.data, form.odometro, form.litros])
 
   /**
    * O total é derivado, e o campo da tela é só um espelho: o corpo não o carrega e o
@@ -838,13 +854,9 @@ export function AbastecimentosPage() {
   const naoPodeAbrir = semVeiculos || semMotoristas || semCombustiveis || semPostos
   const mostrarAcoes = podeLancar || podeExcluir
 
-  // Total do que está na tela — o recorte é o do filtro, não da frota inteira.
-  // Memoizado sobre `*.data` e não sobre o array com fallback `?? []`, que muda de
-  // identidade a cada render (mesmo cuidado de ManutencoesPage).
-  const total = useMemo(
-    () => (abastecimentosQuery.data ?? []).reduce((s, a) => s + a.valor, 0),
-    [abastecimentosQuery.data],
-  )
+  // ⚠️ Contagem e total do **filtro inteiro**, vindos do servidor. Somar `abastecimentos`
+  // (a página) faria os dois números mudarem a cada virada de página.
+  const resumo = resumoQuery.data
 
   return (
     <AppLayout>
@@ -910,19 +922,31 @@ export function AbastecimentosPage() {
         filtroMotorista={filtroMotorista}
         periodo={periodo}
         temFiltro={temFiltro}
-        onFiltroVeiculoChange={setFiltroVeiculo}
-        onFiltroMotoristaChange={setFiltroMotorista}
-        onPeriodoChange={setPeriodo}
+        // ⚠️ Paginação do servidor: todo filtro volta para a página 1, senão a tela abre
+        // vazia ao filtrar estando na página 4 — o clamp do cliente não alcança isto.
+        onFiltroVeiculoChange={(v) => {
+          setFiltroVeiculo(v)
+          paginacao.resetar()
+        }}
+        onFiltroMotoristaChange={(v) => {
+          setFiltroMotorista(v)
+          paginacao.resetar()
+        }}
+        onPeriodoChange={(p) => {
+          setPeriodo(p)
+          paginacao.resetar()
+        }}
         onLimpar={() => {
           setFiltroVeiculo('')
           setFiltroMotorista('')
           setPeriodo('todos')
+          paginacao.resetar()
         }}
       />
 
       <TabelaAbastecimentos
-        abastecimentos={p.itensDaPagina}
-        quantidade={abastecimentos.length}
+        abastecimentos={abastecimentos}
+        quantidade={resumo?.quantidade ?? 0}
         motorista={motorista}
         mostrarAcoes={mostrarAcoes}
         podeLancar={podeLancar}
@@ -931,12 +955,12 @@ export function AbastecimentosPage() {
         pending={abastecimentosQuery.isPending}
         error={abastecimentosQuery.error}
         isSuccess={abastecimentosQuery.isSuccess}
-        total={total}
+        total={resumo?.valorTotal ?? 0}
         onEditar={abrirEdicao}
         onExcluir={setParaExcluir}
       />
 
-      <Paginacao {...p} pending={abastecimentosQuery.isFetching} />
+      <Paginacao {...paginacao.props(dados)} pending={abastecimentosQuery.isFetching} />
 
       {paraExcluir && (
         <ConfirmDialog

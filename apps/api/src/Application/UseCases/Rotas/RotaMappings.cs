@@ -13,6 +13,8 @@ namespace Frota360.Application.UseCases.Rotas
             CodigoMotorista = r.CodigoMotorista,
             NomeMotorista = r.Motorista?.Nome,
             CodigoVeiculo = r.CodigoVeiculo,
+            VeiculoPlaca = r.Veiculo?.Placa,
+            VeiculoNome = r.Veiculo?.NomeVeiculo,
             DataFim = r.DataFim,
             DataInicio = r.DataInicio,
             Destino = r.Destino,

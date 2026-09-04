@@ -104,8 +104,8 @@ namespace Frota360.Application.UseCases.Abastecimentos.Commands.CreateAbastecime
 
         private async Task<Rota?> ResolverRotaAsync(int motoristaId, int veiculoId)
         {
-            var rotas = await rotaRepository.GetAllByMotoristaAsync(currentUser.EmpresaId, motoristaId);
-            var aberta = rotas.FirstOrDefault(r => r.Ativo && r.DataFim is null);
+            // Uma linha, não o histórico inteiro do motorista para filtrar no cliente.
+            var aberta = await rotaRepository.GetRotaAbertaDoMotoristaAsync(currentUser.EmpresaId, motoristaId);
 
             if (aberta is null)
                 return null;

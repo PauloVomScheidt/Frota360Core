@@ -5,7 +5,20 @@ import type {
   DespesaFiltro,
   DespesaRequest,
   DespesaResponse,
+  ResultadoPaginado,
+  ResumoLancamentos,
 } from './types'
+
+/** Os filtros que a listagem e o resumo compartilham — os dois têm de ver o mesmo recorte. */
+function paramsDoFiltro(filtro: DespesaFiltro) {
+  return {
+    veiculoId: filtro.veiculoId,
+    motoristaId: filtro.motoristaId,
+    tipoDespesaId: filtro.tipoDespesaId,
+    de: filtro.de,
+    ate: filtro.ate,
+  }
+}
 
 /**
  * Custos avulsos — pedágio, multa, IPVA, seguro. Fechado na gestão: a role `Motorista`
@@ -13,15 +26,17 @@ import type {
  */
 export const despesasApi = {
   /** Já vem da mais recente para a mais antiga — não reordenar no cliente. */
-  async getAll(filtro: DespesaFiltro = {}): Promise<DespesaResponse[]> {
-    const { data } = await http.get<ApiResponse<DespesaResponse[]>>('/despesa', {
-      params: {
-        veiculoId: filtro.veiculoId,
-        motoristaId: filtro.motoristaId,
-        tipoDespesaId: filtro.tipoDespesaId,
-        de: filtro.de,
-        ate: filtro.ate,
-      },
+  async getAll(filtro: DespesaFiltro = {}): Promise<ResultadoPaginado<DespesaResponse>> {
+    const { data } = await http.get<ApiResponse<ResultadoPaginado<DespesaResponse>>>('/despesa', {
+      params: { ...paramsDoFiltro(filtro), pagina: filtro.pagina, tamanhoPagina: filtro.tamanhoPagina },
+    })
+    return unwrap(data)
+  },
+
+  /** Contagem e soma do **filtro inteiro**, para o rodapé — não da página. */
+  async resumo(filtro: DespesaFiltro = {}): Promise<ResumoLancamentos> {
+    const { data } = await http.get<ApiResponse<ResumoLancamentos>>('/despesa/resumo', {
+      params: paramsDoFiltro(filtro),
     })
     return unwrap(data)
   },
