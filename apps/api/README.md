@@ -238,11 +238,13 @@ Base: `api/v1/{controller}`. A versão também é aceita via header `api-version
 | GET | `/veiculo`, `/tipomanutencao?apenasAtivos=`, `/manutencao?veiculoId=&status=&de=&ate=` (+ `/{id}`) | qualquer autenticado (o Motorista não recebe `custo` da manutenção) |
 | GET | `/motorista`, `/rota` (+ `/{id}`) | Admin, Supervisor, Operador |
 | GET | `/rota/minhas` | **Motorista** (as próprias, pelo `sub` do token) |
-| GET/POST/PUT | `/abastecimento?veiculoId=&motoristaId=&de=&ate=` (+ `/{id}`) | qualquer autenticado — o Motorista só alcança o que é dele |
+| GET/POST/PUT | `/abastecimento?veiculoId=&motoristaId=&de=&ate=` (+ `/{id}`) — apontamento fiscal; `valor` é derivado de litros × R$/l e **não** entra no corpo | qualquer autenticado — o Motorista só alcança o que é dele |
 | GET | `/custo?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&origem=&de=&ate=` · `/custo/resumo?…` | Admin, Supervisor, Operador |
 | GET/POST/PUT | `/despesa?veiculoId=&motoristaId=&tipoDespesaId=&de=&ate=` (+ `/{id}`) — custo avulso | Admin, Supervisor, Operador |
 | DELETE | `/despesa/{id}` — ⚠️ **exceção**: o Supervisor também exclui | Admin, **Supervisor** |
 | GET | `/tipodespesa?apenasAtivos=` (+ `/{id}`) — catálogo; POST/PUT Admin+Supervisor, DELETE só Admin | Admin, Supervisor, Operador |
+| GET | `/tipocombustivel?apenasAtivos=` (+ `/{id}`) — catálogo; POST/PUT Admin+Supervisor, DELETE só Admin | **qualquer autenticado** — o Motorista precisa dele para lançar |
+| GET | `/posto?apenasAtivos=` (+ `/{id}`) — rede credenciada; POST/PUT Admin+Supervisor, DELETE só Admin | **qualquer autenticado** |
 | GET | `/auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` | Admin |
 | POST/PUT | `/veiculo`, `/tipomanutencao`, `/manutencao`, `/manutencao/{id}/concluir` | Admin, Supervisor |
 | POST/PUT | `/rota`, `/rota/{id}/encerrar` | qualquer autenticado (inclui Operador) |

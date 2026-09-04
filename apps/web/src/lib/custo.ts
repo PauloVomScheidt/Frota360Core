@@ -37,3 +37,15 @@ export function formatCustoPorKm(valor: number | null | undefined): string {
   if (valor === null || valor === undefined) return '—'
   return `${valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 })}/km`
 }
+
+/**
+ * km/l com uma casa. Duas dariam falsa precisão a um número que já é estimativa:
+ * abastecimento parcial, veículo flex e não-combustível no catálogo distorcem a conta.
+ *
+ * Nulo quando o veículo teve menos de dois abastecimentos no período — sem intervalo não
+ * existe consumo, e mostrar zero afirmaria que ele rodou sem gastar.
+ */
+export function formatConsumo(valor: number | null | undefined): string {
+  if (valor === null || valor === undefined) return '—'
+  return `${valor.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km/l`
+}

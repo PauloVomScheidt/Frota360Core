@@ -49,6 +49,8 @@ namespace Frota360.Infrastructure.DependencyInjection
             services.AddScoped<ILogAuditoriaRepository, LogAuditoriaRepository>();
             services.AddScoped<ITipoDespesaRepository, TipoDespesaRepository>();
             services.AddScoped<IDespesaRepository, DespesaRepository>();
+            services.AddScoped<ITipoCombustivelRepository, TipoCombustivelRepository>();
+            services.AddScoped<IPostoRepository, PostoRepository>();
             services.AddScoped<ICustoRepository, CustoRepository>();
             services.AddScoped<ITokenService, TokenService>();
 

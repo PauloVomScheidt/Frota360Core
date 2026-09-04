@@ -306,6 +306,8 @@ export type EntidadeAuditada =
   | 'TipoManutencao'
   | 'Despesa'
   | 'TipoDespesa'
+  | 'TipoCombustivel'
+  | 'Posto'
   | 'Usuario'
   | 'Convite'
 
@@ -365,8 +367,9 @@ export interface AuditoriaFiltro {
 // ---------- Abastecimento ----------
 
 /**
- * O apontamento é curto de propósito: é o que se registra no posto sem atrito. Não há
- * `rotaId` — a API deriva a rota da viagem aberta do motorista naquele veículo.
+ * O apontamento fiscal do abastecimento. Dois campos **não** entram no corpo: `rotaId`, que
+ * a API deriva da viagem aberta do motorista naquele veículo, e `valor`, que o servidor
+ * recalcula como `litros × valorLitro` — a tela o exibe como readonly.
  */
 export interface AbastecimentoRequest {
   veiculoId: number
@@ -375,7 +378,19 @@ export interface AbastecimentoRequest {
    * este campo e usa o usuário do token — ele não lança na conta de outro.
    */
   motoristaId?: number | null
-  valor: number
+  tipoCombustivelId: number
+  /** Posto credenciado. Item inativo do catálogo volta 422. */
+  postoId: number
+  litros: number
+  valorLitro: number
+  /**
+   * Quilometragem no momento do abastecimento. Avança a ficha do veículo quando é maior que
+   * a atual — por isso a mutation invalida `['veiculos']` e `['manutencoes']` também.
+   */
+  odometro: number
+  notaFiscal: string
+  /** Opcional: em autoatendimento não há frentista. */
+  frentista?: string | null
   dataAbastecimento: string
   observacao?: string | null
 }
@@ -384,9 +399,9 @@ export interface AbastecimentoRequest {
  * Correção de um lançamento. Sem `veiculoId` e sem `motoristaId`: trocar qualquer um dos
  * dois reescreveria a atribuição do gasto — nesse caso, exclua e lance de novo.
  */
-export type AtualizarAbastecimentoRequest = Pick<
+export type AtualizarAbastecimentoRequest = Omit<
   AbastecimentoRequest,
-  'valor' | 'dataAbastecimento' | 'observacao'
+  'veiculoId' | 'motoristaId'
 >
 
 export interface AbastecimentoFiltro {
@@ -414,7 +429,17 @@ export interface AbastecimentoResponse {
   motoristaNome: string
   usuarioId: number
   usuarioNome: string
+  tipoCombustivelId: number
+  tipoCombustivelNome: string
+  postoId: number
+  postoNome: string
+  litros: number
+  valorLitro: number
+  /** `litros × valorLitro`, calculado no servidor. */
   valor: number
+  odometro: number
+  notaFiscal: string
+  frentista?: string | null
   dataAbastecimento: string
   observacao?: string | null
   dataInclusao: string
@@ -477,6 +502,15 @@ export interface CustoPorVeiculoResponse {
   km: number
   /** Nulo quando `km` é zero — não há denominador. */
   custoPorKm?: number | null
+  /** Litros do período, já sem os do primeiro abastecimento (eles pagaram o trecho anterior). */
+  litros: number
+  /**
+   * Km medido pelo **odômetro dos abastecimentos** — não é o mesmo que `km`, que vem das
+   * rotas encerradas. São duas medidas diferentes, e a tela diz qual é qual.
+   */
+  kmOdometro: number
+  /** Nulo com menos de dois abastecimentos no período, ou se o odômetro não avançou. */
+  consumoMedio?: number | null
 }
 
 export interface CustoPorMesResponse {
@@ -511,10 +545,64 @@ export interface ResumoCustosResponse {
    * mostra a contagem para o total não mentir por omissão.
    */
   manutencoesSemCustoInformado: number
+  /** Litros da frota no período, já descontado o primeiro abastecimento de cada veículo. */
+  litrosTotal: number
+  /** Km pelo odômetro dos abastecimentos. **Não** é `kmTotal`, que sai das rotas encerradas. */
+  kmOdometroTotal: number
+  /**
+   * Consumo médio da frota em km/l. Soma km e litros e divide uma vez só — média das médias
+   * faria um veículo com dois abastecimentos pesar igual a um com trinta.
+   */
+  consumoMedio?: number | null
   /** Do maior total para o menor. Inclui veículo que rodou sem custo lançado. */
   porVeiculo: CustoPorVeiculoResponse[]
   /** Em ordem cronológica; só os meses que tiveram lançamento. */
   porMes: CustoPorMesResponse[]
+}
+
+// ---------- Tipo de combustível ----------
+
+/** Catálogo da empresa; alimenta o select da tela de abastecimentos. */
+export interface TipoCombustivelRequest {
+  nome: string
+}
+
+/** O PUT aceita o mesmo shape do POST mais o `ativo` — inativar é o caminho quando o DELETE dá 422. */
+export interface TipoCombustivelUpdateRequest extends TipoCombustivelRequest {
+  ativo: boolean
+}
+
+export interface TipoCombustivelResponse {
+  id: number
+  nome: string
+  ativo: boolean
+  dataInclusao: string
+}
+
+// ---------- Posto ----------
+
+/**
+ * A rede credenciada da empresa. Diferente dos outros catálogos, não há conjunto padrão
+ * semeado no provisionamento: cada empresa credencia os seus.
+ */
+export interface PostoRequest {
+  nome: string
+  /** Opcionais: nem todo posto credenciado é registrado com nota da empresa. */
+  cnpj?: string | null
+  cidade?: string | null
+}
+
+export interface PostoUpdateRequest extends PostoRequest {
+  ativo: boolean
+}
+
+export interface PostoResponse {
+  id: number
+  nome: string
+  cnpj?: string | null
+  cidade?: string | null
+  ativo: boolean
+  dataInclusao: string
 }
 
 // ---------- Tipo de despesa ----------

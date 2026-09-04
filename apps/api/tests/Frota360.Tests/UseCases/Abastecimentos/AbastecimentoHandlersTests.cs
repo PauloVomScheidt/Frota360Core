@@ -20,6 +20,8 @@ namespace Frota360.Tests.UseCases.Abastecimentos
         private readonly IVeiculoRepository _veiculoRepository = Substitute.For<IVeiculoRepository>();
         private readonly IUsuarioRepository _usuarioRepository = Substitute.For<IUsuarioRepository>();
         private readonly IRotaRepository _rotaRepository = Substitute.For<IRotaRepository>();
+        private readonly ITipoCombustivelRepository _tipoCombustivelRepository = Substitute.For<ITipoCombustivelRepository>();
+        private readonly IPostoRepository _postoRepository = Substitute.For<IPostoRepository>();
         private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
         private readonly IAuditoriaService _auditoria = Substitute.For<IAuditoriaService>();
 
@@ -62,12 +64,26 @@ namespace Frota360.Tests.UseCases.Abastecimentos
             VeiculoId = 1,
             MotoristaId = motoristaId,
             UsuarioId = usuarioId,
+            TipoCombustivelId = 3,
+            PostoId = 4,
+            Litros = 50m,
+            ValorLitro = 6.40m,
             Valor = valor,
+            Odometro = 60_500,
+            NotaFiscal = "123456",
             DataAbastecimento = new DateTime(2026, 8, 28),
             Veiculo = NovoVeiculo(),
             Motorista = NovoMotorista(motoristaId),
-            Usuario = new Usuario { Id = usuarioId, Nome = "Ana Souza" }
+            Usuario = new Usuario { Id = usuarioId, Nome = "Ana Souza" },
+            TipoCombustivel = NovoTipoCombustivel(),
+            Posto = NovoPosto()
         };
+
+        private static TipoCombustivel NovoTipoCombustivel(int id = 3, string nome = "Diesel S10", bool ativo = true) =>
+            new() { Id = id, EmpresaId = 1, Nome = nome, Ativo = ativo };
+
+        private static Posto NovoPosto(int id = 4, string nome = "Posto Ipiranga BR-101", bool ativo = true) =>
+            new() { Id = id, EmpresaId = 1, Nome = nome, Ativo = ativo };
 
         private static Rota RotaAberta(int id = 42, int motoristaId = 7, int veiculoId = 1) => new()
         {
@@ -80,11 +96,34 @@ namespace Frota360.Tests.UseCases.Abastecimentos
         };
 
         private CreateAbastecimentoHandler CriarCreateHandler() =>
-            new(_repository, _veiculoRepository, _usuarioRepository, _rotaRepository, _currentUser, _auditoria,
+            new(_repository, _veiculoRepository, _usuarioRepository, _rotaRepository,
+                _tipoCombustivelRepository, _postoRepository, _currentUser, _auditoria,
                 NullLogger<CreateAbastecimentoHandler>.Instance);
 
         private UpdateAbastecimentoHandler CriarUpdateHandler() =>
-            new(_repository, _currentUser, _auditoria, NullLogger<UpdateAbastecimentoHandler>.Instance);
+            new(_repository, _veiculoRepository, _tipoCombustivelRepository, _postoRepository,
+                _currentUser, _auditoria, NullLogger<UpdateAbastecimentoHandler>.Instance);
+
+        /// <summary>Atalho do update: catálogos resolvidos e um corpo válido.</summary>
+        private void PrepararUpdate()
+        {
+            _tipoCombustivelRepository.GetByIdAsync(3, 1).Returns(NovoTipoCombustivel());
+            _postoRepository.GetByIdAsync(4, 1).Returns(NovoPosto());
+            _veiculoRepository.GetByIdAsync(1, 1).Returns(NovoVeiculo());
+        }
+
+        private static UpdateAbastecimentoRequest CorpoDeCorrecao(decimal litros = 50m,
+                                                                 decimal valorLitro = 6.40m,
+                                                                 int odometro = 60_500) => new()
+        {
+            TipoCombustivelId = 3,
+            PostoId = 4,
+            Litros = litros,
+            ValorLitro = valorLitro,
+            Odometro = odometro,
+            NotaFiscal = "123456",
+            DataAbastecimento = new DateTime(2026, 8, 28)
+        };
 
         private GetAllAbastecimentosHandler CriarGetAllHandler() =>
             new(_repository, _currentUser, NullLogger<GetAllAbastecimentosHandler>.Instance);
@@ -93,7 +132,12 @@ namespace Frota360.Tests.UseCases.Abastecimentos
         {
             VeiculoId = veiculoId,
             MotoristaId = motoristaId,
-            Valor = 320m,
+            TipoCombustivelId = 3,
+            PostoId = 4,
+            Litros = 50m,
+            ValorLitro = 6.40m,
+            Odometro = 61_000,
+            NotaFiscal = "123456",
             DataAbastecimento = new DateTime(2026, 8, 28)
         };
 
@@ -102,6 +146,8 @@ namespace Frota360.Tests.UseCases.Abastecimentos
         {
             _veiculoRepository.GetByIdAsync(1, 1).Returns(NovoVeiculo());
             _usuarioRepository.GetMotoristaByIdAsync(motoristaId, 1).Returns(NovoMotorista(motoristaId));
+            _tipoCombustivelRepository.GetByIdAsync(3, 1).Returns(NovoTipoCombustivel());
+            _postoRepository.GetByIdAsync(4, 1).Returns(NovoPosto());
             _repository.AddAsync(Arg.Any<Abastecimento>()).Returns(ci =>
             {
                 var a = ci.Arg<Abastecimento>();
@@ -362,10 +408,11 @@ namespace Frota360.Tests.UseCases.Abastecimentos
         public async Task Update_ComoMotorista_LancamentoDeOutro_DeveRetornarNullENaoGravar()
         {
             ComoMotorista(7);
+            PrepararUpdate();
             _repository.GetByIdAsync(5, 1).Returns(NovoAbastecimento(5, motoristaId: 9));
 
-            var resposta = await CriarUpdateHandler().HandleAsync(new UpdateAbastecimentoCommand(5,
-                new UpdateAbastecimentoRequest { Valor = 100m, DataAbastecimento = new DateTime(2026, 8, 28) }));
+            var resposta = await CriarUpdateHandler().HandleAsync(
+                new UpdateAbastecimentoCommand(5, CorpoDeCorrecao()));
 
             Assert.Null(resposta);
             await _repository.DidNotReceive().UpdateAsync(Arg.Any<Abastecimento>());
@@ -375,16 +422,130 @@ namespace Frota360.Tests.UseCases.Abastecimentos
         public async Task Update_ComoMotorista_ProprioLancamento_DeveCorrigirERegistrarAuditoria()
         {
             ComoMotorista(7);
+            PrepararUpdate();
             _repository.GetByIdAsync(5, 1).Returns(NovoAbastecimento(5, motoristaId: 7, valor: 320m));
 
-            await CriarUpdateHandler().HandleAsync(new UpdateAbastecimentoCommand(5,
-                new UpdateAbastecimentoRequest { Valor = 350m, DataAbastecimento = new DateTime(2026, 8, 28) }));
+            // 55 L a R$ 6,40 = R$ 352,00 — o total vem do cálculo, não do corpo.
+            await CriarUpdateHandler().HandleAsync(
+                new UpdateAbastecimentoCommand(5, CorpoDeCorrecao(litros: 55m)));
 
-            await _repository.Received(1).UpdateAsync(Arg.Is<Abastecimento>(a => a.Valor == 350m));
+            await _repository.Received(1).UpdateAsync(Arg.Is<Abastecimento>(a => a.Valor == 352m));
             await _auditoria.Received(1).RegistrarAsync(
                 EntidadesAuditadas.Abastecimento, AcoesAuditoria.Atualizou, 5,
                 Arg.Any<string>(),
                 Arg.Is<IEnumerable<AlteracaoCampo>>(d => d.Any(c => c.Campo == "Valor")));
+        }
+
+        // ---------- Apontamento fiscal ----------
+
+        [Fact]
+        public async Task Create_DeveCalcularOValorAPartirDeLitrosEValorLitro()
+        {
+            PrepararCreate();
+
+            // 48,5 L a R$ 6,19 = R$ 300,215 -> 300,22. O corpo nem carrega o total.
+            var requisicao = RequisicaoValida();
+            requisicao.Litros = 48.5m;
+            requisicao.ValorLitro = 6.19m;
+
+            await CriarCreateHandler().HandleAsync(new CreateAbastecimentoCommand(requisicao));
+
+            await _repository.Received(1).AddAsync(Arg.Is<Abastecimento>(a => a.Valor == 300.22m));
+        }
+
+        [Fact]
+        public async Task Create_ComOdometroMaiorQueODoVeiculo_DeveAvancarAQuilometragem()
+        {
+            PrepararCreate();
+
+            var requisicao = RequisicaoValida();
+            requisicao.Odometro = 61_500;
+
+            await CriarCreateHandler().HandleAsync(new CreateAbastecimentoCommand(requisicao));
+
+            await _veiculoRepository.Received(1).UpdateAsync(Arg.Is<Veiculo>(v => v.Quilometragem == 61_500));
+        }
+
+        [Fact]
+        public async Task Create_ComOdometroMenorQueODoVeiculo_NaoDeveRetroceder()
+        {
+            PrepararCreate();
+
+            // O veiculo esta em 60.000: um lancamento retroativo nao reescreve a ficha.
+            var requisicao = RequisicaoValida();
+            requisicao.Odometro = 55_000;
+
+            await CriarCreateHandler().HandleAsync(new CreateAbastecimentoCommand(requisicao));
+
+            await _veiculoRepository.DidNotReceive().UpdateAsync(Arg.Any<Veiculo>());
+        }
+
+        [Fact]
+        public async Task Create_ComTipoCombustivelDeOutraEmpresa_DeveLancar()
+        {
+            PrepararCreate();
+            _tipoCombustivelRepository.GetByIdAsync(3, 1).Returns((TipoCombustivel?)null);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => CriarCreateHandler().HandleAsync(new CreateAbastecimentoCommand(RequisicaoValida())));
+        }
+
+        [Fact]
+        public async Task Create_ComPostoDeOutraEmpresa_DeveLancar()
+        {
+            PrepararCreate();
+            _postoRepository.GetByIdAsync(4, 1).Returns((Posto?)null);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => CriarCreateHandler().HandleAsync(new CreateAbastecimentoCommand(RequisicaoValida())));
+        }
+
+        [Fact]
+        public async Task Create_ComCombustivelInativo_DeveLancar()
+        {
+            PrepararCreate();
+            _tipoCombustivelRepository.GetByIdAsync(3, 1).Returns(NovoTipoCombustivel(ativo: false));
+
+            var erro = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => CriarCreateHandler().HandleAsync(new CreateAbastecimentoCommand(RequisicaoValida())));
+
+            Assert.Contains("inativo", erro.Message);
+        }
+
+        [Fact]
+        public async Task Create_ComPostoDescredenciado_DeveLancar()
+        {
+            PrepararCreate();
+            _postoRepository.GetByIdAsync(4, 1).Returns(NovoPosto(ativo: false));
+
+            var erro = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => CriarCreateHandler().HandleAsync(new CreateAbastecimentoCommand(RequisicaoValida())));
+
+            Assert.Contains("descredenciado", erro.Message);
+        }
+
+        [Fact]
+        public async Task Update_ComOdometroMaior_DeveAvancarAQuilometragemDoVeiculo()
+        {
+            PrepararUpdate();
+            _repository.GetByIdAsync(5, 1).Returns(NovoAbastecimento(5));
+
+            await CriarUpdateHandler().HandleAsync(
+                new UpdateAbastecimentoCommand(5, CorpoDeCorrecao(odometro: 62_000)));
+
+            await _veiculoRepository.Received(1).UpdateAsync(Arg.Is<Veiculo>(v => v.Quilometragem == 62_000));
+        }
+
+        [Fact]
+        public async Task Update_ComOdometroMenor_NaoDeveRetrocederAQuilometragem()
+        {
+            PrepararUpdate();
+            _repository.GetByIdAsync(5, 1).Returns(NovoAbastecimento(5));
+
+            await CriarUpdateHandler().HandleAsync(
+                new UpdateAbastecimentoCommand(5, CorpoDeCorrecao(odometro: 50_000)));
+
+            await _veiculoRepository.DidNotReceive().UpdateAsync(Arg.Any<Veiculo>());
         }
 
         // ---------- Delete ----------

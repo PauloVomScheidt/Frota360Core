@@ -18,6 +18,8 @@ import { AbastecimentosPage } from './pages/AbastecimentosPage'
 import { CustosPage } from './pages/CustosPage'
 import { DespesasPage } from './pages/DespesasPage'
 import { TiposDespesaPage } from './pages/TiposDespesaPage'
+import { TiposCombustivelPage } from './pages/TiposCombustivelPage'
+import { PostosPage } from './pages/PostosPage'
 import { PerfilPage } from './pages/PerfilPage'
 import { RequireAuth, RequirePode } from './components/RequireAuth'
 import { pode } from './auth/permissions'
@@ -72,6 +74,12 @@ export default function App() {
           </Route>
           <Route element={<RequirePode permitido={pode.editarTiposDespesa} />}>
             <Route path="/tipos-despesa" element={<TiposDespesaPage />} />
+          </Route>
+          <Route element={<RequirePode permitido={pode.editarTiposCombustivel} />}>
+            <Route path="/tipos-combustivel" element={<TiposCombustivelPage />} />
+          </Route>
+          <Route element={<RequirePode permitido={pode.editarPostos} />}>
+            <Route path="/postos" element={<PostosPage />} />
           </Route>
           <Route element={<RequirePode permitido={pode.gerenciarUsuarios} />}>
             <Route path="/usuarios" element={<UsuariosPage />} />

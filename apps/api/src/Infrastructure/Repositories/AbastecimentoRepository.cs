@@ -44,6 +44,14 @@ namespace Frota360.Infrastructure.Repositories
             => await context.Abastecimentos.AsNoTracking()
                 .AnyAsync(a => a.EmpresaId == empresaId && a.VeiculoId == veiculoId);
 
+        public async Task<bool> ExisteComTipoCombustivelAsync(int empresaId, int tipoCombustivelId)
+            => await context.Abastecimentos.AsNoTracking()
+                .AnyAsync(a => a.EmpresaId == empresaId && a.TipoCombustivelId == tipoCombustivelId);
+
+        public async Task<bool> ExisteComPostoAsync(int empresaId, int postoId)
+            => await context.Abastecimentos.AsNoTracking()
+                .AnyAsync(a => a.EmpresaId == empresaId && a.PostoId == postoId);
+
         public async Task<Abastecimento> AddAsync(Abastecimento abastecimento)
         {
             context.Abastecimentos.Add(abastecimento);
@@ -73,6 +81,8 @@ namespace Frota360.Infrastructure.Repositories
                 .Include(a => a.Veiculo)
                 .Include(a => a.Rota)
                 .Include(a => a.Motorista)
-                .Include(a => a.Usuario);
+                .Include(a => a.Usuario)
+                .Include(a => a.TipoCombustivel)
+                .Include(a => a.Posto);
     }
 }

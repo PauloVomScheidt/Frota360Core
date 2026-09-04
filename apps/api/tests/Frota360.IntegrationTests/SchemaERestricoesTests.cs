@@ -50,6 +50,8 @@ namespace Frota360.IntegrationTests
             Assert.Contains("TipoManutencao", tabelas);
             Assert.Contains("Abastecimento", tabelas);
             Assert.Contains("TipoDespesa", tabelas);
+            Assert.Contains("TipoCombustivel", tabelas);
+            Assert.Contains("Posto", tabelas);
             Assert.Contains("Despesa", tabelas);
             Assert.Contains("Convite", tabelas);
             Assert.Contains("LogAuditoria", tabelas);
@@ -166,13 +168,38 @@ namespace Frota360.IntegrationTests
             contexto.Usuarios.Add(motorista);
             await contexto.SaveChangesAsync();
 
+            var combustivel = new TipoCombustivel
+            {
+                EmpresaId = empresa.Id,
+                Nome = Unicos.Texto("Diesel S10"),
+                DataInclusao = DateTime.Now
+            };
+            var posto = new Posto
+            {
+                EmpresaId = empresa.Id,
+                Nome = Unicos.Texto("Posto Ipiranga"),
+                DataInclusao = DateTime.Now
+            };
+            contexto.TiposCombustivel.Add(combustivel);
+            contexto.Postos.Add(posto);
+            await contexto.SaveChangesAsync();
+
             contexto.Abastecimentos.Add(new Abastecimento
             {
                 EmpresaId = empresa.Id,
                 VeiculoId = veiculo.Id,
                 MotoristaId = motorista.Id,
                 UsuarioId = motorista.Id,
+                TipoCombustivelId = combustivel.Id,
+                PostoId = posto.Id,
+                // Três casas de cada lado: é o caso que numeric(9,3)/numeric(8,3) precisa
+                // aguentar sem arredondar na ida ao banco.
+                Litros = 48.567m,
+                ValorLitro = 6.199m,
                 Valor = 1234.56m,
+                Odometro = 152_340,
+                NotaFiscal = "NF-000123456",
+                Frentista = "Carlos",
                 DataAbastecimento = new DateTime(2026, 8, 30),
                 DataInclusao = DateTime.Now
             });
@@ -183,6 +210,11 @@ namespace Frota360.IntegrationTests
                 .SingleAsync(a => a.EmpresaId == empresa.Id);
 
             Assert.Equal(1234.56m, lido.Valor);
+            Assert.Equal(48.567m, lido.Litros);
+            Assert.Equal(6.199m, lido.ValorLitro);
+            Assert.Equal(152_340, lido.Odometro);
+            Assert.Equal("NF-000123456", lido.NotaFiscal);
+            Assert.Equal("Carlos", lido.Frentista);
         }
     }
 }

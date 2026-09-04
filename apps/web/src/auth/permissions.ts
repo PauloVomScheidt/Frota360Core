@@ -69,6 +69,13 @@ export const pode = {
   /** Manter o catálogo de tipos de despesa (todos da gestão apenas visualizam). */
   editarTiposDespesa: (role?: Role) => role === 'Admin' || role === 'Supervisor',
   /**
+   * Manter o catálogo de combustíveis e a rede credenciada. Só a **tela** é restrita: a
+   * leitura dos dois catálogos é aberta a todos os papéis na API, porque o motorista
+   * precisa deles para preencher o formulário de abastecimento.
+   */
+  editarTiposCombustivel: (role?: Role) => role === 'Admin' || role === 'Supervisor',
+  editarPostos: (role?: Role) => role === 'Admin' || role === 'Supervisor',
+  /**
    * ⚠️ **Exceção deliberada** à regra de que só o Admin exclui (`pode.excluir`): por decisão
    * de produto, o Supervisor também apaga despesa. Entrada separada de propósito — mexer em
    * `pode.excluir` afetaria todas as outras telas.

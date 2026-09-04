@@ -1,6 +1,8 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { abastecimentosApi } from '../api/abastecimentos'
+import { tiposCombustivelApi } from '../api/tiposCombustivel'
+import { postosApi } from '../api/postos'
 import { motoristasApi } from '../api/motoristas'
 import { rotasApi } from '../api/rotas'
 import { veiculosApi } from '../api/veiculos'
@@ -9,14 +11,24 @@ import type {
   AbastecimentoFiltro,
   AbastecimentoResponse,
   MotoristaResponse,
+  PostoResponse,
   RotaResponse,
+  TipoCombustivelResponse,
   VeiculoResponse,
 } from '../api/types'
 import { pode } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
 import { ConfirmDialog, FiltroPeriodo, InlineForm, RowActions, TableStates } from '../components/Table'
-import { formatDate, formatMoeda, hojeInputDate, paraInputDate } from '../lib/format'
+import {
+  formatConsumo,
+  formatDate,
+  formatKm,
+  formatLitros,
+  formatMoeda,
+  hojeInputDate,
+  paraInputDate,
+} from '../lib/format'
 import { intervaloDoPeriodo, type Periodo } from '../lib/periodo'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
@@ -24,12 +36,29 @@ const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 const FORM_VAZIO = {
   veiculoId: '',
   motoristaId: '',
-  valor: '',
+  tipoCombustivelId: '',
+  postoId: '',
+  litros: '',
+  valorLitro: '',
+  odometro: '',
+  notaFiscal: '',
+  frentista: '',
   dataAbastecimento: '',
   observacao: '',
 }
 
 type FormularioAbastecimento = typeof FORM_VAZIO
+
+/**
+ * A média estimada desde o abastecimento anterior daquele veículo. Carrega a referência
+ * junto de propósito: a tela nomeia a data e o odômetro dela para quem lança conseguir ver
+ * que o cálculo pegou o lançamento certo — ou o errado.
+ */
+type ConsumoEstimado = {
+  anterior: AbastecimentoResponse
+  km: number
+  kmPorLitro: number
+}
 
 /**
  * Painel de cadastro/edição — extraído à parte por ser, sozinho, o maior bloco de JSX
@@ -47,9 +76,13 @@ function AbastecimentoFormulario({
   veiculosDisponiveis,
   veiculos,
   motoristas,
+  combustiveis,
+  postos,
   motorista,
   nomeUsuario,
   rotaAtiva,
+  valorTotal,
+  consumoEstimado,
 }: {
   editando: AbastecimentoResponse | null
   form: FormularioAbastecimento
@@ -60,10 +93,31 @@ function AbastecimentoFormulario({
   veiculosDisponiveis: VeiculoResponse[]
   veiculos: VeiculoResponse[]
   motoristas: MotoristaResponse[]
+  combustiveis: TipoCombustivelResponse[]
+  postos: PostoResponse[]
   motorista: boolean
   nomeUsuario: string
   rotaAtiva: RotaResponse | null
+  /** Derivado de litros × valor do litro; o servidor recalcula e ignora o que chegar. */
+  valorTotal: number
+  /** Nulo quando não há abastecimento anterior daquele veículo abaixo do odômetro digitado. */
+  consumoEstimado: ConsumoEstimado | null
 }) {
+  /**
+   * Odômetro abaixo da ficha do veículo é **aceito** — pode ser lançamento retroativo, e o
+   * servidor apenas não retrocede a quilometragem. Mas é também a cara de um erro de
+   * digitação, e um número furado aqui envenena o km/l daquele veículo depois. O aviso pega
+   * o dedo errado enquanto quem lança ainda sabe a verdade, sem bloquear o caso legítimo.
+   */
+  const quilometragemDaFicha = useMemo(() => {
+    const veiculo = veiculos.find((v) => v.id === Number(form.veiculoId))
+    const odometro = Number(form.odometro)
+
+    if (!veiculo || form.odometro === '' || !Number.isFinite(odometro)) return null
+
+    return odometro < veiculo.quilometragem ? veiculo.quilometragem : null
+  }, [veiculos, form.veiculoId, form.odometro])
+
   return (
     <InlineForm onSubmit={onSubmit}>
       {editando && (
@@ -132,19 +186,130 @@ function AbastecimentoFormulario({
           </div>
         ))}
 
-      <div className="field w-[150px]">
-        <label htmlFor="valor">Valor (R$)</label>
+      <div className="field w-[190px]">
+        <label htmlFor="tipoCombustivelId">Combustível</label>
+        <select
+          id="tipoCombustivelId"
+          className="input"
+          required
+          style={{ borderRadius: 0 }}
+          value={form.tipoCombustivelId}
+          onChange={(e) => onFormChange({ ...form, tipoCombustivelId: e.target.value })}
+        >
+          <option value="">Selecione…</option>
+          {combustiveis.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.nome}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="field w-[220px]">
+        <label htmlFor="postoId">Posto</label>
+        <select
+          id="postoId"
+          className="input"
+          required
+          style={{ borderRadius: 0 }}
+          value={form.postoId}
+          onChange={(e) => onFormChange({ ...form, postoId: e.target.value })}
+        >
+          <option value="">Selecione…</option>
+          {postos.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.nome}
+              {p.cidade ? ` — ${p.cidade}` : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="field w-[130px]">
+        <label htmlFor="litros">Litros</label>
         <input
-          id="valor"
+          id="litros"
           type="number"
           className="input"
           required
-          min={0.01}
-          step={0.01}
-          placeholder="0,00"
+          min={0.001}
+          step={0.001}
+          placeholder="0,000"
           style={{ borderRadius: 0 }}
-          value={form.valor}
-          onChange={(e) => onFormChange({ ...form, valor: e.target.value })}
+          value={form.litros}
+          onChange={(e) => onFormChange({ ...form, litros: e.target.value })}
+        />
+      </div>
+
+      <div className="field w-[140px]">
+        <label htmlFor="valorLitro">Valor do litro (R$)</label>
+        <input
+          id="valorLitro"
+          type="number"
+          className="input"
+          required
+          min={0.001}
+          step={0.001}
+          placeholder="0,000"
+          style={{ borderRadius: 0 }}
+          value={form.valorLitro}
+          onChange={(e) => onFormChange({ ...form, valorLitro: e.target.value })}
+        />
+      </div>
+
+      {/* Somente leitura: o total é derivado, e quem o calcula de verdade é o servidor —
+          este campo é o espelho do que ele vai gravar. */}
+      <div className="field w-[150px]">
+        <label htmlFor="valorTotal">Valor total (R$)</label>
+        <input
+          id="valorTotal"
+          className="input"
+          readOnly
+          tabIndex={-1}
+          style={{ borderRadius: 0, background: 'var(--color-surface)' }}
+          value={formatMoeda(valorTotal)}
+        />
+      </div>
+
+      <div className="field w-[150px]">
+        <label htmlFor="odometro">Odômetro (km)</label>
+        <input
+          id="odometro"
+          type="number"
+          className="input"
+          required
+          min={1}
+          step={1}
+          placeholder="0"
+          style={{ borderRadius: 0 }}
+          value={form.odometro}
+          onChange={(e) => onFormChange({ ...form, odometro: e.target.value })}
+        />
+      </div>
+
+      <div className="field w-[160px]">
+        <label htmlFor="notaFiscal">Nota fiscal</label>
+        <input
+          id="notaFiscal"
+          className="input"
+          required
+          maxLength={30}
+          style={{ borderRadius: 0 }}
+          value={form.notaFiscal}
+          onChange={(e) => onFormChange({ ...form, notaFiscal: e.target.value })}
+        />
+      </div>
+
+      <div className="field w-[180px]">
+        <label htmlFor="frentista">Frentista</label>
+        <input
+          id="frentista"
+          className="input"
+          maxLength={100}
+          placeholder="Opcional"
+          style={{ borderRadius: 0 }}
+          value={form.frentista}
+          onChange={(e) => onFormChange({ ...form, frentista: e.target.value })}
         />
       </div>
 
@@ -182,6 +347,29 @@ function AbastecimentoFormulario({
       >
         {pending ? 'Salvando…' : editando ? 'Salvar correção' : 'Lançar'}
       </button>
+
+      {quilometragemDaFicha !== null && (
+        <p className="m-0 w-full text-[13px]" style={{ color: 'var(--color-warning)' }}>
+          ⚠ O odômetro informado é menor que a quilometragem atual do veículo (
+          <strong>{formatKm(quilometragemDaFicha)}</strong>). Confirme se o lançamento é
+          retroativo — a ficha do veículo não será alterada.
+        </p>
+      )}
+
+      {consumoEstimado !== null && (
+        <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
+          Desde o abastecimento de{' '}
+          <strong style={{ color: 'var(--color-text)' }}>
+            {formatDate(consumoEstimado.anterior.dataAbastecimento)}
+          </strong>{' '}
+          ({formatKm(consumoEstimado.anterior.odometro)}): {formatKm(consumoEstimado.km)} ÷{' '}
+          {formatLitros(Number(form.litros))} L ≈{' '}
+          <strong style={{ color: 'var(--color-text)' }}>
+            {formatConsumo(consumoEstimado.kmPorLitro)}
+          </strong>{' '}
+          — estimativa, e só fecha se os dois tanques foram enchidos por igual.
+        </p>
+      )}
 
       {!editando && motorista && rotaAtiva && (
         <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
@@ -319,6 +507,9 @@ function TabelaAbastecimentos({
               <th>Veículo</th>
               <th>Motorista</th>
               {!motorista && <th>Quem lançou</th>}
+              <th>Combustível</th>
+              <th>Posto</th>
+              <th>Abastecido</th>
               <th>Valor</th>
               <th>Observação</th>
               {mostrarAcoes && <th style={{ width: 90 }}>Ações</th>}
@@ -326,7 +517,7 @@ function TabelaAbastecimentos({
           </thead>
           <tbody>
             <TableStates
-              colSpan={(motorista ? 5 : 6) + (mostrarAcoes ? 1 : 0)}
+              colSpan={(motorista ? 8 : 9) + (mostrarAcoes ? 1 : 0)}
               pending={pending}
               error={error}
               empty={isSuccess && abastecimentos.length === 0}
@@ -349,6 +540,20 @@ function TabelaAbastecimentos({
                 </td>
                 <td>{a.motoristaNome}</td>
                 {!motorista && <td>{a.usuarioNome}</td>}
+                <td>{a.tipoCombustivelNome}</td>
+                <td>
+                  <div>{a.postoNome}</div>
+                  <div className="text-[12px]" style={{ color: mutedText }}>
+                    NF {a.notaFiscal}
+                  </div>
+                </td>
+                {/* Litros e preço na mesma célula: são um dado só, e a tabela já é larga. */}
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  <div>{formatLitros(a.litros)} L</div>
+                  <div className="text-[12px]" style={{ color: mutedText }}>
+                    {formatMoeda(a.valorLitro)}/L · {a.odometro.toLocaleString('pt-BR')} km
+                  </div>
+                </td>
                 <td style={{ whiteSpace: 'nowrap' }}>{formatMoeda(a.valor)}</td>
                 <td style={{ color: a.observacao ? undefined : mutedText }}>
                   {a.observacao ?? '—'}
@@ -440,9 +645,37 @@ export function AbastecimentosPage() {
     enabled: motorista,
   })
 
+  // Os dois catálogos alimentam o formulário e a API os abre a todos os papéis — sem
+  // `enabled`, ao contrário de `['motoristas']`. `apenasAtivos`: item aposentado continua
+  // nomeando o passado mas não recebe lançamento novo.
+  const combustiveisQuery = useQuery({
+    queryKey: ['tiposCombustivel', 'ativos'],
+    queryFn: () => tiposCombustivelApi.getAll(true),
+  })
+
+  const postosQuery = useQuery({
+    queryKey: ['postos', 'ativos'],
+    queryFn: () => postosApi.getAll(true),
+  })
+
+  /**
+   * O histórico daquele veículo, **sem recorte de data** — o abastecimento anterior pode ser
+   * de qualquer época, e o filtro da listagem (que abre no mês corrente) esconderia
+   * justamente o que serve de referência. Só busca com o formulário aberto.
+   *
+   * A chave começa com `['abastecimentos']`, então o `invalidar()` já a alcança.
+   */
+  const historicoQuery = useQuery({
+    queryKey: ['abastecimentos', 'doVeiculo', Number(form.veiculoId)],
+    queryFn: () => abastecimentosApi.getAll({ veiculoId: Number(form.veiculoId) }),
+    enabled: aberto && form.veiculoId !== '',
+  })
+
   const abastecimentos = abastecimentosQuery.data ?? []
   const veiculos = veiculosQuery.data ?? []
   const motoristas = motoristasQuery.data ?? []
+  const combustiveis = combustiveisQuery.data ?? []
+  const postos = postosQuery.data ?? []
   const rotaAtiva = (minhasRotasQuery.data ?? []).find((r) => r.ativo) ?? null
 
   // Com rota aberta o veículo é um só: mostrar a frota inteira seria oferecer o que o
@@ -456,18 +689,71 @@ export function AbastecimentosPage() {
   }, [veiculosQuery.data, rotaAtiva])
 
   /**
-   * Sem odômetro em jogo, o lançamento não toca em veículo nem em manutenção — mas o valor
-   * é metade do que a tela de custos soma.
+   * O abastecimento passou a mover o odômetro do veículo — é o **terceiro** caminho, ao
+   * lado de abrir/encerrar rota e concluir manutenção. Por isso a cadeia inteira:
+   * `atrasada`/`kmRestantes` da manutenção derivam do odômetro da ficha.
+   *
+   * `['custos']` continua entrando porque o valor é metade do que aquela tela soma.
    */
   function invalidar() {
     queryClient.invalidateQueries({ queryKey: ['abastecimentos'] })
     queryClient.invalidateQueries({ queryKey: ['custos'] })
+    queryClient.invalidateQueries({ queryKey: ['veiculos'] })
+    queryClient.invalidateQueries({ queryKey: ['manutencoes'] })
   }
+
+  /**
+   * Consumo desde o abastecimento anterior daquele veículo, no método tanque a tanque: os
+   * litros que estão sendo colocados agora são os que repuseram o trecho percorrido.
+   *
+   * A referência é o abastecimento de **maior odômetro abaixo do digitado** — ordenar por
+   * odômetro e não por data é o que impede um lançamento retroativo de virar km negativo.
+   * Em modo de correção o próprio registro fica de fora.
+   *
+   * ⚠️ Para a role Motorista o número pode sair inflado: a lista dele vem recortada pelo
+   * servidor, então se o abastecimento anterior daquele caminhão foi de outra pessoa a
+   * referência será um lançamento mais antigo dele mesmo. É por isso que a tela nomeia a
+   * data e o odômetro da referência em vez de mostrar só a média.
+   */
+  const consumoEstimado = useMemo<ConsumoEstimado | null>(() => {
+    const odometro = Number(form.odometro)
+    const litros = Number(form.litros)
+
+    if (!Number.isFinite(odometro) || !Number.isFinite(litros) || litros <= 0) return null
+
+    const anterior = (historicoQuery.data ?? [])
+      .filter((a) => a.id !== editando?.id && a.odometro < odometro)
+      .sort((a, b) => b.odometro - a.odometro)[0]
+
+    if (anterior === undefined) return null
+
+    const km = odometro - anterior.odometro
+
+    return { anterior, km, kmPorLitro: km / litros }
+  }, [historicoQuery.data, form.odometro, form.litros, editando])
+
+  /**
+   * O total é derivado, e o campo da tela é só um espelho: o corpo não o carrega e o
+   * servidor o recalcula. Memoizado sobre os dois campos que o compõem.
+   */
+  const valorTotal = useMemo(() => {
+    const litros = Number(form.litros)
+    const preco = Number(form.valorLitro)
+    if (!Number.isFinite(litros) || !Number.isFinite(preco)) return 0
+    return Math.round(litros * preco * 100) / 100
+  }, [form.litros, form.valorLitro])
 
   const salvarMutation = useMutation({
     mutationFn: () => {
+      // `valor` fica de fora de propósito — quem o calcula é a API.
       const corpo = {
-        valor: Number(form.valor),
+        tipoCombustivelId: Number(form.tipoCombustivelId),
+        postoId: Number(form.postoId),
+        litros: Number(form.litros),
+        valorLitro: Number(form.valorLitro),
+        odometro: Number(form.odometro),
+        notaFiscal: form.notaFiscal.trim(),
+        frentista: form.frentista.trim() === '' ? null : form.frentista.trim(),
         dataAbastecimento: form.dataAbastecimento,
         observacao: form.observacao === '' ? null : form.observacao,
       }
@@ -523,7 +809,13 @@ export function AbastecimentosPage() {
     setForm({
       veiculoId: String(a.veiculoId),
       motoristaId: String(a.motoristaId),
-      valor: String(a.valor),
+      tipoCombustivelId: String(a.tipoCombustivelId),
+      postoId: String(a.postoId),
+      litros: String(a.litros),
+      valorLitro: String(a.valorLitro),
+      odometro: String(a.odometro),
+      notaFiscal: a.notaFiscal,
+      frentista: a.frentista ?? '',
       dataAbastecimento: paraInputDate(a.dataAbastecimento),
       observacao: a.observacao ?? '',
     })
@@ -540,7 +832,10 @@ export function AbastecimentosPage() {
 
   const semVeiculos = veiculosQuery.isSuccess && veiculos.length === 0
   const semMotoristas = !motorista && motoristasQuery.isSuccess && motoristas.length === 0
-  const naoPodeAbrir = semVeiculos || semMotoristas
+  // Combustível e posto são obrigatórios: sem catálogo, o formulário não fecha.
+  const semCombustiveis = combustiveisQuery.isSuccess && combustiveis.length === 0
+  const semPostos = postosQuery.isSuccess && postos.length === 0
+  const naoPodeAbrir = semVeiculos || semMotoristas || semCombustiveis || semPostos
   const mostrarAcoes = podeLancar || podeExcluir
 
   // Total do que está na tela — o recorte é o do filtro, não da frota inteira.
@@ -557,8 +852,8 @@ export function AbastecimentosPage() {
         titulo="Abastecimentos"
         subtitulo={
           motorista
-            ? 'Seus abastecimentos. Registre o gasto em poucos campos — veículo, valor e data.'
-            : 'Combustível da frota. Cada lançamento fica atribuído a um motorista, para o gasto por pessoa, veículo e período.'
+            ? 'Seus abastecimentos. Registre o que abasteceu, onde e por quanto — o total sai de litros × valor do litro.'
+            : 'Combustível da frota. Cada lançamento fica atribuído a um motorista e a um posto credenciado, para o gasto por pessoa, veículo, posto e período.'
         }
         acoes={
           podeLancar && (
@@ -573,7 +868,11 @@ export function AbastecimentosPage() {
                   ? 'É preciso ter ao menos um veículo cadastrado.'
                   : semMotoristas
                     ? 'É preciso ter ao menos um motorista cadastrado.'
-                    : undefined
+                    : semCombustiveis
+                      ? 'É preciso ter ao menos um tipo de combustível ativo no catálogo.'
+                      : semPostos
+                        ? 'É preciso ter ao menos um posto credenciado.'
+                        : undefined
               }
             >
               {aberto ? 'Cancelar' : 'Novo abastecimento'}
@@ -593,9 +892,13 @@ export function AbastecimentosPage() {
           veiculosDisponiveis={veiculosDisponiveis}
           veiculos={veiculos}
           motoristas={motoristas}
+          combustiveis={combustiveis}
+          postos={postos}
           motorista={motorista}
           nomeUsuario={user?.nome ?? ''}
           rotaAtiva={rotaAtiva}
+          valorTotal={valorTotal}
+          consumoEstimado={consumoEstimado}
         />
       )}
 

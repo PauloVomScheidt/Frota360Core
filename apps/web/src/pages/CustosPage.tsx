@@ -16,7 +16,7 @@ import { AppLayout, PageHeader } from '../components/AppLayout'
 import { FiltroPeriodo, Paginacao, TableStates } from '../components/Table'
 import { DinheiroIcon, FuelIcon, ReciboIcon, RouteIcon, WrenchIcon } from '../components/icons'
 import { formatDate, formatKm, formatMoeda } from '../lib/format'
-import { formatCustoPorKm, rotuloDoMes, ROTULO_ORIGEM } from '../lib/custo'
+import { formatConsumo, formatCustoPorKm, rotuloDoMes, ROTULO_ORIGEM } from '../lib/custo'
 import { intervaloDoPeriodo, type Periodo } from '../lib/periodo'
 
 const TAMANHO_PAGINA = 25
@@ -162,10 +162,18 @@ function FaixaDeKpis({ resumo, carregado }: { resumo?: ResumoCustosResponse; car
       detail: carregado && resumo ? `${formatKm(resumo.kmTotal)} em rotas encerradas` : '',
       icon: <RouteIcon size={16} />,
     },
+    {
+      // O detalhe não é enfeite: este km e o do KPI ao lado são medidas diferentes, e sem
+      // dizer de onde cada um vem a tela pareceria estar se contradizendo.
+      label: 'Consumo médio',
+      value: carregado && resumo ? formatConsumo(resumo.consumoMedio) : '—',
+      detail: carregado && resumo ? `${formatKm(resumo.kmOdometroTotal)} pelo odômetro` : '',
+      icon: <FuelIcon size={16} />,
+    },
   ]
 
   return (
-    <div className="mb-6 grid grid-cols-2 lg:grid-cols-5" style={{ border: '1px solid var(--color-divider)' }}>
+    <div className="mb-6 grid grid-cols-2 lg:grid-cols-3" style={{ border: '1px solid var(--color-divider)' }}>
       {kpis.map((kpi) => (
         <div
           key={kpi.label}
@@ -285,11 +293,12 @@ function TabelaPorVeiculo({
               <th>Total</th>
               <th>Km rodado</th>
               <th>Custo por km</th>
+              <th>Consumo</th>
             </tr>
           </thead>
           <tbody>
             <TableStates
-              colSpan={7}
+              colSpan={8}
               pending={pending}
               error={error}
               empty={veiculos.length === 0}
@@ -311,6 +320,7 @@ function TabelaPorVeiculo({
                 <td className="font-semibold">{formatMoeda(v.total)}</td>
                 <td>{v.km > 0 ? formatKm(v.km) : '—'}</td>
                 <td>{formatCustoPorKm(v.custoPorKm)}</td>
+                <td>{formatConsumo(v.consumoMedio)}</td>
               </tr>
             ))}
           </tbody>
@@ -489,9 +499,15 @@ export function CustosPage() {
 
       {/* Os dois avisos existem porque, sem eles, o número da tela mente. */}
       {filtroMotorista !== '' && (
-        <p className="mb-4">
+        <p className="mb-4 flex flex-wrap gap-2">
           <span className="tag tag-warning">
             Manutenção não é atribuída a motorista — este recorte mostra abastecimentos e despesas.
+          </span>
+          {/* O consumo é o que mais sofre com o recorte: o odômetro salta os abastecimentos
+              dos outros motoristas, então o km cobre trechos que este não pagou. */}
+          <span className="tag tag-warning">
+            O consumo fica superestimado por motorista — o odômetro conta trechos abastecidos por
+            outras pessoas.
           </span>
         </p>
       )}

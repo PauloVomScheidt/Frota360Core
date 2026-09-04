@@ -213,6 +213,44 @@ namespace Frota360.Infrastructure.Repositories
         }
 
         /// <summary>
+        /// Litros e km por veículo, para o km/l da tela de custos.
+        ///
+        /// <para>
+        /// A agregação é feita <b>em memória</b>, sobre uma projeção de três colunas. Não é
+        /// preguiça: o cálculo precisa dos litros do <b>primeiro</b> abastecimento de cada
+        /// veículo para descontá-los, e isso é window function — exatamente o que o EF não
+        /// traduz, a mesma lição que <c>TraducaoDeConsultaTests</c> guarda sobre a união das
+        /// origens. O conjunto é limitado pelo período do filtro, então cabe.
+        /// </para>
+        /// </summary>
+        public async Task<IEnumerable<ConsumoPorVeiculo>> SomarConsumoPorVeiculoAsync(int empresaId, FiltroCusto filtro)
+        {
+            var linhas = await Abastecimentos(empresaId, filtro)
+                .Select(a => new { a.VeiculoId, a.Veiculo!.NomeVeiculo, a.Veiculo!.Placa, a.Odometro, a.Litros })
+                .ToListAsync();
+
+            return linhas
+                .GroupBy(l => l.VeiculoId)
+                .Select(g =>
+                {
+                    // Ordenar por odômetro e não por data: lançamento retroativo é aceito pelo
+                    // sistema, então a ordem cronológica não é a ordem da estrada.
+                    var porOdometro = g.OrderBy(l => l.Odometro).ToList();
+
+                    var km = porOdometro[^1].Odometro - porOdometro[0].Odometro;
+
+                    // Os litros do primeiro pagaram o trecho ANTERIOR ao período; incluí-los
+                    // infla o denominador e subestima o km/l de forma sistemática.
+                    var litros = porOdometro.Skip(1).Sum(l => l.Litros);
+
+                    return new ConsumoPorVeiculo(
+                        g.Key, porOdometro[0].NomeVeiculo, porOdometro[0].Placa,
+                        litros, km, porOdometro.Count);
+                })
+                .ToList();
+        }
+
+        /// <summary>
         /// Sem <c>Include</c> de propósito: a navegação é lida <b>dentro</b> do <c>Select</c>,
         /// que o EF traduz para JOIN. Um <c>Include</c> aqui seria descartado em silêncio.
         /// </summary>

@@ -12,6 +12,7 @@ namespace Frota360.Application.Services
                                    IConviteService conviteService,
                                    ITipoManutencaoRepository tipoManutencaoRepository,
                                    ITipoDespesaRepository tipoDespesaRepository,
+                                   ITipoCombustivelRepository tipoCombustivelRepository,
                                    ILogger<BackofficeService> logger) : IBackofficeService
     {
         public async Task<EmpresaProvisionadaResponse> ProvisionarEmpresaAsync(ProvisionarEmpresaRequest request)
@@ -29,6 +30,7 @@ namespace Frota360.Application.Services
 
             await SemearTiposManutencaoAsync(empresa.Id);
             await SemearTiposDespesaAsync(empresa.Id);
+            await SemearTiposCombustivelAsync(empresa.Id);
 
             var convite = await conviteService.CriarParaEmpresaAsync(
                 empresa.Id, criadoPorUsuarioId: null, request.EmailAdmin, Roles.Admin);
@@ -86,6 +88,28 @@ namespace Frota360.Application.Services
 
             logger.LogInformation("Catálogo padrão de despesa semeado para a empresa {EmpresaId} ({Quantidade} tipos)",
                 empresaId, TiposDespesaPadrao.Itens.Count);
+        }
+
+        /// <summary>
+        /// Mesmo motivo dos outros dois: sem combustível cadastrado, a tela de
+        /// abastecimento abre com o seletor vazio e não aceita lançamento nenhum.
+        /// Não há equivalente para posto: rede credenciada não tem padrão.
+        /// </summary>
+        private async Task SemearTiposCombustivelAsync(int empresaId)
+        {
+            var agora = DateTime.Now;
+
+            await tipoCombustivelRepository.AddRangeAsync(
+                TiposCombustivelPadrao.Itens.Select(nome => new TipoCombustivel
+                {
+                    EmpresaId = empresaId,
+                    Nome = nome,
+                    Ativo = true,
+                    DataInclusao = agora
+                }));
+
+            logger.LogInformation("Catálogo padrão de combustível semeado para a empresa {EmpresaId} ({Quantidade} tipos)",
+                empresaId, TiposCombustivelPadrao.Itens.Count);
         }
     }
 }

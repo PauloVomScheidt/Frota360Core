@@ -32,6 +32,23 @@ namespace Frota360.Application.DTOs.Custo.Response
         /// </summary>
         public int ManutencoesSemCustoInformado { get; set; }
 
+        /// <summary>Litros abastecidos no período pela frota inteira, já descontado o primeiro de cada veículo.</summary>
+        public decimal LitrosTotal { get; set; }
+
+        /// <summary>
+        /// Km medido pelo odômetro dos abastecimentos, somado da frota. <b>Não</b> é o mesmo
+        /// que <see cref="KmTotal"/>, que sai das rotas encerradas: combustível é queimado
+        /// dentro e fora de rota.
+        /// </summary>
+        public int KmOdometroTotal { get; set; }
+
+        /// <summary>
+        /// Consumo médio da frota em km/l. Soma os km e os litros de todos os veículos e
+        /// divide <b>uma vez só</b> — média das médias faria um veículo com dois
+        /// abastecimentos pesar igual a um com trinta.
+        /// </summary>
+        public decimal? ConsumoMedio { get; set; }
+
         /// <summary>Do maior total para o menor.</summary>
         public List<CustoPorVeiculoResponse> PorVeiculo { get; set; } = [];
 

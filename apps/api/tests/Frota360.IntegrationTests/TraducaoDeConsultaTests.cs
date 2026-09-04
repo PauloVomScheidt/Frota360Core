@@ -15,7 +15,8 @@ namespace Frota360.IntegrationTests
     [Collection(BancoCollection.Nome)]
     public class TraducaoDeConsultaTests(BancoFixture fixture)
     {
-        private sealed record Cenario(int EmpresaId, int VeiculoId, int MotoristaId, int TipoId);
+        private sealed record Cenario(int EmpresaId, int VeiculoId, int MotoristaId, int TipoId,
+                                      int TipoCombustivelId, int PostoId);
 
         private async Task<Cenario> MontarAsync(Frota360DbContext contexto)
         {
@@ -48,12 +49,112 @@ namespace Frota360.IntegrationTests
                 IntervaloKm = 10_000,
                 DataInclusao = DateTime.Now
             };
+            var combustivel = new TipoCombustivel
+            {
+                EmpresaId = empresa.Id,
+                Nome = Unicos.Texto("Diesel S10"),
+                DataInclusao = DateTime.Now
+            };
+            var posto = new Posto
+            {
+                EmpresaId = empresa.Id,
+                Nome = Unicos.Texto("Posto Ipiranga"),
+                DataInclusao = DateTime.Now
+            };
             contexto.Veiculos.Add(veiculo);
             contexto.Usuarios.Add(motorista);
             contexto.TiposManutencao.Add(tipo);
+            contexto.TiposCombustivel.Add(combustivel);
+            contexto.Postos.Add(posto);
             await contexto.SaveChangesAsync();
 
-            return new Cenario(empresa.Id, veiculo.Id, motorista.Id, tipo.Id);
+            return new Cenario(empresa.Id, veiculo.Id, motorista.Id, tipo.Id, combustivel.Id, posto.Id);
+        }
+
+        [Fact]
+        public async Task Consumo_DeveDescontarOsLitrosDoPrimeiroAbastecimentoDoPeriodo()
+        {
+            // A agregação roda em memória justamente porque precisa dos litros do primeiro
+            // abastecimento — window function, que o EF não traduz. Este teste prova que a
+            // projeção que a alimenta traduz e que a conta fecha contra o banco de verdade.
+            await using var contexto = fixture.CriarContexto();
+            var c = await MontarAsync(contexto);
+
+            contexto.Abastecimentos.AddRange(
+                NovoAbastecimento(c, new DateTime(2026, 8, 10), 300m, odometro: 100_000, litros: 45m),
+                NovoAbastecimento(c, new DateTime(2026, 8, 20), 320m, odometro: 100_500, litros: 50m));
+            await contexto.SaveChangesAsync();
+            contexto.ChangeTracker.Clear();
+
+            var repositorio = new CustoRepository(contexto);
+            var consumo = (await repositorio.SomarConsumoPorVeiculoAsync(c.EmpresaId, new FiltroCusto())).Single();
+
+            Assert.Equal(500, consumo.Km);
+            // 50, não 95: os 45 do primeiro pagaram o trecho anterior ao período.
+            Assert.Equal(50m, consumo.Litros);
+            Assert.Equal(2, consumo.Abastecimentos);
+            Assert.Equal("Scania R450", consumo.VeiculoNome);
+        }
+
+        [Fact]
+        public async Task Consumo_ComAbastecimentoLancadoForaDeOrdem_NaoDeveDarKmNegativo()
+        {
+            // Odômetro menor é aceito pelo sistema, então a ordem cronológica não é a ordem
+            // da estrada: a agregação ordena por odômetro justamente por isso.
+            await using var contexto = fixture.CriarContexto();
+            var c = await MontarAsync(contexto);
+
+            contexto.Abastecimentos.AddRange(
+                NovoAbastecimento(c, new DateTime(2026, 8, 20), 320m, odometro: 100_500, litros: 50m),
+                NovoAbastecimento(c, new DateTime(2026, 8, 25), 300m, odometro: 100_000, litros: 45m));
+            await contexto.SaveChangesAsync();
+            contexto.ChangeTracker.Clear();
+
+            var repositorio = new CustoRepository(contexto);
+            var consumo = (await repositorio.SomarConsumoPorVeiculoAsync(c.EmpresaId, new FiltroCusto())).Single();
+
+            Assert.Equal(500, consumo.Km);
+            Assert.Equal(50m, consumo.Litros);
+        }
+
+        [Fact]
+        public async Task Consumo_ComUmAbastecimentoSo_NaoDeveTerIntervalo()
+        {
+            await using var contexto = fixture.CriarContexto();
+            var c = await MontarAsync(contexto);
+
+            contexto.Abastecimentos.Add(
+                NovoAbastecimento(c, new DateTime(2026, 8, 20), 320m, odometro: 100_500, litros: 50m));
+            await contexto.SaveChangesAsync();
+            contexto.ChangeTracker.Clear();
+
+            var repositorio = new CustoRepository(contexto);
+            var consumo = (await repositorio.SomarConsumoPorVeiculoAsync(c.EmpresaId, new FiltroCusto())).Single();
+
+            Assert.Equal(0, consumo.Km);
+            Assert.Equal(0m, consumo.Litros);
+        }
+
+        [Fact]
+        public async Task Abastecimento_DeveCarregarOsNomesDeCombustivelEPosto()
+        {
+            // A listagem desnormaliza os dois nomes. É exatamente a classe de bug que o
+            // `Include` descartado em silêncio já causou aqui (listagem sem placa): se
+            // ComIncludes deixar um dos catálogos de fora, o nome volta vazio.
+            await using var contexto = fixture.CriarContexto();
+            var c = await MontarAsync(contexto);
+
+            contexto.Abastecimentos.Add(NovoAbastecimento(c, new DateTime(2026, 8, 30), 320m));
+            await contexto.SaveChangesAsync();
+            contexto.ChangeTracker.Clear();
+
+            var repositorio = new AbastecimentoRepository(contexto);
+            var lido = (await repositorio.GetAllAsync(c.EmpresaId)).Single();
+
+            Assert.NotNull(lido.TipoCombustivel);
+            Assert.NotNull(lido.Posto);
+            Assert.StartsWith("Diesel S10", lido.TipoCombustivel!.Nome);
+            Assert.StartsWith("Posto Ipiranga", lido.Posto!.Nome);
         }
 
         [Fact]
@@ -514,13 +615,22 @@ namespace Frota360.IntegrationTests
             Assert.Equal(100m, Assert.Single(itens).Valor);
         }
 
-        private static Abastecimento NovoAbastecimento(Cenario c, DateTime data, decimal valor) => new()
+        private static Abastecimento NovoAbastecimento(Cenario c, DateTime data, decimal valor,
+            int odometro = 100_000, decimal litros = 50m) => new()
         {
             EmpresaId = c.EmpresaId,
             VeiculoId = c.VeiculoId,
             MotoristaId = c.MotoristaId,
             UsuarioId = c.MotoristaId,
+            TipoCombustivelId = c.TipoCombustivelId,
+            PostoId = c.PostoId,
+            // Os defaults servem aos testes de custo, que só olham o valor; os de consumo
+            // passam odômetro e litros porque é deles que a métrica sai.
+            Litros = litros,
+            ValorLitro = 6.400m,
             Valor = valor,
+            Odometro = odometro,
+            NotaFiscal = "123456",
             DataAbastecimento = data,
             DataInclusao = DateTime.Now
         };

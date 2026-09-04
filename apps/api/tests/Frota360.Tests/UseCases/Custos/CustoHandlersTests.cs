@@ -39,13 +39,14 @@ namespace Frota360.Tests.UseCases.Custos
                 valor, null);
 
         /// <summary>
-        /// O resumo consome quatro consultas; os testes que olham só uma delas ainda precisam
-        /// das outras três respondendo algo.
+        /// O resumo consome cinco consultas; os testes que olham só uma delas ainda precisam
+        /// das outras quatro respondendo algo.
         /// </summary>
         private void ConfigurarResumo(
             IEnumerable<TotalCustoPorVeiculo>? porVeiculo = null,
             IEnumerable<TotalCustoPorMes>? porMes = null,
             IEnumerable<KmPorVeiculo>? km = null,
+            IEnumerable<ConsumoPorVeiculo>? consumo = null,
             int semCusto = 0)
         {
             _repository.SomarPorVeiculoAsync(Arg.Any<int>(), Arg.Any<FiltroCusto>())
@@ -54,6 +55,8 @@ namespace Frota360.Tests.UseCases.Custos
                 .Returns(porMes ?? []);
             _repository.SomarKmPorVeiculoAsync(Arg.Any<int>(), Arg.Any<FiltroCusto>())
                 .Returns(km ?? []);
+            _repository.SomarConsumoPorVeiculoAsync(Arg.Any<int>(), Arg.Any<FiltroCusto>())
+                .Returns(consumo ?? []);
             _repository.ContarManutencoesSemCustoAsync(Arg.Any<int>(), Arg.Any<FiltroCusto>())
                 .Returns(semCusto);
         }
@@ -283,6 +286,88 @@ namespace Frota360.Tests.UseCases.Custos
             var resumo = await handler.HandleAsync(new GetResumoCustosQuery(new ResumoCustosRequest()));
 
             Assert.Equal(3, resumo.ManutencoesSemCustoInformado);
+        }
+
+        // ---------- Consumo (km/l) ----------
+
+        [Fact]
+        public async Task Resumo_ComDoisAbastecimentos_DeveCalcularOConsumoComOsLitrosDoSegundo()
+        {
+            // 500 km entre os dois abastecimentos, 50 L no segundo. Os litros do primeiro
+            // pagaram o trecho ANTERIOR ao período e já vêm descontados pelo repositório.
+            ConfigurarResumo(consumo: [new(7, "Scania R450", "ABC1D23", 50m, 500, 2)]);
+
+            var handler = CriarHandlerDeResumo();
+
+            var resumo = await handler.HandleAsync(new GetResumoCustosQuery(new ResumoCustosRequest()));
+
+            Assert.Equal(10.0m, resumo.ConsumoMedio);
+            Assert.Equal(500, resumo.KmOdometroTotal);
+            Assert.Equal(50m, resumo.LitrosTotal);
+        }
+
+        [Fact]
+        public async Task Resumo_ComUmAbastecimentoSo_DeveDevolverConsumoNulo()
+        {
+            // Sem intervalo entre dois pontos não existe consumo — e zero afirmaria que o
+            // veículo rodou sem gastar.
+            ConfigurarResumo(consumo: [new(7, "Scania R450", "ABC1D23", 0m, 0, 1)]);
+
+            var handler = CriarHandlerDeResumo();
+
+            var resumo = await handler.HandleAsync(new GetResumoCustosQuery(new ResumoCustosRequest()));
+
+            Assert.Null(resumo.ConsumoMedio);
+        }
+
+        [Fact]
+        public async Task Resumo_ComOdometroSemAvanco_DeveDevolverConsumoNulo()
+        {
+            // Dois abastecimentos no mesmo odômetro: houve litros, mas não houve distância.
+            ConfigurarResumo(consumo: [new(7, "Scania R450", "ABC1D23", 40m, 0, 2)]);
+
+            var handler = CriarHandlerDeResumo();
+
+            var resumo = await handler.HandleAsync(new GetResumoCustosQuery(new ResumoCustosRequest()));
+
+            Assert.Null(resumo.ConsumoMedio);
+        }
+
+        [Fact]
+        public async Task Resumo_DeveSomarKmELitrosDaFrotaAntesDeDividir()
+        {
+            // Média das médias daria (10 + 5) / 2 = 7,5 e faria o veículo de dois
+            // abastecimentos pesar igual ao de trinta. O certo é 900 / 110 = 8,2.
+            ConfigurarResumo(consumo:
+            [
+                new(7, "Scania R450", "ABC1D23", 50m, 500, 2),
+                new(9, "Volvo FH", "XYZ9K88", 60m, 400, 5)
+            ]);
+
+            var handler = CriarHandlerDeResumo();
+
+            var resumo = await handler.HandleAsync(new GetResumoCustosQuery(new ResumoCustosRequest()));
+
+            Assert.Equal(900, resumo.KmOdometroTotal);
+            Assert.Equal(110m, resumo.LitrosTotal);
+            Assert.Equal(8.2m, resumo.ConsumoMedio);
+        }
+
+        [Fact]
+        public async Task Resumo_DeveCasarOConsumoComOVeiculoCerto()
+        {
+            ConfigurarResumo(
+                porVeiculo: [new(7, "Scania R450", "ABC1D23", OrigemCusto.Abastecimento, 800m, 4)],
+                consumo: [new(7, "Scania R450", "ABC1D23", 50m, 500, 2)]);
+
+            var handler = CriarHandlerDeResumo();
+
+            var resumo = await handler.HandleAsync(new GetResumoCustosQuery(new ResumoCustosRequest()));
+
+            var veiculo = Assert.Single(resumo.PorVeiculo);
+            Assert.Equal(10.0m, veiculo.ConsumoMedio);
+            Assert.Equal(500, veiculo.KmOdometro);
+            Assert.Equal(50m, veiculo.Litros);
         }
     }
 }

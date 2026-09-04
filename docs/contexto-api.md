@@ -168,9 +168,22 @@ Além do odômetro, o encerramento grava `Veiculo.UltimoMotorista` e `Veiculo.Da
 
 ### 8.1 Abastecimento — o gasto com combustível
 
-**O apontamento é curto de propósito.** A primeira versão pedia litros e odômetro além de veículo, valor e data, para calcular consumo — precisão que não se paga no posto e que fazia o lançamento ser evitado. O contrato hoje é **veículo, motorista, valor, data e observação**: o dado entra sempre, e serve de base para relatório de **gasto** por veículo, por motorista, por rota e por período.
+**O apontamento virou fiscal (03/09/2026).** A versão anterior era deliberadamente curta — veículo, motorista, valor, data e observação — apostando que precisão não se paga no posto. A aposta foi revista com o stakeholder: sem litros nem odômetro, **km/l e R$/l eram impossíveis de apurar**, e é justamente o que a gestão de frota precisa medir. O contrato hoje acrescenta **combustível, posto, litros, valor do litro, odômetro e nota fiscal** (todos obrigatórios) mais **frentista** (opcional, porque autoatendimento não tem um).
 
-**O abastecimento não mexe no odômetro.** São **dois** os fluxos que o avançam — abertura/encerramento de rota e conclusão de manutenção. Sem litros nem odômetro no apontamento, consumo (km/l) e preço por litro continuam impossíveis, e a `AbastecimentoResponse` não tem campo derivado nenhum. Custo por km, esse sim, é calculável — mas fora daqui, cruzando com `Rota.KmPercorrido` (§ 8.2).
+**O valor total não entra no request — ele é derivado.** `Valor` é `Math.Round(litros × valorLitro, 2, MidpointRounding.AwayFromZero)`, calculado por `AbastecimentoMappings.CalcularValor` e **recalculado em toda escrita**. O `CreateAbastecimentoRequest` nem carrega o campo. A tela mostra o total num input `readOnly`, mas ele é só espelho: o servidor é a autoridade, e é isso que impede o resumo de custos de divergir do apontamento por payload manipulado ou bug de front.
+
+**O abastecimento passou a mexer no odômetro.** São agora **três** os fluxos que o avançam — abertura/encerramento de rota, conclusão de manutenção e lançamento/correção de abastecimento — e os três seguem a mesma política: comparam antes de gravar e **nunca retrocedem**. Um lançamento retroativo com km menor é aceito e não reescreve a ficha. Excluir o abastecimento também não devolve o odômetro: o carro rodou de verdade. O avanço entra no diff da auditoria como `Odômetro do veículo {placa}`, no mesmo formato de `ConcluirManutencaoHandler`.
+
+**Dois catálogos novos sustentam o apontamento**, ambos no desenho de `TipoDespesa` (nome único por empresa, `Ativo` em vez de exclusão, 422 pedindo para inativar quando em uso):
+
+| Catálogo | Campos | Seed |
+|---|---|---|
+| `TipoCombustivel` | `Nome` | `TiposCombustivelPadrao` — 7 itens, via `BackofficeService` (empresa nova) e `INSERT` no `Up` da migration (empresas existentes) |
+| `Posto` | `Nome`, `Cnpj?`, `Cidade?` | **nenhum** — rede credenciada não tem padrão, cada empresa cadastra a sua |
+
+⚠️ **Os dois controllers têm `[Authorize]` na classe, não `Roles.Gestao`.** É a diferença em relação a `TipoDespesaController`: o motorista lança abastecimento e precisa **ler** os dois catálogos para preencher o formulário. Como os atributos de classe e de ação se combinam por **E**, `Roles.Gestao` na classe barraria também o `GET`. A escrita fica nas ações (`Admin,Supervisor` para POST/PUT; `Admin` para DELETE).
+
+Item inativo do catálogo continua nomeando o passado mas **não recebe lançamento novo**: `Create`/`UpdateAbastecimentoHandler` resolvem combustível e posto por `GetByIdAsync(id, empresaId)` — id de outra empresa "não existe" — e recusam com 422 quando `Ativo` é falso.
 
 **Duas pessoas por lançamento, e elas podem ser diferentes:**
 
@@ -193,9 +206,11 @@ A gestão escolhe o motorista, e ele é **obrigatório**: sem ele o handler recu
 
 `RotaId` **saiu do contrato de entrada**: é sempre derivado no servidor. A FK continua `SetNull` — excluir a rota não pode levar junto o gasto, que aconteceu de verdade.
 
-Escrita é aberta a **todos os papéis** (quem abastece na estrada é o motorista, no pátio é o operador); exclusão é só Admin, como no resto. Veículo, motorista e rota não entram no `PUT` — só valor, data e observação: trocar qualquer um dos três reatribuiria o gasto. Nesse caso, exclua e lance de novo.
+Escrita é aberta a **todos os papéis** (quem abastece na estrada é o motorista, no pátio é o operador); exclusão é só Admin, como no resto. Veículo, motorista e rota não entram no `PUT` — todo o resto do apontamento entra: trocar qualquer um dos três reatribuiria o gasto. Nesse caso, exclua e lance de novo.
 
-**RN08 estendida:** veículo com abastecimento lançado não pode ser excluído (a FK é `Restrict`, então sem a guarda o usuário veria 500 em vez da explicação).
+**RN08 estendida:** veículo com abastecimento lançado não pode ser excluído (a FK é `Restrict`, então sem a guarda o usuário veria 500 em vez da explicação). A mesma guarda vale para os catálogos: `IAbastecimentoRepository.ExisteComTipoCombustivelAsync`/`ExisteComPostoAsync` sustentam o 422 dos dois `Delete*Handler`.
+
+**A migration apagou os abastecimentos existentes.** `AbastecimentoDetalhadoECatalogos` faz `DELETE FROM "Abastecimento"` antes de criar as colunas obrigatórias: elas apontam para catálogos que ainda não existiam e não havia valor plausível para retroagir num lançamento antigo. A base só tinha dados de mock, e a decisão foi tomada junto ao stakeholder na virada.
 
 ### 8.2 Custos — a visão consolidada (01/09/2026)
 
@@ -211,18 +226,64 @@ O DTO carrega um discriminador `origem` desde o primeiro dia justamente para que
 
 | Origem | Fonte | Data | Categoria |
 |---|---|---|---|
-| `Abastecimento` | `Valor` | `DataAbastecimento` | literal `"Combustível"` |
+| `Abastecimento` | `Valor` (derivado de litros × R$/l) | `DataAbastecimento` | literal `"Combustível"` — **não** o nome do `TipoCombustivel`, para não estilhaçar o agrupamento da tela em Diesel S10/S500/Etanol |
 | `Manutencao` | `Custo` — **só** com `Status == Realizada` e `Custo`/`DataRealizacao` preenchidos | `DataRealizacao` | nome do `TipoManutencao` |
 
 **Três armadilhas do domínio que a API expõe explicitamente**, porque sem elas o número mente:
 
 - **Manutenção não é atribuída a motorista.** Filtrar por `motoristaId` descarta a perna de manutenção inteira — deduzi-la pela rota do veículo seria um chute. O recorte impossível (`motoristaId` + `origem=Manutencao`) devolve lista vazia, não erro.
+- **O recorte por motorista distorce o consumo.** Filtrar por `motoristaId` deixa só os abastecimentos daquela pessoa, mas o odômetro continua saltando os dos outros — o km passa a cobrir trechos que ela não abasteceu, e o km/l sai **superestimado**. A tela avisa; o número não é corrigível sem atribuir cada trecho a um motorista, o que o modelo não faz.
 - **`Custo` é opcional ao concluir manutenção.** Concluída sem valor informado, ela fica fora de toda soma. Daí `ManutencoesSemCustoInformado` no resumo: a tela mostra a contagem para o total não mentir por omissão.
 - **Rota aberta não tem `KmPercorrido`.** O período corrente subestima o km e, portanto, **superestima** o R$/km.
 
 **Custo por km** sai de `Rota.KmPercorrido` das rotas **encerradas** no período, recortadas por `DataFim` (o momento em que a quilometragem foi apurada — mesmo critério do KPI do dashboard). É nulo quando o km é zero: sem denominador não existe métrica, e devolver zero afirmaria que a frota rodou de graça. A origem do custo é ignorada nessa soma — o km rodado é o mesmo, seja qual for o gasto dividido por ele.
 
 O resumo por veículo inclui **veículo que rodou sem custo lançado**, com total zero. É o caso que mais merece ser visto (ninguém lançou o abastecimento), e mantê-lo faz as colunas fecharem com os totais gerais.
+
+#### Consumo (km/l) — a segunda métrica derivada (03/09/2026)
+
+Com litros e odômetro no apontamento, o resumo passou a servir também o **consumo médio**, no
+método **tanque a tanque**: os litros de um abastecimento são os que repuseram o trecho
+percorrido desde o anterior.
+
+**O denominador é o odômetro do abastecimento, não `Rota.KmPercorrido`** — e é a única
+escolha correta aqui: combustível é queimado dentro e fora de rota, e usar o km das rotas
+encerradas subestimaria o consumo. A consequência é que a tela de custos mostra **dois "km"
+diferentes**, e por isso o detalhe de cada KPI diz de onde o seu vem ("em rotas encerradas"
+vs "pelo odômetro"). Não é inconsistência: são duas medidas de coisas diferentes.
+
+**Os litros do primeiro abastecimento do período são descontados.** Eles pagaram o trecho
+*anterior* a ele, e mantê-los infla o denominador — o km/l sairia sistematicamente baixo. Com
+`n` abastecimentos há `n − 1` intervalos, e é sobre eles que a conta roda. Menos de dois
+abastecimentos, ou odômetro que não avançou, devolve **nulo**: sem intervalo não existe
+consumo, e zero afirmaria que o veículo rodou sem gastar.
+
+**O total da frota soma km e litros antes de dividir**, uma vez só — média das médias faria
+um veículo com dois abastecimentos pesar igual a um com trinta.
+
+**`SomarConsumoPorVeiculoAsync` agrega em memória**, sobre uma projeção de cinco colunas. Não
+é preguiça: descontar o primeiro abastecimento é window function, exatamente o que o EF não
+traduz — a mesma lição que `TraducaoDeConsultaTests` guarda sobre a união das origens. O
+conjunto é limitado pelo período do filtro. A ordenação é **por odômetro, não por data**:
+lançamento retroativo é aceito pelo sistema, então a ordem cronológica não é a ordem da
+estrada, e ordenar por data produziria km negativo.
+
+**O filtro de `Origem` é ignorado**, como em `SomarKmPorVeiculoAsync` — o consumo do veículo é
+o mesmo, esteja a tela recortada em manutenção ou não. Por isso o pivot do handler inclui no
+resultado o veículo que tem consumo mas **nenhum custo no recorte**: sem isso a coluna de km/l
+sumiria e deixaria de fechar com o total da frota.
+
+**Três limitações conhecidas, e nenhuma delas é tratada no modelo:**
+
+- **Abastecimento parcial.** O método pressupõe tanques comparáveis. Quem põe R$ 50 em vez de
+  encher infla o km/l daquele lançamento e deflaciona o do seguinte. Não há flag de "tanque
+  cheio" — a tela chama o número de estimativa por causa disto.
+- **Não-combustível no catálogo.** ARLA 32 saiu de `TiposCombustivelPadrao` justamente por
+  isso (é reagente, não combustível: um lançamento dele parte o trecho em dois e estraga o
+  km/l do próximo), mas nada impede a empresa de cadastrar um à mão. Um booleano
+  `EntraNoConsumo` no catálogo resolveria; foi avaliado e deixado de fora por ora.
+- **Veículo flex ou a GNV.** Duas correntes de combustível no mesmo odômetro viram uma só, e
+  a média mistura as duas. Mesma natureza do caso acima.
 
 **A união é feita em memória, não com `Concat`.** A primeira implementação usava `UNION ALL`; o EF Core não traduz operação de conjunto depois de uma projeção com constantes — e a origem e a categoria são literais —, nem ordena por elas. `TraducaoDeConsultaTests` provou os dois erros contra o banco de verdade e é onde descobrir se um dia mudar. O custo disso é limitado e não é "trazer tudo": nenhuma linha além da `pagina × tamanhoPagina`-ésima de cada origem pode entrar na página pedida, então cada consulta lê no máximo isso — e o validator ainda limita a página a 100. Os agregados (`SomarPorVeiculoAsync`, `SomarPorMesAsync`) rodam **um `GroupBy` por tabela**, no banco; quem pivota as origens em colunas é o handler, onde a divisão do R$/km também mora — é lá que está o zero no denominador.
 
@@ -317,7 +378,7 @@ Nome, e-mail e papel de quem agiu ficam **desnormalizados** na linha — o log �
 1. **Auditoria não derruba negócio.** `AuditoriaService` roda depois de o repositório já ter feito `SaveChangesAsync`, portanto fora daquela transação, e engole a exceção em log de erro. Perder uma linha de trilha é ruim; devolver 500 numa edição que já foi persistida é pior.
 2. **Nada de segredo no diff.** Ele é montado à mão, campo a campo, por `AlteracoesBuilder` — chamado **antes** de a entidade ser mutada, já que os handlers a alteram in-place. Hash de senha, refresh token, token de reset e de convite nunca entram.
 
-**Os 29 pontos de registro:**
+**Os 35 pontos de registro:**
 
 | Origem | Entidade · Ação | Diff |
 |---|---|---|
@@ -328,10 +389,12 @@ Nome, e-mail e papel de quem agiu ficam **desnormalizados** na linha — o log �
 | `DeleteRotaHandler` | Rota · Excluiu | — |
 | `Create/Update/DeleteManutencaoHandler` | Manutencao · Criou/Atualizou/Excluiu | ✅ no update |
 | `ConcluirManutencaoHandler` | Manutencao · Concluiu | ✅ status, km, custo, odômetro |
-| `Create/Update/DeleteAbastecimentoHandler` | Abastecimento · Criou/Atualizou/Excluiu | ✅ no update (valor, data, observação) |
+| `Create/Update/DeleteAbastecimentoHandler` | Abastecimento · Criou/Atualizou/Excluiu | ✅ no create (avanço do odômetro) e no update (combustível, posto, litros, R$/l, valor, odômetro, NF, frentista, data, observação) |
 | `Create/Update/DeleteTipoManutencaoHandler` | TipoManutencao · Criou/Atualizou/Excluiu | ✅ no update |
 | `Create/Update/DeleteDespesaHandler` | Despesa · Criou/Atualizou/Excluiu | ✅ no update (veículo, tipo e motorista pelo nome, não pelo id) |
 | `Create/Update/DeleteTipoDespesaHandler` | TipoDespesa · Criou/Atualizou/Excluiu | ✅ no update |
+| `Create/Update/DeleteTipoCombustivelHandler` | TipoCombustivel · Criou/Atualizou/Excluiu | ✅ no update |
+| `Create/Update/DeletePostoHandler` | Posto · Criou/Atualizou/Excluiu | ✅ no update (nome, CNPJ, cidade, ativo) |
 | `UsuarioService.AtualizarPerfilAsync` | Usuario · Atualizou | ✅ nome, CPF e nascimento — o ator é também o objeto |
 | `UsuarioService.AlterarRoleAsync` | Usuario · AlterouPermissao | ✅ papel anterior → novo |
 | `UsuarioService.DefinirAtivoAsync` | Usuario · Ativou/Desativou | — |
@@ -370,12 +433,14 @@ Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou 
 | GET/PUT | `/usuario/perfil` — o próprio cadastro (nome, CPF, nascimento); alvo pelo `sub` do token | **qualquer autenticado** (inclui Motorista) |
 | GET | `/auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` — paginado; somente leitura | Admin |
 | GET | `/custo?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&origem=&de=&ate=` — paginado; read model das duas origens, sem tabela própria | Admin, Supervisor, Operador |
-| GET | `/custo/resumo?veiculoId=&motoristaId=&origem=&de=&ate=` — **a única agregação da API**: totais por origem, por veículo (com R$/km) e por mês | Admin, Supervisor, Operador |
+| GET | `/custo/resumo?veiculoId=&motoristaId=&origem=&de=&ate=` — **a única agregação da API**: totais por origem, por veículo (com R$/km **e km/l**) e por mês | Admin, Supervisor, Operador |
 | GET | `/veiculo` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**) — a resposta traz `emRota` derivado |
 | GET | `/manutencao?veiculoId=&status=&de=&ate=` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**, sem `custo`) |
-| GET/POST/PUT | `/abastecimento?veiculoId=&motoristaId=&de=&ate=` (+ `/{id}`) | qualquer autenticado — o Motorista só alcança o que é dele, e `motoristaId` é ignorado para ele |
+| GET/POST/PUT | `/abastecimento?veiculoId=&motoristaId=&de=&ate=` (+ `/{id}`) — apontamento fiscal; `valor` **não** entra no corpo, é derivado de litros × R$/l | qualquer autenticado — o Motorista só alcança o que é dele, e `motoristaId` é ignorado para ele |
 | GET/POST/PUT | `/despesa?veiculoId=&motoristaId=&tipoDespesaId=&de=&ate=` (+ `/{id}`) — custo avulso; **DELETE aqui é Admin *e* Supervisor** | Admin, Supervisor, Operador |
 | GET | `/tipodespesa?apenasAtivos=` (+ `/{id}`) — catálogo; POST/PUT Admin+Supervisor, DELETE só Admin | Admin, Supervisor, Operador |
+| GET | `/tipocombustivel?apenasAtivos=` (+ `/{id}`) — catálogo; POST/PUT Admin+Supervisor, DELETE só Admin | **qualquer autenticado** (inclui Motorista): ele precisa do catálogo para lançar |
+| GET | `/posto?apenasAtivos=` (+ `/{id}`) — rede credenciada; POST/PUT Admin+Supervisor, DELETE só Admin | **qualquer autenticado** (inclui Motorista) |
 | GET | `/motorista` (+ `/{id}`) — **somente leitura**: os usuários com a role Motorista | Admin, Supervisor, Operador |
 | GET | `/rota`, `/tipomanutencao?apenasAtivos=` (+ `/{id}`) | Admin, Supervisor, Operador |
 | GET | `/rota/minhas` | **Motorista** (rotas do próprio, pelo `sub` do token) |

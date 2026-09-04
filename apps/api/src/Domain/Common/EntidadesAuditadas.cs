@@ -13,6 +13,8 @@
         public const string TipoManutencao = "TipoManutencao";
         public const string Despesa = "Despesa";
         public const string TipoDespesa = "TipoDespesa";
+        public const string TipoCombustivel = "TipoCombustivel";
+        public const string Posto = "Posto";
         public const string Usuario = "Usuario";
         public const string Convite = "Convite";
 
@@ -20,7 +22,7 @@
         public static readonly IReadOnlyList<string> Todas =
         [
             Veiculo, Rota, Manutencao, Abastecimento, TipoManutencao,
-            Despesa, TipoDespesa, Usuario, Convite
+            Despesa, TipoDespesa, TipoCombustivel, Posto, Usuario, Convite
         ];
     }
 }

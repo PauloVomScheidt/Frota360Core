@@ -1,10 +1,10 @@
 namespace Frota360.Domain.Entities
 {
     /// <summary>
-    /// Um abastecimento de um veículo da frota. O apontamento é curto de propósito —
-    /// veículo, motorista, valor, data e observação: é o que se consegue registrar no
-    /// posto sem atrito, e é o suficiente para relatório de gasto por veículo, por
-    /// motorista, por rota e por período. A rota entra como contexto opcional, porque
+    /// Um abastecimento de um veículo da frota. É um apontamento fiscal: além de quanto
+    /// custou, registra o que foi abastecido (combustível e litros), onde (posto
+    /// credenciado), a que preço, com qual odômetro e sob qual nota — o que permite apurar
+    /// R$/litro, km/litro e gasto por posto. A rota entra como contexto opcional, porque
     /// abastecer no pátio ou fora de viagem é comum e inventar uma rota falsa para
     /// registrar isso seria pior.
     /// </summary>
@@ -34,8 +34,34 @@ namespace Frota360.Domain.Entities
         /// </summary>
         public int UsuarioId { get; set; }
 
-        /// <summary>Quanto foi pago, em reais.</summary>
+        public int TipoCombustivelId { get; set; }
+
+        /// <summary>Posto credenciado onde o abastecimento foi feito.</summary>
+        public int PostoId { get; set; }
+
+        /// <summary>Volume abastecido. Três casas porque é o que a bomba mostra.</summary>
+        public decimal Litros { get; set; }
+
+        /// <summary>Preço do litro na bomba. Três casas: R$ 6,199 é preço comum.</summary>
+        public decimal ValorLitro { get; set; }
+
+        /// <summary>
+        /// Quanto foi pago, em reais. <b>Derivado</b> de <see cref="Litros"/> ×
+        /// <see cref="ValorLitro"/> e recalculado no servidor a cada escrita — nunca vem
+        /// do cliente. É o valor que a tela de custos soma.
+        /// </summary>
         public decimal Valor { get; set; }
+
+        /// <summary>
+        /// Quilometragem do veículo no momento do abastecimento. Avança a ficha do
+        /// veículo quando é maior que a atual — nunca a retrocede.
+        /// </summary>
+        public int Odometro { get; set; }
+
+        public string NotaFiscal { get; set; } = string.Empty;
+
+        /// <summary>Opcional: em autoatendimento não há frentista.</summary>
+        public string? Frentista { get; set; }
 
         public DateTime DataAbastecimento { get; set; }
         public string? Observacao { get; set; }
@@ -46,5 +72,7 @@ namespace Frota360.Domain.Entities
         public Rota? Rota { get; set; }
         public Usuario? Motorista { get; set; }
         public Usuario? Usuario { get; set; }
+        public TipoCombustivel? TipoCombustivel { get; set; }
+        public Posto? Posto { get; set; }
     }
 }
