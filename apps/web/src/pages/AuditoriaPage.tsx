@@ -10,12 +10,11 @@ import type {
 } from '../api/types'
 import { AppLayout, PageHeader } from '../components/AppLayout'
 import { Paginacao, TableStates } from '../components/Table'
+import { usePaginacaoServidor } from '../lib/paginacao'
 import { ChevronDownIcon, ChevronRightIcon } from '../components/icons'
 import { formatDateTime } from '../lib/format'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
-
-const TAMANHO_PAGINA = 25
 
 /** Rótulos legíveis para o vocabulário fechado da API (§ Auditoria do contexto). */
 const ROTULO_ENTIDADE: Record<EntidadeAuditada, string> = {
@@ -24,6 +23,10 @@ const ROTULO_ENTIDADE: Record<EntidadeAuditada, string> = {
   Manutencao: 'Manutenção',
   Abastecimento: 'Abastecimento',
   TipoManutencao: 'Tipo de manutenção',
+  Despesa: 'Despesa',
+  TipoDespesa: 'Tipo de despesa',
+  TipoCombustivel: 'Tipo de combustível',
+  Posto: 'Posto',
   Usuario: 'Usuário',
   Convite: 'Convite',
 }
@@ -153,7 +156,7 @@ function LinhaAuditoria({
 }
 
 export function AuditoriaPage() {
-  const [pagina, setPagina] = useState(1)
+
   const [filtroEntidade, setFiltroEntidade] = useState('')
   const [filtroAcao, setFiltroAcao] = useState('')
   const [filtroUsuario, setFiltroUsuario] = useState('')
@@ -164,9 +167,13 @@ export function AuditoriaPage() {
   // e o campo-a-campo é o detalhe de quem está investigando um caso específico.
   const [expandida, setExpandida] = useState<number | null>(null)
 
+  // A paginação é do servidor: o par página/tamanho entra no filtro da consulta e o
+  // rodapé sai do `ResultadoPaginado` que a API devolveu.
+  const paginacao = usePaginacaoServidor()
+
   const filtro: AuditoriaFiltro = {
-    pagina,
-    tamanhoPagina: TAMANHO_PAGINA,
+    pagina: paginacao.pagina,
+    tamanhoPagina: paginacao.tamanhoPagina,
     entidade: filtroEntidade === '' ? undefined : (filtroEntidade as EntidadeAuditada),
     acao: filtroAcao === '' ? undefined : (filtroAcao as AcaoAuditoria),
     usuarioId: filtroUsuario === '' ? undefined : Number(filtroUsuario),
@@ -190,7 +197,7 @@ export function AuditoriaPage() {
 
   /** Qualquer mudança de filtro volta para a primeira página — senão a tela abre vazia. */
   function resetarPaginacao() {
-    setPagina(1)
+    paginacao.resetar()
     setExpandida(null)
   }
 
@@ -369,19 +376,15 @@ export function AuditoriaPage() {
         </table>
       </div>
 
-      {dados && (
-        <Paginacao
-          pagina={dados.pagina}
-          totalPaginas={dados.totalPaginas}
-          total={dados.total}
-          tamanhoPagina={dados.tamanhoPagina}
-          onMudar={(p) => {
-            setPagina(p)
-            setExpandida(null)
-          }}
-          pending={auditoriaQuery.isFetching}
-        />
-      )}
+      <Paginacao
+        {...paginacao.props(dados)}
+        // A linha expandida é de um registro que a página seguinte não tem.
+        onMudar={(p) => {
+          paginacao.props(dados).onMudar(p)
+          setExpandida(null)
+        }}
+        pending={auditoriaQuery.isFetching}
+      />
     </AppLayout>
   )
 }

@@ -30,6 +30,9 @@ namespace Frota360.Application.UseCases.Abastecimentos.Commands.DeleteAbastecime
 
                 logger.LogInformation("Abastecimento removido com sucesso. Id {Id}", command.Id);
 
+                // A quilometragem que este lançamento tenha feito o veículo avançar fica onde
+                // está: o odômetro nunca anda para trás, e o carro rodou de verdade.
+
                 // A descrição carrega os números porque o registro deixou de existir: é o
                 // único lugar onde o gasto excluído continua legível.
                 await auditoria.RegistrarAsync(EntidadesAuditadas.Abastecimento, AcoesAuditoria.Excluiu, command.Id,

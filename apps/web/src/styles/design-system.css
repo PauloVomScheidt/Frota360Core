@@ -191,10 +191,16 @@ img { display: block; max-width: 100%; }
    posicionamento centralizado e da trava de foco, aqui só o visual do próprio painel e
    do véu por trás (::backdrop, o equivalente nativo do antigo .dialog-backdrop). */
 .dialog {
-  width: min(440px, 100%); display: flex; flex-direction: column; gap: var(--space-3);
+  width: min(440px, calc(100vw - 2rem)); max-height: 85vh;
+  display: flex; flex-direction: column; gap: var(--space-3);
   padding: var(--space-6); border-radius: var(--radius-lg);
   background: var(--color-bg); border: 1px solid var(--color-divider);
   box-shadow: var(--shadow-lg);
+  /* ⚠️ O centramento do <dialog> modal é do navegador e sai de `inset: 0` + `margin: auto`
+     na folha do UA — mas o preflight do Tailwind v4 zera `margin` em `*`, `<dialog>`
+     incluído, e sem estas duas linhas o diálogo cola no canto superior esquerdo. */
+  inset: 0;
+  margin: auto;
 }
 .dialog::backdrop {
   background: color-mix(in srgb, var(--color-accent-900) 55%, transparent);
@@ -205,3 +211,25 @@ img { display: block; max-width: 100%; }
 }
 .dialog-body { margin: 0; font-size: 14px; color: color-mix(in srgb, var(--color-text) 75%, transparent); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
+
+/* O unico trecho rolavel do dialogo: titulo e acoes ficam fixos quando o formulario
+   passa dos 85vh. `min-height: 0` e o que permite o filho de um flex encolher abaixo
+   do proprio conteudo — sem ele o overflow nunca chega a acontecer. */
+.dialog-corpo {
+  display: flex; flex-direction: column; gap: var(--space-6);
+  overflow-y: auto; min-height: 0;
+}
+.dialog-secao-titulo {
+  font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+  margin: 0 0 var(--space-3); padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-divider);
+}
+/* auto-fit + minmax da 3 colunas no dialogo de cadastro (760px) e colapsa sozinho
+   para 1 no celular — sem media query e sem largura fixa por campo. */
+.dialog-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--space-4); align-items: end;
+}
+/* Observacao, avisos e notas explicativas ocupam a linha inteira. */
+.campo-largo { grid-column: 1 / -1; }

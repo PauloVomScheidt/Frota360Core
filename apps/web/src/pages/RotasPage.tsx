@@ -13,8 +13,16 @@ import type {
 } from '../api/types'
 import { pode } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
-import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { ConfirmDialog, FormDialog, InlineForm, RowActions, TableStates } from '../components/Table'
+import { AppLayout, PageHeader } from '../components/AppLayout'
+import {
+  ConfirmDialog,
+  FormDialog,
+  Paginacao,
+  RowActions,
+  SecaoCampos,
+  TableStates,
+} from '../components/Table'
+import { usePaginacaoServidor } from '../lib/paginacao'
 import { CheckIcon } from '../components/icons'
 import { formatDate, formatKm, hojeInputDate, paraInputDate } from '../lib/format'
 import { statusDaRota } from '../lib/rota'
@@ -38,13 +46,14 @@ const ENCERRAMENTO_VAZIO = {
 type FormularioRota = typeof FORM_VAZIO
 type FormularioEncerramento = typeof ENCERRAMENTO_VAZIO
 
-/** Painel de cadastro/edição — o mesmo formulário para as duas ações, o id decide o verbo. */
+/** Modal de cadastro/edição — o mesmo formulário para as duas ações, o id decide o verbo. */
 function RotaFormulario({
   editando,
   form,
   onFormChange,
   onAplicarVeiculo,
   onSubmit,
+  onCancelar,
   pending,
   erros,
   motoristas,
@@ -55,140 +64,131 @@ function RotaFormulario({
   onFormChange: (form: FormularioRota) => void
   onAplicarVeiculo: (codigoVeiculo: string) => void
   onSubmit: (e: FormEvent) => void
+  onCancelar: () => void
   pending: boolean
   erros: string[]
   motoristas: MotoristaResponse[]
   veiculos: VeiculoResponse[]
 }) {
   return (
-    <InlineForm onSubmit={onSubmit}>
-      {editando && (
-        <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-          Editando a rota{' '}
-          <strong style={{ color: 'var(--color-text)' }}>
-            {editando.origem} → {editando.destino}
-          </strong>
-          .
-        </p>
-      )}
-      <div className="field min-w-[160px] flex-1">
-        <label htmlFor="origem">Origem</label>
-        <input
-          id="origem"
-          className="input"
-          type="text"
-          placeholder="Cidade de origem"
-          required
-          style={{ borderRadius: 0 }}
-          value={form.origem}
-          onChange={(e) => onFormChange({ ...form, origem: e.target.value })}
-        />
-      </div>
-      <div className="field min-w-[160px] flex-1">
-        <label htmlFor="destino">Destino</label>
-        <input
-          id="destino"
-          className="input"
-          type="text"
-          placeholder="Cidade de destino"
-          required
-          style={{ borderRadius: 0 }}
-          value={form.destino}
-          onChange={(e) => onFormChange({ ...form, destino: e.target.value })}
-        />
-      </div>
-      <div className="field w-[200px]">
-        <label htmlFor="codigoMotorista">Motorista</label>
-        <select
-          id="codigoMotorista"
-          className="input"
-          required
-          style={{ borderRadius: 0 }}
-          value={form.codigoMotorista}
-          onChange={(e) => onFormChange({ ...form, codigoMotorista: e.target.value })}
-        >
-          <option value="">Selecione…</option>
-          {motoristas.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.nome}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="field w-[230px]">
-        <label htmlFor="codigoVeiculo">Veículo</label>
-        <select
-          id="codigoVeiculo"
-          className="input"
-          required
-          style={{ borderRadius: 0 }}
-          value={form.codigoVeiculo}
-          onChange={(e) => onAplicarVeiculo(e.target.value)}
-        >
-          <option value="">Selecione…</option>
-          {veiculos.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.placa} — {v.nomeVeiculo} ({formatKm(v.quilometragem)})
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="field w-[150px]">
-        <label htmlFor="dataInicio">Início</label>
-        <input
-          id="dataInicio"
-          className="input"
-          type="date"
-          required
-          style={{ borderRadius: 0 }}
-          value={form.dataInicio}
-          onChange={(e) => onFormChange({ ...form, dataInicio: e.target.value })}
-        />
-      </div>
-      {/* Hodômetro de abertura: só na criação — o PUT não altera esse número. */}
-      {!editando && (
-        <div className="field w-[190px]">
-          <label htmlFor="kmInicial">Quilometragem inicial</label>
+    <FormDialog
+      titulo={editando ? 'Editar rota' : 'Nova rota'}
+      descricao={
+        editando ? `Editando a rota ${editando.origem} → ${editando.destino}.` : undefined
+      }
+      textoConfirmar={editando ? 'Salvar alterações' : 'Cadastrar'}
+      textoPendente="Salvando…"
+      largura={760}
+      pending={pending}
+      erros={erros}
+      onSubmit={onSubmit}
+      onCancelar={onCancelar}
+    >
+      <SecaoCampos titulo="Trajeto">
+        <div className="field">
+          <label htmlFor="origem">Origem</label>
           <input
-            id="kmInicial"
+            id="origem"
             className="input"
-            type="number"
-            min={0}
-            max={2000000}
+            type="text"
+            placeholder="Cidade de origem"
             required
-            placeholder="0"
-            style={{ borderRadius: 0 }}
-            value={form.kmInicial}
-            onChange={(e) => onFormChange({ ...form, kmInicial: e.target.value })}
+            value={form.origem}
+            onChange={(e) => onFormChange({ ...form, origem: e.target.value })}
           />
         </div>
-      )}
-      <button
-        type="submit"
-        className="btn btn-primary"
-        style={{ borderRadius: 0, padding: '10px 20px' }}
-        disabled={pending}
-      >
-        {pending ? 'Salvando…' : editando ? 'Salvar alterações' : 'Cadastrar'}
-      </button>
-      {!editando && (
-        <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-          A quilometragem inicial já vem sugerida com o odômetro atual do veículo. Ela não pode ser
-          menor que esse número — e, se for maior, o odômetro do veículo é atualizado já na abertura
-          da rota. O encerramento é feito depois, pela ação "Encerrar" na linha da rota.
-        </p>
-      )}
-      <div className="w-full">
-        <ErrorList mensagens={erros} />
-      </div>
-    </InlineForm>
+        <div className="field">
+          <label htmlFor="destino">Destino</label>
+          <input
+            id="destino"
+            className="input"
+            type="text"
+            placeholder="Cidade de destino"
+            required
+            value={form.destino}
+            onChange={(e) => onFormChange({ ...form, destino: e.target.value })}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="dataInicio">Início</label>
+          <input
+            id="dataInicio"
+            className="input"
+            type="date"
+            required
+            value={form.dataInicio}
+            onChange={(e) => onFormChange({ ...form, dataInicio: e.target.value })}
+          />
+        </div>
+      </SecaoCampos>
+
+      <SecaoCampos titulo="Motorista e veículo">
+        <div className="field">
+          <label htmlFor="codigoMotorista">Motorista</label>
+          <select
+            id="codigoMotorista"
+            className="input"
+            required
+            value={form.codigoMotorista}
+            onChange={(e) => onFormChange({ ...form, codigoMotorista: e.target.value })}
+          >
+            <option value="">Selecione…</option>
+            {motoristas.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.nome}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="codigoVeiculo">Veículo</label>
+          <select
+            id="codigoVeiculo"
+            className="input"
+            required
+            value={form.codigoVeiculo}
+            onChange={(e) => onAplicarVeiculo(e.target.value)}
+          >
+            <option value="">Selecione…</option>
+            {veiculos.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.placa} — {v.nomeVeiculo} ({formatKm(v.quilometragem)})
+              </option>
+            ))}
+          </select>
+        </div>
+        {/* Hodômetro de abertura: só na criação — o PUT não altera esse número. */}
+        {!editando && (
+          <div className="field">
+            <label htmlFor="kmInicial">Quilometragem inicial</label>
+            <input
+              id="kmInicial"
+              className="input"
+              type="number"
+              min={0}
+              max={2000000}
+              required
+              placeholder="0"
+              value={form.kmInicial}
+              onChange={(e) => onFormChange({ ...form, kmInicial: e.target.value })}
+            />
+          </div>
+        )}
+        {!editando && (
+          <p className="campo-largo m-0 text-[13px]" style={{ color: mutedText }}>
+            A quilometragem inicial já vem sugerida com o odômetro atual do veículo. Ela não pode
+            ser menor que esse número — e, se for maior, o odômetro do veículo é atualizado já na
+            abertura da rota. O encerramento é feito depois, pela ação "Encerrar" na linha da rota.
+          </p>
+        )}
+      </SecaoCampos>
+    </FormDialog>
   )
 }
 
 /** A tabela — situação de cada rota e as ações por linha (encerrar/editar/excluir). */
 function TabelaRotas({
   rotas,
-  veiculoPorId,
   colunas,
   mostrarAcoes,
   podeCadastrar,
@@ -201,7 +201,6 @@ function TabelaRotas({
   onExcluir,
 }: {
   rotas: RotaResponse[]
-  veiculoPorId: Map<number, VeiculoResponse>
   colunas: number
   mostrarAcoes: boolean
   podeCadastrar: boolean
@@ -248,7 +247,7 @@ function TabelaRotas({
                 {/* Desnormalizado: um motorista rebaixado sai da lista, mas a rota
                     dele continua identificada. */}
                 <td>{rota.nomeMotorista ?? `#${rota.codigoMotorista}`}</td>
-                <td>{veiculoPorId.get(rota.codigoVeiculo)?.placa ?? `#${rota.codigoVeiculo}`}</td>
+                <td>{rota.veiculoPlaca ?? `#${rota.codigoVeiculo}`}</td>
                 <td>{formatDate(rota.dataInicio)}</td>
                 <td>{formatDate(rota.dataFim)}</td>
                 <td>
@@ -326,37 +325,37 @@ function EncerramentoRotaFormulario({
       onSubmit={onSubmit}
       onCancelar={onCancelar}
     >
-      <div className="field w-[190px]">
-        <label htmlFor="kmFinal">Quilometragem final</label>
-        <input
-          id="kmFinal"
-          className="input"
-          type="number"
-          // Não pode ser menor que a abertura — a API recusa com 422.
-          min={paraEncerrar.kmInicial}
-          max={2000000}
-          required
-          autoFocus
-          style={{ borderRadius: 0 }}
-          value={form.kmFinal}
-          onChange={(e) => onFormChange({ ...form, kmFinal: e.target.value })}
-        />
-      </div>
-      <div className="field w-[190px]">
-        <label htmlFor="dataFim">Data de fim (opcional)</label>
-        <input
-          id="dataFim"
-          className="input"
-          type="date"
-          // Não pode ser anterior ao início (RN06) nem futura (a API dá margem de
-          // 1 dia por causa do fuso). Em branco, a API assume "agora".
-          min={paraInputDate(paraEncerrar.dataInicio)}
-          max={hojeInputDate()}
-          style={{ borderRadius: 0 }}
-          value={form.dataFim}
-          onChange={(e) => onFormChange({ ...form, dataFim: e.target.value })}
-        />
-      </div>
+      <SecaoCampos>
+        <div className="field">
+          <label htmlFor="kmFinal">Quilometragem final</label>
+          <input
+            id="kmFinal"
+            className="input"
+            type="number"
+            // Não pode ser menor que a abertura — a API recusa com 422.
+            min={paraEncerrar.kmInicial}
+            max={2000000}
+            required
+            autoFocus
+            value={form.kmFinal}
+            onChange={(e) => onFormChange({ ...form, kmFinal: e.target.value })}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="dataFim">Data de fim (opcional)</label>
+          <input
+            id="dataFim"
+            className="input"
+            type="date"
+            // Não pode ser anterior ao início (RN06) nem futura (a API dá margem de
+            // 1 dia por causa do fuso). Em branco, a API assume "agora".
+            min={paraInputDate(paraEncerrar.dataInicio)}
+            max={hojeInputDate()}
+            value={form.dataFim}
+            onChange={(e) => onFormChange({ ...form, dataFim: e.target.value })}
+          />
+        </div>
+      </SecaoCampos>
     </FormDialog>
   )
 }
@@ -383,17 +382,24 @@ export function RotasPage() {
   const [paraExcluir, setParaExcluir] = useState<RotaResponse | null>(null)
   const [errosExclusao, setErrosExclusao] = useState<string[]>([])
 
-  const rotasQuery = useQuery({ queryKey: ['rotas'], queryFn: rotasApi.getAll })
+  const paginacao = usePaginacaoServidor()
+
+  const rotasQuery = useQuery({
+    queryKey: ['rotas', paginacao.pagina, paginacao.tamanhoPagina],
+    queryFn: () => rotasApi.getAll({ pagina: paginacao.pagina, tamanhoPagina: paginacao.tamanhoPagina }),
+  })
   const motoristasQuery = useQuery({ queryKey: ['motoristas'], queryFn: motoristasApi.getAll })
   const veiculosQuery = useQuery({ queryKey: ['veiculos'], queryFn: veiculosApi.getAll })
 
   const motoristas = motoristasQuery.data ?? []
   const veiculos = veiculosQuery.data ?? []
-  const rotas = rotasQuery.data ?? []
+  const dados = rotasQuery.data
+  const rotas = dados?.itens ?? []
 
-  // O nome do motorista vem desnormalizado na resposta; só a placa precisa de
-  // cruzamento. Memoizado sobre `*.data` (e não sobre o array com fallback `?? []`,
-  // que muda de identidade a cada render); o mapa também alimenta a sugestão de km.
+  // Nome do motorista **e placa do veículo** agora vêm desnormalizados na resposta — a
+  // tabela não cruza mais nada. O mapa sobreviveu só para as sugestões de quilometragem
+  // (abertura e encerramento), que precisam do odômetro atual do veículo, e para isso a
+  // tela já carrega a lista de veículos por causa do select do formulário.
   const veiculoPorId = useMemo(
     () => new Map((veiculosQuery.data ?? []).map((v) => [v.id, v])),
     [veiculosQuery.data],
@@ -532,8 +538,6 @@ export function RotasPage() {
     kmSugeridoRef.current = ''
     setErros([])
     setAberto(true)
-    // O formulário abre acima da tabela — a linha editada pode estar fora da tela.
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function fecharForm() {
@@ -578,12 +582,11 @@ export function RotasPage() {
             <button
               type="button"
               className="btn btn-primary"
-              style={{ borderRadius: 0 }}
-              onClick={aberto ? fecharForm : abrirCadastro}
-              disabled={semCadastrosBase && !aberto}
+              onClick={abrirCadastro}
+              disabled={semCadastrosBase}
               title={semCadastrosBase ? 'Cadastre ao menos um motorista e um veículo antes.' : undefined}
             >
-              {aberto ? 'Cancelar' : 'Nova rota'}
+              Nova rota
             </button>
           )
         }
@@ -596,6 +599,7 @@ export function RotasPage() {
           onFormChange={setForm}
           onAplicarVeiculo={aplicarVeiculo}
           onSubmit={handleSubmit}
+          onCancelar={fecharForm}
           pending={salvarMutation.isPending}
           erros={erros}
           motoristas={motoristas}
@@ -605,7 +609,6 @@ export function RotasPage() {
 
       <TabelaRotas
         rotas={rotas}
-        veiculoPorId={veiculoPorId}
         colunas={colunas}
         mostrarAcoes={mostrarAcoes}
         podeCadastrar={podeCadastrar}
@@ -621,10 +624,12 @@ export function RotasPage() {
         }}
       />
 
+      <Paginacao {...paginacao.props(dados)} pending={rotasQuery.isFetching} />
+
       {paraEncerrar && (
         <EncerramentoRotaFormulario
           paraEncerrar={paraEncerrar}
-          placa={veiculoPorId.get(paraEncerrar.codigoVeiculo)?.placa ?? `#${paraEncerrar.codigoVeiculo}`}
+          placa={paraEncerrar.veiculoPlaca ?? `#${paraEncerrar.codigoVeiculo}`}
           form={formEncerramento}
           onFormChange={setFormEncerramento}
           onSubmit={handleEncerrar}

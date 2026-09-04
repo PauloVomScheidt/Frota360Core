@@ -9,6 +9,7 @@ using Frota360.Application.UseCases.Rotas.Commands.EncerrarRota;
 using Frota360.Application.UseCases.Rotas.Commands.UpdateRota;
 using Frota360.Application.UseCases.Rotas.Queries.GetAllRotas;
 using Frota360.Application.UseCases.Rotas.Queries.GetMinhasRotas;
+using Frota360.Application.UseCases.Rotas.Queries.GetResumoRotas;
 using Frota360.Application.UseCases.Rotas.Queries.GetRotaById;
 using Frota360.Domain.Common;
 using Microsoft.AspNetCore.Authorization;
@@ -23,19 +24,44 @@ namespace Frota360.Api.Controllers
     public class RotaController(IDispatcher dispatcher,
                                 IValidator<CreateRotaRequest> createValidator,
                                 IValidator<UpdateRotaRequest> updateValidator,
-                                IValidator<EncerrarRotaRequest> encerrarValidator) : ControllerBase
+                                IValidator<EncerrarRotaRequest> encerrarValidator,
+                                IValidator<ConsultarRotasRequest> consultarValidator) : ControllerBase
     {
         /// <summary>Retorna todas as rotas da empresa. (Admin, Supervisor, Operador)</summary>
         /// <response code="200">Lista retornada com sucesso</response>
         /// <response code="403">Sem permissão — o motorista usa GET /rota/minhas</response>
         [HttpGet]
         [Authorize(Roles = Roles.Gestao)]
-        [ProducesResponseType<ApiResponse<IEnumerable<RotaResponse>>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<ResultadoPaginado<RotaResponse>>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetAll([FromQuery] ConsultarRotasRequest request)
         {
-            var rotas = await dispatcher.SendAsync(new GetAllRotasQuery());
-            return Ok(ApiResponse<IEnumerable<RotaResponse>>.Ok(rotas));
+            var validation = await consultarValidator.ValidateAsync(request);
+            if (!validation.IsValid)
+                return BadRequest(ApiResponse<object>.Fail("Dados inválidos.",
+                    validation.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}")));
+
+            var pagina = await dispatcher.SendAsync(new GetAllRotasQuery(request));
+            return Ok(ApiResponse<ResultadoPaginado<RotaResponse>>.Ok(pagina));
+        }
+
+        /// <summary>
+        /// Quantidade e km somado das rotas <b>encerradas</b> no período (recorte por data de
+        /// fim). Alimenta o KPI "Km da frota" do dashboard — com a listagem paginada, somar
+        /// `kmPercorrido` no cliente deixou de ser possível. (Admin, Supervisor, Operador)
+        /// </summary>
+        /// <response code="200">Resumo retornado com sucesso</response>
+        /// <response code="403">Sem permissão</response>
+        /// <response code="422">Data final anterior à inicial</response>
+        [HttpGet("resumo")]
+        [Authorize(Roles = Roles.Gestao)]
+        [ProducesResponseType<ApiResponse<ResumoRotasResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status422UnprocessableEntity)]
+        public async Task<IActionResult> GetResumo([FromQuery] DateTime de, [FromQuery] DateTime ate)
+        {
+            var resumo = await dispatcher.SendAsync(new GetResumoRotasQuery(de, ate));
+            return Ok(ApiResponse<ResumoRotasResponse>.Ok(resumo));
         }
 
         /// <summary>
@@ -48,13 +74,18 @@ namespace Frota360.Api.Controllers
         /// <response code="422">Usuário sem vínculo com um cadastro de motorista</response>
         [HttpGet("minhas")]
         [Authorize(Roles = Roles.Motorista)]
-        [ProducesResponseType<ApiResponse<IEnumerable<RotaResponse>>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<ResultadoPaginado<RotaResponse>>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status422UnprocessableEntity)]
-        public async Task<IActionResult> GetMinhas()
+        public async Task<IActionResult> GetMinhas([FromQuery] ConsultarRotasRequest request)
         {
-            var rotas = await dispatcher.SendAsync(new GetMinhasRotasQuery());
-            return Ok(ApiResponse<IEnumerable<RotaResponse>>.Ok(rotas));
+            var validation = await consultarValidator.ValidateAsync(request);
+            if (!validation.IsValid)
+                return BadRequest(ApiResponse<object>.Fail("Dados inválidos.",
+                    validation.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}")));
+
+            var pagina = await dispatcher.SendAsync(new GetMinhasRotasQuery(request));
+            return Ok(ApiResponse<ResultadoPaginado<RotaResponse>>.Ok(pagina));
         }
 
         /// <summary>Retorna uma rota pelo id. (Admin, Supervisor, Operador)</summary>

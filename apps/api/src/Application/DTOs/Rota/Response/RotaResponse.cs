@@ -14,6 +14,18 @@
         /// </summary>
         public string? NomeMotorista { get; set; }
         public int CodigoVeiculo { get; set; }
+
+        /// <summary>
+        /// Placa e nome do veículo no momento da leitura, desnormalizados como em
+        /// <c>ManutencaoResponse</c> e <c>AbastecimentoResponse</c>.
+        ///
+        /// Nasceram com a paginação: antes as telas de rota montavam um mapa a partir da lista
+        /// inteira de veículos para achar a placa — dependência que deixa de funcionar quando só
+        /// uma página volta. Alinhar a rota com as outras duas listagens era, de qualquer forma,
+        /// a coisa certa.
+        /// </summary>
+        public string? VeiculoPlaca { get; set; }
+        public string? VeiculoNome { get; set; }
         public bool Ativo { get; set; }
         public DateTime DataInicio { get; set; }
         public DateTime? DataFim { get; set; }

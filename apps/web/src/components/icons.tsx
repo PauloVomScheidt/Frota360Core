@@ -185,6 +185,16 @@ export const FuelIcon = (p: IconProps) => (
   </Icon>
 )
 
+/** Recibo com linhas — despesas avulsas. */
+export const ReciboIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 3v18l2.5-1.5L10 21l2-1.5L14 21l2.5-1.5L19 21V3z" />
+    <path d="M8.5 8h7" />
+    <path d="M8.5 12h7" />
+    <path d="M8.5 16h4" />
+  </Icon>
+)
+
 /** Cifrão em círculo — custos. */
 export const DinheiroIcon = (p: IconProps) => (
   <Icon {...p}>

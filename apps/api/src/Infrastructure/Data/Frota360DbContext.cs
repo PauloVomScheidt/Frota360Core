@@ -13,6 +13,10 @@ namespace Frota360.Infrastructure.Data
         public DbSet<TipoManutencao> TiposManutencao { get; set; }
         public DbSet<Manutencao> Manutencoes { get; set; }
         public DbSet<Abastecimento> Abastecimentos { get; set; }
+        public DbSet<TipoDespesa> TiposDespesa { get; set; }
+        public DbSet<Despesa> Despesas { get; set; }
+        public DbSet<TipoCombustivel> TiposCombustivel { get; set; }
+        public DbSet<Posto> Postos { get; set; }
         public DbSet<LogAuditoria> LogsAuditoria { get; set; }
 
         /// <summary>
@@ -202,6 +206,11 @@ namespace Frota360.Infrastructure.Data
                 entity.HasKey(a => a.Id);
 
                 entity.Property(a => a.Valor).HasPrecision(10, 2);
+                // Tres casas nos dois: e o que a bomba mostra e como o posto precifica.
+                entity.Property(a => a.Litros).HasPrecision(9, 3);
+                entity.Property(a => a.ValorLitro).HasPrecision(8, 3);
+                entity.Property(a => a.NotaFiscal).HasMaxLength(30).IsRequired();
+                entity.Property(a => a.Frentista).HasMaxLength(100);
                 entity.Property(a => a.Observacao).HasMaxLength(500);
                 entity.Property(a => a.DataInclusao).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
 
@@ -235,9 +244,110 @@ namespace Frota360.Infrastructure.Data
                       .HasForeignKey(a => a.UsuarioId)
                       .OnDelete(DeleteBehavior.Restrict);
 
+                // Restrict nos dois: item de catalogo em uso nao e excluido, e inativado.
+                entity.HasOne(a => a.TipoCombustivel)
+                      .WithMany()
+                      .HasForeignKey(a => a.TipoCombustivelId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(a => a.Posto)
+                      .WithMany()
+                      .HasForeignKey(a => a.PostoId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
                 entity.HasOne<Empresa>()
                       .WithMany()
                       .HasForeignKey(a => a.EmpresaId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<TipoCombustivel>(entity =>
+            {
+                entity.ToTable("TipoCombustivel");
+                entity.HasKey(t => t.Id);
+                entity.Property(t => t.Nome).HasMaxLength(100).IsRequired();
+                entity.Property(t => t.Ativo).HasDefaultValue(true);
+                entity.Property(t => t.DataInclusao).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
+
+                // Nome unico por empresa, como nos demais catalogos.
+                entity.HasIndex(t => new { t.EmpresaId, t.Nome }).IsUnique();
+
+                entity.HasOne<Empresa>()
+                      .WithMany()
+                      .HasForeignKey(t => t.EmpresaId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<Posto>(entity =>
+            {
+                entity.ToTable("Posto");
+                entity.HasKey(p => p.Id);
+                entity.Property(p => p.Nome).HasMaxLength(100).IsRequired();
+                entity.Property(p => p.Cnpj).HasMaxLength(18);
+                entity.Property(p => p.Cidade).HasMaxLength(100);
+                entity.Property(p => p.Ativo).HasDefaultValue(true);
+                entity.Property(p => p.DataInclusao).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
+
+                entity.HasIndex(p => new { p.EmpresaId, p.Nome }).IsUnique();
+
+                entity.HasOne<Empresa>()
+                      .WithMany()
+                      .HasForeignKey(p => p.EmpresaId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<TipoDespesa>(entity =>
+            {
+                entity.ToTable("TipoDespesa");
+                entity.HasKey(t => t.Id);
+                entity.Property(t => t.Nome).HasMaxLength(100).IsRequired();
+                entity.Property(t => t.Ativo).HasDefaultValue(true);
+                entity.Property(t => t.DataInclusao).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
+
+                // Nome unico por empresa, como no catalogo de manutencao
+                entity.HasIndex(t => new { t.EmpresaId, t.Nome }).IsUnique();
+
+                entity.HasOne<Empresa>()
+                      .WithMany()
+                      .HasForeignKey(t => t.EmpresaId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<Despesa>(entity =>
+            {
+                entity.ToTable("Despesa");
+                entity.HasKey(d => d.Id);
+
+                entity.Property(d => d.Valor).HasPrecision(10, 2);
+                entity.Property(d => d.Observacao).HasMaxLength(500);
+                entity.Property(d => d.DataInclusao).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
+
+                // Consulta dominante da tela e a perna de despesa do read model de custos.
+                entity.HasIndex(d => new { d.EmpresaId, d.VeiculoId, d.DataDespesa });
+
+                // Filtro por motorista na tela de custos: diferente da manutencao, a despesa
+                // tem dono quando e uma multa.
+                entity.HasIndex(d => new { d.EmpresaId, d.MotoristaId, d.DataDespesa });
+
+                // Todas Restrict: despesa e historico financeiro e nao pode sumir em cascata.
+                entity.HasOne(d => d.Veiculo)
+                      .WithMany()
+                      .HasForeignKey(d => d.VeiculoId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(d => d.Tipo)
+                      .WithMany()
+                      .HasForeignKey(d => d.TipoDespesaId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(d => d.Motorista)
+                      .WithMany()
+                      .HasForeignKey(d => d.MotoristaId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne<Empresa>()
+                      .WithMany()
+                      .HasForeignKey(d => d.EmpresaId)
                       .OnDelete(DeleteBehavior.Restrict);
             });
 

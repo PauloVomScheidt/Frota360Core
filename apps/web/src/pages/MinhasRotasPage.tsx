@@ -12,7 +12,8 @@ import type {
   VeiculoResponse,
 } from '../api/types'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { FormDialog, InlineForm, TableStates } from '../components/Table'
+import { FormDialog, Paginacao, SecaoCampos, TableStates } from '../components/Table'
+import { usePaginacaoServidor } from '../lib/paginacao'
 import { CheckIcon } from '../components/icons'
 import { formatDate, formatKm, hojeInputDate, paraInputDate } from '../lib/format'
 import { estaVencendo } from '../lib/manutencao'
@@ -34,19 +35,20 @@ const ENCERRAMENTO_VAZIO = {
   dataFim: '',
 }
 
-// Pendências da frota inteira numa consulta só, em vez de uma por veículo escolhido:
-// a lista é curta e o cruzamento é local. Mesma chave da tela de manutenções.
+// Consultado por veículo escolhido — o escopo de um caminhão é curto, e a paginação de
+// `/manutencao` tirou a opção de baixar a frota inteira e agrupar aqui.
 const FILTRO_PENDENTES = { status: 'Pendente' as const }
 
 type FormularioMinhaRota = typeof FORM_VAZIO
 type FormularioEncerramento = typeof ENCERRAMENTO_VAZIO
 
-/** Painel de abertura — veículo, data e a pendência de manutenção do veículo escolhido. */
+/** Modal de abertura — veículo, data e a pendência de manutenção do veículo escolhido. */
 function MinhaRotaFormulario({
   form,
   onFormChange,
   onAplicarVeiculo,
   onSubmit,
+  onCancelar,
   pending,
   erros,
   veiculos,
@@ -59,6 +61,7 @@ function MinhaRotaFormulario({
   onFormChange: (form: FormularioMinhaRota) => void
   onAplicarVeiculo: (codigoVeiculo: string) => void
   onSubmit: (e: FormEvent) => void
+  onCancelar: () => void
   pending: boolean
   erros: string[]
   veiculos: VeiculoResponse[]
@@ -68,127 +71,125 @@ function MinhaRotaFormulario({
   corDoAlerta: string
 }) {
   return (
-    <InlineForm onSubmit={onSubmit}>
-      <div className="field min-w-[160px] flex-1">
-        <label htmlFor="origem">Origem</label>
-        <input
-          id="origem"
-          className="input"
-          type="text"
-          placeholder="Cidade de origem"
-          required
-          autoFocus
-          style={{ borderRadius: 0 }}
-          value={form.origem}
-          onChange={(e) => onFormChange({ ...form, origem: e.target.value })}
-        />
-      </div>
-      <div className="field min-w-[160px] flex-1">
-        <label htmlFor="destino">Destino</label>
-        <input
-          id="destino"
-          className="input"
-          type="text"
-          placeholder="Cidade de destino"
-          required
-          style={{ borderRadius: 0 }}
-          value={form.destino}
-          onChange={(e) => onFormChange({ ...form, destino: e.target.value })}
-        />
-      </div>
-      <div className="field w-[230px]">
-        <label htmlFor="codigoVeiculo">Veículo</label>
-        <select
-          id="codigoVeiculo"
-          className="input"
-          required
-          style={{ borderRadius: 0 }}
-          value={form.codigoVeiculo}
-          onChange={(e) => onAplicarVeiculo(e.target.value)}
-        >
-          <option value="">Selecione…</option>
-          {veiculos.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.placa} — {v.nomeVeiculo} ({formatKm(v.quilometragem)})
-            </option>
-          ))}
-        </select>
-      </div>
-      {/* A pendência do veículo escolhido, no momento em que ela decide algo:
-          antes de sair. Não bloqueia — quem decide é o motorista. */}
-      {pendenciasDoVeiculoEscolhido.length > 0 && (
-        <div
-          className="w-full p-3 text-[13px]"
-          style={{
-            border: `1px solid ${corDoAlerta}`,
-            background: 'var(--color-surface)',
-          }}
-        >
-          <strong>
-            {atrasadasDoVeiculoEscolhido.length > 0
-              ? 'Este veículo tem manutenção atrasada.'
-              : vencendoDoVeiculoEscolhido.length > 0
-                ? 'Este veículo tem manutenção vencendo.'
-                : 'Este veículo tem manutenção prevista.'}
-          </strong>
-          <ul className="mt-1 mb-0 list-none p-0">
-            {pendenciasDoVeiculoEscolhido.map((m) => (
-              <li key={m.id} style={{ color: mutedText }}>
-                {m.tipoManutencaoNome} · prevista em {formatKm(m.quilometragemPrevista)}
-                {m.atrasada
-                  ? ' · atrasada'
-                  : m.kmRestantes != null
-                    ? ` · faltam ${formatKm(m.kmRestantes)}`
-                    : ''}
-              </li>
-            ))}
-          </ul>
+    <FormDialog
+      titulo="Abrir rota"
+      textoConfirmar="Abrir rota"
+      textoPendente="Abrindo…"
+      largura={760}
+      pending={pending}
+      erros={erros}
+      onSubmit={onSubmit}
+      onCancelar={onCancelar}
+    >
+      <SecaoCampos titulo="Trajeto">
+        <div className="field">
+          <label htmlFor="origem">Origem</label>
+          <input
+            id="origem"
+            className="input"
+            type="text"
+            placeholder="Cidade de origem"
+            required
+            autoFocus
+            value={form.origem}
+            onChange={(e) => onFormChange({ ...form, origem: e.target.value })}
+          />
         </div>
-      )}
-      <div className="field w-[150px]">
-        <label htmlFor="dataInicio">Início</label>
-        <input
-          id="dataInicio"
-          className="input"
-          type="date"
-          required
-          style={{ borderRadius: 0 }}
-          value={form.dataInicio}
-          onChange={(e) => onFormChange({ ...form, dataInicio: e.target.value })}
-        />
-      </div>
-      <div className="field w-[190px]">
-        <label htmlFor="kmInicial">Quilometragem inicial</label>
-        <input
-          id="kmInicial"
-          className="input"
-          type="number"
-          min={0}
-          max={2000000}
-          required
-          placeholder="0"
-          style={{ borderRadius: 0 }}
-          value={form.kmInicial}
-          onChange={(e) => onFormChange({ ...form, kmInicial: e.target.value })}
-        />
-      </div>
-      <button
-        type="submit"
-        className="btn btn-primary"
-        style={{ borderRadius: 0, padding: '10px 20px' }}
-        disabled={pending}
-      >
-        {pending ? 'Abrindo…' : 'Abrir rota'}
-      </button>
-      <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-        A quilometragem inicial já vem sugerida com o odômetro do veículo. Confira no painel antes
-        de sair: ela não pode ser menor que esse número e, se for maior, o odômetro é corrigido
-        para o valor informado.
-      </p>
-      <div className="w-full">
-        <ErrorList mensagens={erros} />
-      </div>
-    </InlineForm>
+        <div className="field">
+          <label htmlFor="destino">Destino</label>
+          <input
+            id="destino"
+            className="input"
+            type="text"
+            placeholder="Cidade de destino"
+            required
+            value={form.destino}
+            onChange={(e) => onFormChange({ ...form, destino: e.target.value })}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="dataInicio">Início</label>
+          <input
+            id="dataInicio"
+            className="input"
+            type="date"
+            required
+            value={form.dataInicio}
+            onChange={(e) => onFormChange({ ...form, dataInicio: e.target.value })}
+          />
+        </div>
+      </SecaoCampos>
+
+      <SecaoCampos titulo="Veículo">
+        <div className="field">
+          <label htmlFor="codigoVeiculo">Veículo</label>
+          <select
+            id="codigoVeiculo"
+            className="input"
+            required
+            value={form.codigoVeiculo}
+            onChange={(e) => onAplicarVeiculo(e.target.value)}
+          >
+            <option value="">Selecione…</option>
+            {veiculos.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.placa} — {v.nomeVeiculo} ({formatKm(v.quilometragem)})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="kmInicial">Quilometragem inicial</label>
+          <input
+            id="kmInicial"
+            className="input"
+            type="number"
+            min={0}
+            max={2000000}
+            required
+            placeholder="0"
+            value={form.kmInicial}
+            onChange={(e) => onFormChange({ ...form, kmInicial: e.target.value })}
+          />
+        </div>
+        {/* A pendência do veículo escolhido, no momento em que ela decide algo:
+            antes de sair. Não bloqueia — quem decide é o motorista. */}
+        {pendenciasDoVeiculoEscolhido.length > 0 && (
+          <div
+            className="campo-largo p-3 text-[13px]"
+            style={{
+              border: `1px solid ${corDoAlerta}`,
+              background: 'var(--color-surface)',
+            }}
+          >
+            <strong>
+              {atrasadasDoVeiculoEscolhido.length > 0
+                ? 'Este veículo tem manutenção atrasada.'
+                : vencendoDoVeiculoEscolhido.length > 0
+                  ? 'Este veículo tem manutenção vencendo.'
+                  : 'Este veículo tem manutenção prevista.'}
+            </strong>
+            <ul className="mt-1 mb-0 list-none p-0">
+              {pendenciasDoVeiculoEscolhido.map((m) => (
+                <li key={m.id} style={{ color: mutedText }}>
+                  {m.tipoManutencaoNome} · prevista em {formatKm(m.quilometragemPrevista)}
+                  {m.atrasada
+                    ? ' · atrasada'
+                    : m.kmRestantes != null
+                      ? ` · faltam ${formatKm(m.kmRestantes)}`
+                      : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <p className="campo-largo m-0 text-[13px]" style={{ color: mutedText }}>
+          A quilometragem inicial já vem sugerida com o odômetro do veículo. Confira no painel
+          antes de sair: ela não pode ser menor que esse número e, se for maior, o odômetro é
+          corrigido para o valor informado.
+        </p>
+      </SecaoCampos>
+    </FormDialog>
   )
 }
 
@@ -367,37 +368,37 @@ function EncerramentoMinhaRotaFormulario({
       onSubmit={onSubmit}
       onCancelar={onCancelar}
     >
-      <div className="field w-[190px]">
-        <label htmlFor="kmFinal">Quilometragem final</label>
-        <input
-          id="kmFinal"
-          className="input"
-          type="number"
-          // Não pode ser menor que a abertura — a API recusa com 422.
-          min={paraEncerrar.kmInicial}
-          max={2000000}
-          required
-          autoFocus
-          style={{ borderRadius: 0 }}
-          value={form.kmFinal}
-          onChange={(e) => onFormChange({ ...form, kmFinal: e.target.value })}
-        />
-      </div>
-      <div className="field w-[190px]">
-        <label htmlFor="dataFim">Data de fim (opcional)</label>
-        <input
-          id="dataFim"
-          className="input"
-          type="date"
-          // Não pode ser anterior ao início (RN06) nem futura (a API dá margem de
-          // 1 dia por causa do fuso). Em branco, a API assume "agora".
-          min={paraInputDate(paraEncerrar.dataInicio)}
-          max={hojeInputDate()}
-          style={{ borderRadius: 0 }}
-          value={form.dataFim}
-          onChange={(e) => onFormChange({ ...form, dataFim: e.target.value })}
-        />
-      </div>
+      <SecaoCampos>
+        <div className="field">
+          <label htmlFor="kmFinal">Quilometragem final</label>
+          <input
+            id="kmFinal"
+            className="input"
+            type="number"
+            // Não pode ser menor que a abertura — a API recusa com 422.
+            min={paraEncerrar.kmInicial}
+            max={2000000}
+            required
+            autoFocus
+            value={form.kmFinal}
+            onChange={(e) => onFormChange({ ...form, kmFinal: e.target.value })}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="dataFim">Data de fim (opcional)</label>
+          <input
+            id="dataFim"
+            className="input"
+            type="date"
+            // Não pode ser anterior ao início (RN06) nem futura (a API dá margem de
+            // 1 dia por causa do fuso). Em branco, a API assume "agora".
+            min={paraInputDate(paraEncerrar.dataInicio)}
+            max={hojeInputDate()}
+            value={form.dataFim}
+            onChange={(e) => onFormChange({ ...form, dataFim: e.target.value })}
+          />
+        </div>
+      </SecaoCampos>
     </FormDialog>
   )
 }
@@ -425,18 +426,41 @@ export function MinhasRotasPage() {
   const [formEncerramento, setFormEncerramento] = useState(ENCERRAMENTO_VAZIO)
   const [errosEncerramento, setErrosEncerramento] = useState<string[]>([])
 
-  // Chave própria: o conteúdo é um recorte de `['rotas']`, e as duas telas nunca
-  // convivem na mesma sessão — misturá-las serviria dado errado no login seguinte.
-  const rotasQuery = useQuery({ queryKey: ['rotas', 'minhas'], queryFn: rotasApi.getMinhas })
-  const veiculosQuery = useQuery({ queryKey: ['veiculos'], queryFn: veiculosApi.getAll })
-  const manutencoesQuery = useQuery({
-    queryKey: ['manutencoes', FILTRO_PENDENTES],
-    queryFn: () => manutencoesApi.getAll(FILTRO_PENDENTES),
+  const paginacao = usePaginacaoServidor()
+
+  /**
+   * Chave própria: o conteúdo é um recorte de `['rotas']`, e as duas telas nunca convivem na
+   * mesma sessão — misturá-las serviria dado errado no login seguinte.
+   *
+   * Duas consultas desde que `/rota/minhas` passou a paginar: a rota em andamento não pode
+   * depender de estar na página exibida do histórico.
+   */
+  const rotaAtivaQuery = useQuery({
+    queryKey: ['rotas', 'minhas', 'ativa'],
+    queryFn: () => rotasApi.getMinhas({ ativo: true, pagina: 1, tamanhoPagina: 1 }),
   })
 
-  const rotas = rotasQuery.data ?? []
+  const historicoQuery = useQuery({
+    queryKey: ['rotas', 'minhas', 'historico', paginacao.pagina, paginacao.tamanhoPagina],
+    queryFn: () =>
+      rotasApi.getMinhas({ ativo: false, pagina: paginacao.pagina, tamanhoPagina: paginacao.tamanhoPagina }),
+  })
+
+  const veiculosQuery = useQuery({ queryKey: ['veiculos'], queryFn: veiculosApi.getAll })
+
+  /**
+   * Pendências **do veículo escolhido**, não da frota inteira: antes a tela baixava todas as
+   * manutenções pendentes e agrupava por veículo no cliente, o que a paginação inviabilizou.
+   * O escopo de um veículo é naturalmente pequeno — e trafega menos do que antes.
+   */
+  const manutencoesQuery = useQuery({
+    queryKey: ['manutencoes', { ...FILTRO_PENDENTES, veiculoId: Number(form.codigoVeiculo) }],
+    queryFn: () =>
+      manutencoesApi.getAll({ ...FILTRO_PENDENTES, veiculoId: Number(form.codigoVeiculo), tamanhoPagina: 50 }),
+    enabled: form.codigoVeiculo !== '',
+  })
+
   const veiculos = veiculosQuery.data ?? []
-  const manutencoes = manutencoesQuery.data ?? []
 
   // A resposta traz só o código do veículo — o cruzamento com placa/odômetro é aqui.
   const veiculoPorId = useMemo(
@@ -444,21 +468,14 @@ export function MinhasRotasPage() {
     [veiculosQuery.data],
   )
 
-  // Pendências por veículo, com as atrasadas primeiro — é a que muda a decisão de sair.
-  const pendenciasPorVeiculo = useMemo(() => {
-    const mapa = new Map<number, typeof manutencoes>()
-    for (const m of manutencoesQuery.data ?? []) {
-      const lista = mapa.get(m.veiculoId) ?? []
-      lista.push(m)
-      mapa.set(m.veiculoId, lista)
-    }
-    for (const lista of mapa.values()) {
-      lista.sort((a, b) => Number(b.atrasada) - Number(a.atrasada))
-    }
-    return mapa
-  }, [manutencoesQuery.data])
-
-  const pendenciasDoVeiculoEscolhido = pendenciasPorVeiculo.get(Number(form.codigoVeiculo)) ?? []
+  // Atrasadas primeiro — é a que muda a decisão de sair.
+  const pendenciasDoVeiculoEscolhido = useMemo(
+    () =>
+      [...(manutencoesQuery.data?.itens ?? [])].sort(
+        (a, b) => Number(b.atrasada) - Number(a.atrasada),
+      ),
+    [manutencoesQuery.data],
+  )
   const atrasadasDoVeiculoEscolhido = pendenciasDoVeiculoEscolhido.filter((m) => m.atrasada)
   const vencendoDoVeiculoEscolhido = pendenciasDoVeiculoEscolhido.filter(estaVencendo)
 
@@ -472,9 +489,10 @@ export function MinhasRotasPage() {
         : 'var(--color-divider)'
 
   // Só existe uma rota ativa por vez na prática: ela vira o destaque do topo, e o
-  // resto é histórico.
-  const rotaAtiva = rotas.find((r) => r.ativo) ?? null
-  const historico = rotas.filter((r) => !r.ativo)
+  // resto é histórico — agora cada um na sua consulta.
+  const rotaAtiva = (rotaAtivaQuery.data?.itens ?? [])[0] ?? null
+  const dadosHistorico = historicoQuery.data
+  const historico = dadosHistorico?.itens ?? []
 
   function descreverVeiculo(codigoVeiculo: number): string {
     const veiculo = veiculoPorId.get(codigoVeiculo)
@@ -603,12 +621,11 @@ export function MinhasRotasPage() {
           <button
             type="button"
             className="btn btn-primary"
-            style={{ borderRadius: 0 }}
-            onClick={aberto ? fecharForm : abrirCadastro}
-            disabled={!aberto && bloqueioNovaRota !== undefined}
+            onClick={abrirCadastro}
+            disabled={bloqueioNovaRota !== undefined}
             title={bloqueioNovaRota}
           >
-            {aberto ? 'Cancelar' : 'Abrir rota'}
+            Abrir rota
           </button>
         }
       />
@@ -619,6 +636,7 @@ export function MinhasRotasPage() {
           onFormChange={setForm}
           onAplicarVeiculo={aplicarVeiculo}
           onSubmit={handleSubmit}
+          onCancelar={fecharForm}
           pending={abrirMutation.isPending}
           erros={erros}
           veiculos={veiculos}
@@ -630,9 +648,9 @@ export function MinhasRotasPage() {
       )}
 
       <RotaAtivaCard
-        pending={rotasQuery.isPending}
-        error={rotasQuery.error}
-        isSuccess={rotasQuery.isSuccess}
+        pending={rotaAtivaQuery.isPending}
+        error={rotaAtivaQuery.error}
+        isSuccess={rotaAtivaQuery.isSuccess}
         rotaAtiva={rotaAtiva}
         descreverVeiculo={descreverVeiculo}
         onEncerrar={abrirEncerramento}
@@ -641,10 +659,12 @@ export function MinhasRotasPage() {
       <HistoricoRotasTabela
         historico={historico}
         veiculoPorId={veiculoPorId}
-        pending={rotasQuery.isPending}
-        error={rotasQuery.error}
-        isSuccess={rotasQuery.isSuccess}
+        pending={historicoQuery.isPending}
+        error={historicoQuery.error}
+        isSuccess={historicoQuery.isSuccess}
       />
+
+      <Paginacao {...paginacao.props(dadosHistorico)} pending={historicoQuery.isFetching} />
 
       {paraEncerrar && (
         <EncerramentoMinhaRotaFormulario
