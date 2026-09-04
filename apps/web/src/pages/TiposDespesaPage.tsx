@@ -6,7 +6,15 @@ import type { TipoDespesaResponse, TipoDespesaUpdateRequest } from '../api/types
 import { pode } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { ConfirmDialog, InlineForm, RowActions, TableStates } from '../components/Table'
+import {
+  ConfirmDialog,
+  FormDialog,
+  Paginacao,
+  RowActions,
+  SecaoCampos,
+  TableStates,
+} from '../components/Table'
+import { usePaginacao } from '../lib/paginacao'
 import { formatDate } from '../lib/format'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
@@ -104,8 +112,6 @@ export function TiposDespesaPage() {
     setForm({ nome: tipo.nome, ativo: String(tipo.ativo) })
     setErros([])
     setAberto(true)
-    // O formulário abre acima da tabela — a linha editada pode estar fora da tela.
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function fecharForm() {
@@ -116,6 +122,7 @@ export function TiposDespesaPage() {
   }
 
   const tipos = tiposQuery.data ?? []
+  const p = usePaginacao(tipos)
   const mostrarAcoes = podeCadastrar || podeExcluir
   const colunas = mostrarAcoes ? 4 : 3
 
@@ -129,67 +136,59 @@ export function TiposDespesaPage() {
             <button
               type="button"
               className="btn btn-primary"
-              style={{ borderRadius: 0 }}
-              onClick={aberto ? fecharForm : abrirCadastro}
+              onClick={abrirCadastro}
             >
-              {aberto ? 'Cancelar' : 'Novo tipo'}
+              Novo tipo
             </button>
           )
         }
       />
 
       {aberto && podeCadastrar && (
-        <InlineForm onSubmit={handleSubmit}>
-          {editando && (
-            <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-              Editando <strong style={{ color: 'var(--color-text)' }}>{editando.nome}</strong>.
-            </p>
-          )}
-          <div className="field min-w-[220px] flex-1">
-            <label htmlFor="nomeTipoDespesa">Nome</label>
-            <input
-              id="nomeTipoDespesa"
-              className="input"
-              type="text"
-              placeholder="Ex.: Pedágio"
-              maxLength={100}
-              required
-              style={{ borderRadius: 0 }}
-              value={form.nome}
-              onChange={(e) => setForm({ ...form, nome: e.target.value })}
-            />
-          </div>
-          {editando && (
-            <div className="field w-[150px]">
-              <label htmlFor="ativoTipoDespesa">Situação</label>
-              <select
-                id="ativoTipoDespesa"
+        <FormDialog
+          titulo={editando ? 'Editar tipo de despesa' : 'Novo tipo de despesa'}
+          descricao={editando ? `Editando ${editando.nome}.` : undefined}
+          textoConfirmar={editando ? 'Salvar alterações' : 'Cadastrar'}
+          textoPendente="Salvando…"
+          pending={salvarMutation.isPending}
+          erros={erros}
+          onSubmit={handleSubmit}
+          onCancelar={fecharForm}
+        >
+          <SecaoCampos>
+            <div className="field campo-largo">
+              <label htmlFor="nomeTipoDespesa">Nome</label>
+              <input
+                id="nomeTipoDespesa"
                 className="input"
-                style={{ borderRadius: 0 }}
-                value={form.ativo}
-                onChange={(e) => setForm({ ...form, ativo: e.target.value })}
-              >
-                <option value="true">Ativo</option>
-                <option value="false">Inativo</option>
-              </select>
+                type="text"
+                placeholder="Ex.: Pedágio"
+                maxLength={100}
+                required
+                value={form.nome}
+                onChange={(e) => setForm({ ...form, nome: e.target.value })}
+              />
             </div>
-          )}
-          <button
-            type="submit"
-            className="btn btn-primary"
-            style={{ borderRadius: 0, padding: '10px 20px' }}
-            disabled={salvarMutation.isPending}
-          >
-            {salvarMutation.isPending ? 'Salvando…' : editando ? 'Salvar alterações' : 'Cadastrar'}
-          </button>
-          <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-            O nome é único por empresa e aparece como categoria na tela de custos. Tipo inativo some do
-            seletor de lançamento, mas continua nomeando as despesas antigas.
-          </p>
-          <div className="w-full">
-            <ErrorList mensagens={erros} />
-          </div>
-        </InlineForm>
+            {editando && (
+              <div className="field">
+                <label htmlFor="ativoTipoDespesa">Situação</label>
+                <select
+                  id="ativoTipoDespesa"
+                  className="input"
+                  value={form.ativo}
+                  onChange={(e) => setForm({ ...form, ativo: e.target.value })}
+                >
+                  <option value="true">Ativo</option>
+                  <option value="false">Inativo</option>
+                </select>
+              </div>
+            )}
+            <p className="campo-largo m-0 text-[13px]" style={{ color: mutedText }}>
+              O nome é único por empresa e aparece como categoria na tela de custos. Tipo inativo some
+              do seletor de lançamento, mas continua nomeando as despesas antigas.
+            </p>
+          </SecaoCampos>
+        </FormDialog>
       )}
 
       <div className="mb-3">
@@ -216,7 +215,7 @@ export function TiposDespesaPage() {
               textoErro="Não foi possível carregar os tipos de despesa."
               textoVazio="Nenhum tipo cadastrado ainda — cadastre o primeiro para poder lançar despesas."
             />
-            {tipos.map((tipo) => (
+            {p.itensDaPagina.map((tipo) => (
               <tr key={tipo.id} style={{ opacity: tipo.ativo ? 1 : 0.6 }}>
                 <td className="font-semibold">{tipo.nome}</td>
                 <td>
@@ -259,6 +258,8 @@ export function TiposDespesaPage() {
           </tbody>
         </table>
       </div>
+
+      <Paginacao {...p} pending={tiposQuery.isFetching} />
 
       {paraExcluir && (
         <ConfirmDialog

@@ -4,7 +4,8 @@ import { motoristasApi } from '../api/motoristas'
 import { veiculosApi } from '../api/veiculos'
 import { rotasApi } from '../api/rotas'
 import { AppLayout, PageHeader } from '../components/AppLayout'
-import { TableStates } from '../components/Table'
+import { Paginacao, TableStates } from '../components/Table'
+import { usePaginacao } from '../lib/paginacao'
 import { formatDate, formatKm } from '../lib/format'
 import {
   ClipboardIcon,
@@ -104,6 +105,7 @@ export function DashboardPage() {
         .includes(termo),
     )
   }, [veiculosQuery.data, busca])
+  const p = usePaginacao(veiculosFiltrados)
 
   const atualizadoEm = veiculosQuery.dataUpdatedAt
     ? `Atualizado às ${new Date(veiculosQuery.dataUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
@@ -188,7 +190,7 @@ export function DashboardPage() {
               textoErro="Não foi possível carregar os veículos."
               textoVazio={busca ? 'Nenhum veículo encontrado para a busca.' : 'Nenhum veículo cadastrado ainda.'}
             />
-            {veiculosFiltrados.map((v) => (
+            {p.itensDaPagina.map((v) => (
               <tr key={v.id}>
                 <td className="font-semibold">
                   {v.placa}
@@ -214,6 +216,8 @@ export function DashboardPage() {
           </tbody>
         </table>
       </div>
+
+      <Paginacao {...p} pending={veiculosQuery.isFetching} />
     </AppLayout>
   )
 }

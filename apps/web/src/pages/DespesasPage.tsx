@@ -15,8 +15,17 @@ import type {
 } from '../api/types'
 import { pode } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
-import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { ConfirmDialog, FiltroPeriodo, InlineForm, RowActions, TableStates } from '../components/Table'
+import { AppLayout, PageHeader } from '../components/AppLayout'
+import {
+  ConfirmDialog,
+  FiltroPeriodo,
+  FormDialog,
+  Paginacao,
+  RowActions,
+  SecaoCampos,
+  TableStates,
+} from '../components/Table'
+import { usePaginacao } from '../lib/paginacao'
 import { formatDate, formatMoeda, hojeInputDate, paraInputDate } from '../lib/format'
 import { intervaloDoPeriodo, type Periodo } from '../lib/periodo'
 
@@ -38,6 +47,7 @@ function DespesaFormulario({
   form,
   onFormChange,
   onSubmit,
+  onCancelar,
   pending,
   erros,
   veiculos,
@@ -48,6 +58,7 @@ function DespesaFormulario({
   form: FormDespesa
   onFormChange: (form: FormDespesa) => void
   onSubmit: (e: FormEvent) => void
+  onCancelar: () => void
   pending: boolean
   erros: string[]
   veiculos: VeiculoResponse[]
@@ -55,134 +66,126 @@ function DespesaFormulario({
   motoristas: MotoristaResponse[]
 }) {
   return (
-    <InlineForm onSubmit={onSubmit}>
-      {editando && (
-        <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-          Corrigindo a despesa de{' '}
-          <strong style={{ color: 'var(--color-text)' }}>{formatMoeda(editando.valor)}</strong> em{' '}
-          {formatDate(editando.dataDespesa)}.
+    <FormDialog
+      titulo={editando ? 'Corrigir despesa' : 'Nova despesa'}
+      descricao={
+        editando
+          ? `Corrigindo a despesa de ${formatMoeda(editando.valor)} em ${formatDate(editando.dataDespesa)}.`
+          : undefined
+      }
+      textoConfirmar={editando ? 'Salvar alterações' : 'Lançar'}
+      textoPendente="Salvando…"
+      largura={760}
+      pending={pending}
+      erros={erros}
+      onSubmit={onSubmit}
+      onCancelar={onCancelar}
+    >
+      <SecaoCampos titulo="Despesa">
+        <div className="field">
+          <label htmlFor="veiculoDespesa">Veículo</label>
+          <select
+            id="veiculoDespesa"
+            className="input"
+            required
+            value={form.veiculoId}
+            onChange={(e) => onFormChange({ ...form, veiculoId: e.target.value })}
+          >
+            <option value="">Selecione…</option>
+            {veiculos.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.placa} — {v.nomeVeiculo}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="field">
+          <label htmlFor="tipoDespesa">Tipo</label>
+          <select
+            id="tipoDespesa"
+            className="input"
+            required
+            value={form.tipoDespesaId}
+            onChange={(e) => onFormChange({ ...form, tipoDespesaId: e.target.value })}
+          >
+            <option value="">Selecione…</option>
+            {tipos.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.nome}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="field">
+          <label htmlFor="motoristaDespesa">Motorista (opcional)</label>
+          <select
+            id="motoristaDespesa"
+            className="input"
+            value={form.motoristaId}
+            onChange={(e) => onFormChange({ ...form, motoristaId: e.target.value })}
+          >
+            <option value="">Não atribuída</option>
+            {motoristas.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.nome}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <p className="campo-largo m-0 text-[13px]" style={{ color: mutedText }}>
+          O motorista é opcional: multa tem dono, IPVA e seguro não. O seletor de tipo mostra só os
+          ativos — inative um tipo em{' '}
+          <strong style={{ color: 'var(--color-text)' }}>Tipos de despesa</strong> para tirá-lo
+          daqui sem apagar o histórico.
         </p>
-      )}
+      </SecaoCampos>
 
-      <div className="field w-[230px]">
-        <label htmlFor="veiculoDespesa">Veículo</label>
-        <select
-          id="veiculoDespesa"
-          className="input"
-          required
-          style={{ borderRadius: 0 }}
-          value={form.veiculoId}
-          onChange={(e) => onFormChange({ ...form, veiculoId: e.target.value })}
-        >
-          <option value="">Selecione…</option>
-          {veiculos.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.placa} — {v.nomeVeiculo}
-            </option>
-          ))}
-        </select>
-      </div>
+      <SecaoCampos titulo="Lançamento">
+        <div className="field">
+          <label htmlFor="valorDespesa">Valor (R$)</label>
+          <input
+            id="valorDespesa"
+            className="input"
+            type="number"
+            min="0.01"
+            step="0.01"
+            required
+            placeholder="0,00"
+            value={form.valor}
+            onChange={(e) => onFormChange({ ...form, valor: e.target.value })}
+          />
+        </div>
 
-      <div className="field w-[200px]">
-        <label htmlFor="tipoDespesa">Tipo</label>
-        <select
-          id="tipoDespesa"
-          className="input"
-          required
-          style={{ borderRadius: 0 }}
-          value={form.tipoDespesaId}
-          onChange={(e) => onFormChange({ ...form, tipoDespesaId: e.target.value })}
-        >
-          <option value="">Selecione…</option>
-          {tipos.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.nome}
-            </option>
-          ))}
-        </select>
-      </div>
+        <div className="field">
+          <label htmlFor="dataDespesa">Data</label>
+          <input
+            id="dataDespesa"
+            className="input"
+            type="date"
+            required
+            max={hojeInputDate()}
+            value={form.dataDespesa}
+            onChange={(e) => onFormChange({ ...form, dataDespesa: e.target.value })}
+          />
+        </div>
 
-      <div className="field w-[210px]">
-        <label htmlFor="motoristaDespesa">Motorista (opcional)</label>
-        <select
-          id="motoristaDespesa"
-          className="input"
-          style={{ borderRadius: 0 }}
-          value={form.motoristaId}
-          onChange={(e) => onFormChange({ ...form, motoristaId: e.target.value })}
-        >
-          <option value="">Não atribuída</option>
-          {motoristas.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.nome}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="field w-[150px]">
-        <label htmlFor="valorDespesa">Valor (R$)</label>
-        <input
-          id="valorDespesa"
-          className="input"
-          type="number"
-          min="0.01"
-          step="0.01"
-          required
-          placeholder="0,00"
-          style={{ borderRadius: 0 }}
-          value={form.valor}
-          onChange={(e) => onFormChange({ ...form, valor: e.target.value })}
-        />
-      </div>
-
-      <div className="field w-[170px]">
-        <label htmlFor="dataDespesa">Data</label>
-        <input
-          id="dataDespesa"
-          className="input"
-          type="date"
-          required
-          max={hojeInputDate()}
-          style={{ borderRadius: 0 }}
-          value={form.dataDespesa}
-          onChange={(e) => onFormChange({ ...form, dataDespesa: e.target.value })}
-        />
-      </div>
-
-      <div className="field min-w-[220px] flex-1">
-        <label htmlFor="observacaoDespesa">Observação (opcional)</label>
-        <input
-          id="observacaoDespesa"
-          className="input"
-          type="text"
-          maxLength={500}
-          placeholder="Ex.: praça de pedágio da BR-116"
-          style={{ borderRadius: 0 }}
-          value={form.observacao}
-          onChange={(e) => onFormChange({ ...form, observacao: e.target.value })}
-        />
-      </div>
-
-      <button
-        type="submit"
-        className="btn btn-primary"
-        style={{ borderRadius: 0, padding: '10px 20px' }}
-        disabled={pending}
-      >
-        {pending ? 'Salvando…' : editando ? 'Salvar alterações' : 'Lançar'}
-      </button>
-
-      <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-        O motorista é opcional: multa tem dono, IPVA e seguro não. O seletor de tipo mostra só os
-        ativos — inative um tipo em <strong style={{ color: 'var(--color-text)' }}>Tipos de despesa</strong>{' '}
-        para tirá-lo daqui sem apagar o histórico.
-      </p>
-
-      <div className="w-full">
-        <ErrorList mensagens={erros} />
-      </div>
-    </InlineForm>
+        <div className="field campo-largo">
+          <label htmlFor="observacaoDespesa">Observação (opcional)</label>
+          <input
+            id="observacaoDespesa"
+            className="input"
+            type="text"
+            maxLength={500}
+            placeholder="Ex.: praça de pedágio da BR-116"
+            value={form.observacao}
+            onChange={(e) => onFormChange({ ...form, observacao: e.target.value })}
+          />
+        </div>
+      </SecaoCampos>
+    </FormDialog>
   )
 }
 
@@ -396,7 +399,6 @@ export function DespesasPage() {
     })
     setErros([])
     setAberto(true)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function fecharForm() {
@@ -414,6 +416,7 @@ export function DespesasPage() {
   }
 
   const despesas = despesasQuery.data ?? []
+  const p = usePaginacao(despesas)
   const tipos = tiposQuery.data ?? []
   const temFiltro = filtroVeiculo !== '' || filtroTipo !== '' || filtroMotorista !== '' || periodo !== 'todos'
   const mostrarAcoes = podeLancar || podeExcluir
@@ -438,11 +441,10 @@ export function DespesasPage() {
             <button
               type="button"
               className="btn btn-primary"
-              style={{ borderRadius: 0 }}
-              onClick={aberto ? fecharForm : abrirCadastro}
+              onClick={abrirCadastro}
               disabled={semTipos}
             >
-              {aberto ? 'Cancelar' : 'Nova despesa'}
+              Nova despesa
             </button>
           )
         }
@@ -462,6 +464,7 @@ export function DespesasPage() {
           form={form}
           onFormChange={setForm}
           onSubmit={handleSubmit}
+          onCancelar={fecharForm}
           pending={salvarMutation.isPending}
           erros={erros}
           veiculos={veiculosQuery.data ?? []}
@@ -513,7 +516,7 @@ export function DespesasPage() {
                   : 'Nenhuma despesa lançada ainda.'
               }
             />
-            {despesas.map((d) => (
+            {p.itensDaPagina.map((d) => (
               <tr key={d.id}>
                 <td>{formatDate(d.dataDespesa)}</td>
                 <td className="font-semibold">
@@ -560,6 +563,8 @@ export function DespesasPage() {
           )}
         </table>
       </div>
+
+      <Paginacao {...p} pending={despesasQuery.isFetching} />
 
       {paraExcluir && (
         <ConfirmDialog

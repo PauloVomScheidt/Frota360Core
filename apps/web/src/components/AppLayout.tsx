@@ -5,6 +5,7 @@ import { logout } from '../api/auth'
 import { pode } from '../auth/permissions'
 import { notificarMudancaDeSessao, useSession } from '../auth/useSession'
 import { iniciais } from '../lib/format'
+import { gravarPreferencia, lerPreferenciaBooleana } from '../lib/preferencias'
 import { LogoMark, Wordmark } from './Logo'
 import {
   BellIcon,
@@ -26,23 +27,6 @@ import {
 } from './icons'
 
 const SIDEBAR_KEY = 'frota360.sidebarExpanded'
-
-function lerPreferencia(chave: string, padrao: boolean): boolean {
-  try {
-    const raw = localStorage.getItem(chave)
-    return raw === null ? padrao : raw === 'true'
-  } catch {
-    return padrao
-  }
-}
-
-function gravarPreferencia(chave: string, valor: boolean) {
-  try {
-    localStorage.setItem(chave, String(valor))
-  } catch {
-    // Preferência é conveniência: se o storage falhar, segue sem persistir.
-  }
-}
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
@@ -164,7 +148,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const mantemCatalogos = pode.editarTiposManutencao(user?.role)
   const motorista = pode.verMinhasRotas(user?.role)
 
-  const [expanded, setExpanded] = useState(() => lerPreferencia(SIDEBAR_KEY, true))
+  const [expanded, setExpanded] = useState(() => lerPreferenciaBooleana(SIDEBAR_KEY, true))
   const [catDashboard, setCatDashboard] = useState(true)
   const [catVisualizacao, setCatVisualizacao] = useState(true)
   const [catParametrizacao, setCatParametrizacao] = useState(true)

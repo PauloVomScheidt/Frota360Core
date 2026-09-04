@@ -18,8 +18,17 @@ import type {
 } from '../api/types'
 import { pode } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
-import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { ConfirmDialog, FiltroPeriodo, InlineForm, RowActions, TableStates } from '../components/Table'
+import { AppLayout, PageHeader } from '../components/AppLayout'
+import {
+  ConfirmDialog,
+  FiltroPeriodo,
+  FormDialog,
+  Paginacao,
+  RowActions,
+  SecaoCampos,
+  TableStates,
+} from '../components/Table'
+import { usePaginacao } from '../lib/paginacao'
 import {
   formatConsumo,
   formatDate,
@@ -61,7 +70,7 @@ type ConsumoEstimado = {
 }
 
 /**
- * Painel de cadastro/edição — extraído à parte por ser, sozinho, o maior bloco de JSX
+ * Modal de cadastro/edição — extraído à parte por ser, sozinho, o maior bloco de JSX
  * da tela (as três variações de campo motorista/veículo conforme papel e estado de
  * edição). Nenhuma regra muda de lugar: cada `onFormChange` chama o mesmo `setForm`
  * que já existia aqui dentro.
@@ -71,6 +80,7 @@ function AbastecimentoFormulario({
   form,
   onFormChange,
   onSubmit,
+  onCancelar,
   pending,
   erros,
   veiculosDisponiveis,
@@ -88,6 +98,7 @@ function AbastecimentoFormulario({
   form: FormularioAbastecimento
   onFormChange: (form: FormularioAbastecimento) => void
   onSubmit: (e: FormEvent) => void
+  onCancelar: () => void
   pending: boolean
   erros: string[]
   veiculosDisponiveis: VeiculoResponse[]
@@ -119,273 +130,256 @@ function AbastecimentoFormulario({
   }, [veiculos, form.veiculoId, form.odometro])
 
   return (
-    <InlineForm onSubmit={onSubmit}>
-      {editando && (
-        <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-          Corrigindo o abastecimento do veículo{' '}
-          <strong style={{ color: 'var(--color-text)' }}>{editando.veiculoPlaca}</strong> de{' '}
-          {formatDate(editando.dataAbastecimento)}. Veículo e motorista não podem ser trocados
-          — para isso, exclua e lance de novo.
-        </p>
-      )}
-
-      {/* Trocar o veículo reatribuiria o gasto: só no cadastro. */}
+    <FormDialog
+      titulo={editando ? 'Corrigir abastecimento' : 'Novo abastecimento'}
+      descricao={
+        editando
+          ? `Corrigindo o abastecimento do veículo ${editando.veiculoPlaca} de ${formatDate(editando.dataAbastecimento)}. Veículo e motorista não podem ser trocados — para isso, exclua e lance de novo.`
+          : undefined
+      }
+      textoConfirmar={editando ? 'Salvar correção' : 'Lançar'}
+      textoPendente="Salvando…"
+      largura={760}
+      pending={pending}
+      erros={erros}
+      onSubmit={onSubmit}
+      onCancelar={onCancelar}
+    >
+      {/* Veículo e motorista só existem no cadastro: trocá-los reatribuiria o gasto. */}
       {!editando && (
-        <div className="field w-[230px]">
-          <label htmlFor="veiculoId">Veículo</label>
-          <select
-            id="veiculoId"
-            className="input"
-            required
-            style={{ borderRadius: 0 }}
-            value={form.veiculoId}
-            onChange={(e) => onFormChange({ ...form, veiculoId: e.target.value })}
-          >
-            <option value="">Selecione…</option>
-            {veiculosDisponiveis.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.placa} — {v.nomeVeiculo}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {/* O motorista lança sempre em si mesmo — o campo existe para ele ver de quem é
-          o gasto, não para escolher. Quem escolhe é a gestão. */}
-      {!editando &&
-        (motorista ? (
-          <div className="field w-[200px]">
-            <label htmlFor="motoristaId">Motorista</label>
-            <input
-              id="motoristaId"
-              className="input"
-              disabled
-              style={{ borderRadius: 0 }}
-              value={nomeUsuario}
-            />
-          </div>
-        ) : (
-          <div className="field w-[200px]">
-            <label htmlFor="motoristaId">Motorista</label>
+        <SecaoCampos titulo="Veículo e motorista">
+          <div className="field">
+            <label htmlFor="veiculoId">Veículo</label>
             <select
-              id="motoristaId"
+              id="veiculoId"
               className="input"
               required
-              style={{ borderRadius: 0 }}
-              value={form.motoristaId}
-              onChange={(e) => onFormChange({ ...form, motoristaId: e.target.value })}
+              value={form.veiculoId}
+              onChange={(e) => onFormChange({ ...form, veiculoId: e.target.value })}
             >
               <option value="">Selecione…</option>
-              {motoristas.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.nome}
+              {veiculosDisponiveis.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.placa} — {v.nomeVeiculo}
                 </option>
               ))}
             </select>
           </div>
-        ))}
 
-      <div className="field w-[190px]">
-        <label htmlFor="tipoCombustivelId">Combustível</label>
-        <select
-          id="tipoCombustivelId"
-          className="input"
-          required
-          style={{ borderRadius: 0 }}
-          value={form.tipoCombustivelId}
-          onChange={(e) => onFormChange({ ...form, tipoCombustivelId: e.target.value })}
-        >
-          <option value="">Selecione…</option>
-          {combustiveis.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.nome}
-            </option>
-          ))}
-        </select>
-      </div>
+          {/* O motorista lança sempre em si mesmo — o campo existe para ele ver de quem é
+              o gasto, não para escolher. Quem escolhe é a gestão. */}
+          {motorista ? (
+            <div className="field">
+              <label htmlFor="motoristaId">Motorista</label>
+              <input id="motoristaId" className="input" disabled value={nomeUsuario} />
+            </div>
+          ) : (
+            <div className="field">
+              <label htmlFor="motoristaId">Motorista</label>
+              <select
+                id="motoristaId"
+                className="input"
+                required
+                value={form.motoristaId}
+                onChange={(e) => onFormChange({ ...form, motoristaId: e.target.value })}
+              >
+                <option value="">Selecione…</option>
+                {motoristas.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-      <div className="field w-[220px]">
-        <label htmlFor="postoId">Posto</label>
-        <select
-          id="postoId"
-          className="input"
-          required
-          style={{ borderRadius: 0 }}
-          value={form.postoId}
-          onChange={(e) => onFormChange({ ...form, postoId: e.target.value })}
-        >
-          <option value="">Selecione…</option>
-          {postos.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.nome}
-              {p.cidade ? ` — ${p.cidade}` : ''}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="field w-[130px]">
-        <label htmlFor="litros">Litros</label>
-        <input
-          id="litros"
-          type="number"
-          className="input"
-          required
-          min={0.001}
-          step={0.001}
-          placeholder="0,000"
-          style={{ borderRadius: 0 }}
-          value={form.litros}
-          onChange={(e) => onFormChange({ ...form, litros: e.target.value })}
-        />
-      </div>
-
-      <div className="field w-[140px]">
-        <label htmlFor="valorLitro">Valor do litro (R$)</label>
-        <input
-          id="valorLitro"
-          type="number"
-          className="input"
-          required
-          min={0.001}
-          step={0.001}
-          placeholder="0,000"
-          style={{ borderRadius: 0 }}
-          value={form.valorLitro}
-          onChange={(e) => onFormChange({ ...form, valorLitro: e.target.value })}
-        />
-      </div>
-
-      {/* Somente leitura: o total é derivado, e quem o calcula de verdade é o servidor —
-          este campo é o espelho do que ele vai gravar. */}
-      <div className="field w-[150px]">
-        <label htmlFor="valorTotal">Valor total (R$)</label>
-        <input
-          id="valorTotal"
-          className="input"
-          readOnly
-          tabIndex={-1}
-          style={{ borderRadius: 0, background: 'var(--color-surface)' }}
-          value={formatMoeda(valorTotal)}
-        />
-      </div>
-
-      <div className="field w-[150px]">
-        <label htmlFor="odometro">Odômetro (km)</label>
-        <input
-          id="odometro"
-          type="number"
-          className="input"
-          required
-          min={1}
-          step={1}
-          placeholder="0"
-          style={{ borderRadius: 0 }}
-          value={form.odometro}
-          onChange={(e) => onFormChange({ ...form, odometro: e.target.value })}
-        />
-      </div>
-
-      <div className="field w-[160px]">
-        <label htmlFor="notaFiscal">Nota fiscal</label>
-        <input
-          id="notaFiscal"
-          className="input"
-          required
-          maxLength={30}
-          style={{ borderRadius: 0 }}
-          value={form.notaFiscal}
-          onChange={(e) => onFormChange({ ...form, notaFiscal: e.target.value })}
-        />
-      </div>
-
-      <div className="field w-[180px]">
-        <label htmlFor="frentista">Frentista</label>
-        <input
-          id="frentista"
-          className="input"
-          maxLength={100}
-          placeholder="Opcional"
-          style={{ borderRadius: 0 }}
-          value={form.frentista}
-          onChange={(e) => onFormChange({ ...form, frentista: e.target.value })}
-        />
-      </div>
-
-      <div className="field w-[170px]">
-        <label htmlFor="dataAbastecimento">Data</label>
-        <input
-          id="dataAbastecimento"
-          type="date"
-          className="input"
-          required
-          max={hojeInputDate()}
-          style={{ borderRadius: 0 }}
-          value={form.dataAbastecimento}
-          onChange={(e) => onFormChange({ ...form, dataAbastecimento: e.target.value })}
-        />
-      </div>
-
-      <div className="field w-[260px]">
-        <label htmlFor="observacao">Observação</label>
-        <input
-          id="observacao"
-          className="input"
-          maxLength={500}
-          style={{ borderRadius: 0 }}
-          value={form.observacao}
-          onChange={(e) => onFormChange({ ...form, observacao: e.target.value })}
-        />
-      </div>
-
-      <button
-        type="submit"
-        className="btn btn-primary"
-        style={{ borderRadius: 0, padding: '10px 20px' }}
-        disabled={pending}
-      >
-        {pending ? 'Salvando…' : editando ? 'Salvar correção' : 'Lançar'}
-      </button>
-
-      {quilometragemDaFicha !== null && (
-        <p className="m-0 w-full text-[13px]" style={{ color: 'var(--color-warning)' }}>
-          ⚠ O odômetro informado é menor que a quilometragem atual do veículo (
-          <strong>{formatKm(quilometragemDaFicha)}</strong>). Confirme se o lançamento é
-          retroativo — a ficha do veículo não será alterada.
-        </p>
+          {motorista && rotaAtiva && (
+            <p className="campo-largo m-0 text-[13px]" style={{ color: mutedText }}>
+              Você está em rota com{' '}
+              <strong style={{ color: 'var(--color-text)' }}>
+                {veiculos.find((v) => v.id === rotaAtiva.codigoVeiculo)?.placa ??
+                  'o veículo da rota'}
+              </strong>{' '}
+              ({rotaAtiva.origem} → {rotaAtiva.destino}) — o lançamento vai para esse veículo e
+              fica vinculado à viagem.
+            </p>
+          )}
+        </SecaoCampos>
       )}
 
-      {consumoEstimado !== null && (
-        <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-          Desde o abastecimento de{' '}
-          <strong style={{ color: 'var(--color-text)' }}>
-            {formatDate(consumoEstimado.anterior.dataAbastecimento)}
-          </strong>{' '}
-          ({formatKm(consumoEstimado.anterior.odometro)}): {formatKm(consumoEstimado.km)} ÷{' '}
-          {formatLitros(Number(form.litros))} L ≈{' '}
-          <strong style={{ color: 'var(--color-text)' }}>
-            {formatConsumo(consumoEstimado.kmPorLitro)}
-          </strong>{' '}
-          — estimativa, e só fecha se os dois tanques foram enchidos por igual.
-        </p>
-      )}
+      <SecaoCampos titulo="Abastecimento">
+        <div className="field">
+          <label htmlFor="tipoCombustivelId">Combustível</label>
+          <select
+            id="tipoCombustivelId"
+            className="input"
+            required
+            value={form.tipoCombustivelId}
+            onChange={(e) => onFormChange({ ...form, tipoCombustivelId: e.target.value })}
+          >
+            <option value="">Selecione…</option>
+            {combustiveis.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nome}
+              </option>
+            ))}
+          </select>
+        </div>
 
-      {!editando && motorista && rotaAtiva && (
-        <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-          Você está em rota com{' '}
-          <strong style={{ color: 'var(--color-text)' }}>
-            {veiculos.find((v) => v.id === rotaAtiva.codigoVeiculo)?.placa ?? 'o veículo da rota'}
-          </strong>{' '}
-          ({rotaAtiva.origem} → {rotaAtiva.destino}) — o lançamento vai para esse veículo e fica
-          vinculado à viagem.
-        </p>
-      )}
+        <div className="field">
+          <label htmlFor="litros">Litros</label>
+          <input
+            id="litros"
+            type="number"
+            className="input"
+            required
+            min={0.001}
+            step={0.001}
+            placeholder="0,000"
+            value={form.litros}
+            onChange={(e) => onFormChange({ ...form, litros: e.target.value })}
+          />
+        </div>
 
-      <div className="w-full">
-        <ErrorList mensagens={erros} />
-      </div>
-    </InlineForm>
+        <div className="field">
+          <label htmlFor="valorLitro">Valor do litro (R$)</label>
+          <input
+            id="valorLitro"
+            type="number"
+            className="input"
+            required
+            min={0.001}
+            step={0.001}
+            placeholder="0,000"
+            value={form.valorLitro}
+            onChange={(e) => onFormChange({ ...form, valorLitro: e.target.value })}
+          />
+        </div>
+
+        {/* Somente leitura: o total é derivado, e quem o calcula de verdade é o servidor —
+            este campo é o espelho do que ele vai gravar. */}
+        <div className="field">
+          <label htmlFor="valorTotal">Valor total (R$)</label>
+          <input
+            id="valorTotal"
+            className="input"
+            readOnly
+            tabIndex={-1}
+            style={{ background: 'var(--color-surface)' }}
+            value={formatMoeda(valorTotal)}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="odometro">Odômetro (km)</label>
+          <input
+            id="odometro"
+            type="number"
+            className="input"
+            required
+            min={1}
+            step={1}
+            placeholder="0"
+            value={form.odometro}
+            onChange={(e) => onFormChange({ ...form, odometro: e.target.value })}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="dataAbastecimento">Data</label>
+          <input
+            id="dataAbastecimento"
+            type="date"
+            className="input"
+            required
+            max={hojeInputDate()}
+            value={form.dataAbastecimento}
+            onChange={(e) => onFormChange({ ...form, dataAbastecimento: e.target.value })}
+          />
+        </div>
+
+        {quilometragemDaFicha !== null && (
+          <p className="campo-largo m-0 text-[13px]" style={{ color: 'var(--color-warning)' }}>
+            ⚠ O odômetro informado é menor que a quilometragem atual do veículo (
+            <strong>{formatKm(quilometragemDaFicha)}</strong>). Confirme se o lançamento é
+            retroativo — a ficha do veículo não será alterada.
+          </p>
+        )}
+
+        {consumoEstimado !== null && (
+          <p className="campo-largo m-0 text-[13px]" style={{ color: mutedText }}>
+            Desde o abastecimento de{' '}
+            <strong style={{ color: 'var(--color-text)' }}>
+              {formatDate(consumoEstimado.anterior.dataAbastecimento)}
+            </strong>{' '}
+            ({formatKm(consumoEstimado.anterior.odometro)}): {formatKm(consumoEstimado.km)} ÷{' '}
+            {formatLitros(Number(form.litros))} L ≈{' '}
+            <strong style={{ color: 'var(--color-text)' }}>
+              {formatConsumo(consumoEstimado.kmPorLitro)}
+            </strong>{' '}
+            — estimativa, e só fecha se os dois tanques foram enchidos por igual.
+          </p>
+        )}
+      </SecaoCampos>
+
+      <SecaoCampos titulo="Dados do posto">
+        <div className="field">
+          <label htmlFor="postoId">Posto</label>
+          <select
+            id="postoId"
+            className="input"
+            required
+            value={form.postoId}
+            onChange={(e) => onFormChange({ ...form, postoId: e.target.value })}
+          >
+            <option value="">Selecione…</option>
+            {postos.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.nome}
+                {p.cidade ? ` — ${p.cidade}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="field">
+          <label htmlFor="notaFiscal">Nota fiscal</label>
+          <input
+            id="notaFiscal"
+            className="input"
+            required
+            maxLength={30}
+            value={form.notaFiscal}
+            onChange={(e) => onFormChange({ ...form, notaFiscal: e.target.value })}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="frentista">Frentista</label>
+          <input
+            id="frentista"
+            className="input"
+            maxLength={100}
+            placeholder="Opcional"
+            value={form.frentista}
+            onChange={(e) => onFormChange({ ...form, frentista: e.target.value })}
+          />
+        </div>
+      </SecaoCampos>
+
+      <SecaoCampos titulo="Observação">
+        <div className="field campo-largo">
+          <label htmlFor="observacao">Observação (opcional)</label>
+          <input
+            id="observacao"
+            className="input"
+            maxLength={500}
+            value={form.observacao}
+            onChange={(e) => onFormChange({ ...form, observacao: e.target.value })}
+          />
+        </div>
+      </SecaoCampos>
+    </FormDialog>
   )
 }
 
@@ -472,6 +466,7 @@ function FiltrosAbastecimento({
 /** Tabela + rodapé de totais — a listagem propriamente dita. */
 function TabelaAbastecimentos({
   abastecimentos,
+  quantidade,
   motorista,
   mostrarAcoes,
   podeLancar,
@@ -484,7 +479,10 @@ function TabelaAbastecimentos({
   onEditar,
   onExcluir,
 }: {
+  /** Só as linhas da página corrente. A contagem e o total abaixo são da lista inteira. */
   abastecimentos: AbastecimentoResponse[]
+  /** Quantos lançamentos o filtro devolveu — não quantos cabem na página. */
+  quantidade: number
   motorista: boolean
   mostrarAcoes: boolean
   podeLancar: boolean
@@ -520,7 +518,7 @@ function TabelaAbastecimentos({
               colSpan={(motorista ? 8 : 9) + (mostrarAcoes ? 1 : 0)}
               pending={pending}
               error={error}
-              empty={isSuccess && abastecimentos.length === 0}
+              empty={isSuccess && quantidade === 0}
               textoCarregando="Carregando abastecimentos…"
               textoErro="Não foi possível carregar os abastecimentos."
               textoVazio={
@@ -575,14 +573,16 @@ function TabelaAbastecimentos({
         </table>
       </div>
 
-      {abastecimentos.length > 0 && (
+      {/* ⚠️ Contagem e total são do filtro inteiro, não da página: virar de página não
+          pode mexer no que a tela diz que foi gasto. */}
+      {quantidade > 0 && (
         <div
           className="mt-4 flex flex-wrap items-center gap-6 py-3 text-[13px]"
           style={{ borderTop: '1px solid var(--color-divider)', color: mutedText }}
         >
           <span>
-            <strong style={{ color: 'var(--color-text)' }}>{abastecimentos.length}</strong>{' '}
-            {abastecimentos.length === 1 ? 'lançamento' : 'lançamentos'}
+            <strong style={{ color: 'var(--color-text)' }}>{quantidade}</strong>{' '}
+            {quantidade === 1 ? 'lançamento' : 'lançamentos'}
           </span>
           <span>
             Total: <strong style={{ color: 'var(--color-text)' }}>{formatMoeda(total)}</strong>
@@ -672,6 +672,7 @@ export function AbastecimentosPage() {
   })
 
   const abastecimentos = abastecimentosQuery.data ?? []
+  const p = usePaginacao(abastecimentos)
   const veiculos = veiculosQuery.data ?? []
   const motoristas = motoristasQuery.data ?? []
   const combustiveis = combustiveisQuery.data ?? []
@@ -821,7 +822,6 @@ export function AbastecimentosPage() {
     })
     setErros([])
     setAberto(true)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function fecharForm() {
@@ -860,9 +860,8 @@ export function AbastecimentosPage() {
             <button
               type="button"
               className="btn btn-primary"
-              style={{ borderRadius: 0 }}
-              onClick={aberto ? fecharForm : abrirCadastro}
-              disabled={naoPodeAbrir && !aberto}
+              onClick={abrirCadastro}
+              disabled={naoPodeAbrir}
               title={
                 semVeiculos
                   ? 'É preciso ter ao menos um veículo cadastrado.'
@@ -875,7 +874,7 @@ export function AbastecimentosPage() {
                         : undefined
               }
             >
-              {aberto ? 'Cancelar' : 'Novo abastecimento'}
+              Novo abastecimento
             </button>
           )
         }
@@ -887,6 +886,7 @@ export function AbastecimentosPage() {
           form={form}
           onFormChange={setForm}
           onSubmit={handleSubmit}
+          onCancelar={fecharForm}
           pending={salvarMutation.isPending}
           erros={erros}
           veiculosDisponiveis={veiculosDisponiveis}
@@ -921,7 +921,8 @@ export function AbastecimentosPage() {
       />
 
       <TabelaAbastecimentos
-        abastecimentos={abastecimentos}
+        abastecimentos={p.itensDaPagina}
+        quantidade={abastecimentos.length}
         motorista={motorista}
         mostrarAcoes={mostrarAcoes}
         podeLancar={podeLancar}
@@ -934,6 +935,8 @@ export function AbastecimentosPage() {
         onEditar={abrirEdicao}
         onExcluir={setParaExcluir}
       />
+
+      <Paginacao {...p} pending={abastecimentosQuery.isFetching} />
 
       {paraExcluir && (
         <ConfirmDialog

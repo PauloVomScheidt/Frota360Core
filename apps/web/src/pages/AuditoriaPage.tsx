@@ -10,12 +10,11 @@ import type {
 } from '../api/types'
 import { AppLayout, PageHeader } from '../components/AppLayout'
 import { Paginacao, TableStates } from '../components/Table'
+import { useTamanhoPagina } from '../lib/paginacao'
 import { ChevronDownIcon, ChevronRightIcon } from '../components/icons'
 import { formatDateTime } from '../lib/format'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
-
-const TAMANHO_PAGINA = 25
 
 /** Rótulos legíveis para o vocabulário fechado da API (§ Auditoria do contexto). */
 const ROTULO_ENTIDADE: Record<EntidadeAuditada, string> = {
@@ -168,9 +167,12 @@ export function AuditoriaPage() {
   // e o campo-a-campo é o detalhe de quem está investigando um caso específico.
   const [expandida, setExpandida] = useState<number | null>(null)
 
+  // A paginação é do servidor: o seletor entra no filtro da consulta, não fatia nada aqui.
+  const { tamanhoPagina, setTamanhoPagina } = useTamanhoPagina()
+
   const filtro: AuditoriaFiltro = {
     pagina,
-    tamanhoPagina: TAMANHO_PAGINA,
+    tamanhoPagina,
     entidade: filtroEntidade === '' ? undefined : (filtroEntidade as EntidadeAuditada),
     acao: filtroAcao === '' ? undefined : (filtroAcao as AcaoAuditoria),
     usuarioId: filtroUsuario === '' ? undefined : Number(filtroUsuario),
@@ -382,6 +384,10 @@ export function AuditoriaPage() {
           onMudar={(p) => {
             setPagina(p)
             setExpandida(null)
+          }}
+          onMudarTamanho={(t) => {
+            setTamanhoPagina(t)
+            resetarPaginacao()
           }}
           pending={auditoriaQuery.isFetching}
         />

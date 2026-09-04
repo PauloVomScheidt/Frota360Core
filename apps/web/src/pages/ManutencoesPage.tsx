@@ -16,8 +16,17 @@ import type {
 } from '../api/types'
 import { pode } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
-import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { ConfirmDialog, FiltroPeriodo, FormDialog, InlineForm, RowActions, TableStates } from '../components/Table'
+import { AppLayout, PageHeader } from '../components/AppLayout'
+import {
+  ConfirmDialog,
+  FiltroPeriodo,
+  FormDialog,
+  Paginacao,
+  RowActions,
+  SecaoCampos,
+  TableStates,
+} from '../components/Table'
+import { usePaginacao } from '../lib/paginacao'
 import { CheckIcon } from '../components/icons'
 import { formatDate, formatKm, formatMoeda, hojeInputDate, paraInputDate } from '../lib/format'
 import { badgeDaManutencao, estaVencendo, textoKmRestantes } from '../lib/manutencao'
@@ -43,13 +52,14 @@ const CONCLUSAO_VAZIA = {
 type FormularioManutencao = typeof FORM_VAZIO
 type FormularioConclusao = typeof CONCLUSAO_VAZIA
 
-/** Painel de agendamento/edição — o mesmo formulário para as duas ações, o id decide o verbo. */
+/** Modal de agendamento/edição — o mesmo formulário para as duas ações, o id decide o verbo. */
 function ManutencaoFormulario({
   editando,
   form,
   onFormChange,
   onAplicarSelecao,
   onSubmit,
+  onCancelar,
   pending,
   erros,
   veiculos,
@@ -60,114 +70,115 @@ function ManutencaoFormulario({
   onFormChange: (form: FormularioManutencao) => void
   onAplicarSelecao: (veiculoId: string, tipoId: string) => void
   onSubmit: (e: FormEvent) => void
+  onCancelar: () => void
   pending: boolean
   erros: string[]
   veiculos: VeiculoResponse[]
   tipos: TipoManutencaoResponse[]
 }) {
   return (
-    <InlineForm onSubmit={onSubmit}>
-      {editando && (
-        <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-          Editando a manutenção de{' '}
-          <strong style={{ color: 'var(--color-text)' }}>{editando.tipoManutencaoNome}</strong> do
-          veículo {editando.veiculoPlaca}.
+    <FormDialog
+      titulo={editando ? 'Editar manutenção' : 'Nova manutenção'}
+      descricao={
+        editando
+          ? `Editando a manutenção de ${editando.tipoManutencaoNome} do veículo ${editando.veiculoPlaca}.`
+          : undefined
+      }
+      textoConfirmar={editando ? 'Salvar alterações' : 'Agendar'}
+      textoPendente="Salvando…"
+      largura={760}
+      pending={pending}
+      erros={erros}
+      onSubmit={onSubmit}
+      onCancelar={onCancelar}
+    >
+      <SecaoCampos titulo="Manutenção">
+        <div className="field">
+          <label htmlFor="veiculoId">Veículo</label>
+          <select
+            id="veiculoId"
+            className="input"
+            required
+            value={form.veiculoId}
+            onChange={(e) => onAplicarSelecao(e.target.value, form.tipoManutencaoId)}
+          >
+            <option value="">Selecione…</option>
+            {veiculos.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.placa} — {v.nomeVeiculo} ({formatKm(v.quilometragem)})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="tipoManutencaoId">Tipo</label>
+          <select
+            id="tipoManutencaoId"
+            className="input"
+            required
+            value={form.tipoManutencaoId}
+            onChange={(e) => onAplicarSelecao(form.veiculoId, e.target.value)}
+          >
+            <option value="">Selecione…</option>
+            {tipos.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.nome}
+                {t.intervaloKm ? ` (a cada ${formatKm(t.intervaloKm)})` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      </SecaoCampos>
+
+      <SecaoCampos titulo="Vencimento">
+        <div className="field">
+          <label htmlFor="quilometragemPrevista">Quilometragem prevista</label>
+          <input
+            id="quilometragemPrevista"
+            className="input"
+            type="number"
+            min={1}
+            max={2000000}
+            required
+            placeholder="0"
+            value={form.quilometragemPrevista}
+            onChange={(e) => onFormChange({ ...form, quilometragemPrevista: e.target.value })}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="dataPrevista">Prazo (opcional)</label>
+          <input
+            id="dataPrevista"
+            className="input"
+            type="date"
+            // No agendamento novo a API recusa data no passado; na edição, permite replanejar.
+            min={editando ? undefined : hojeInputDate()}
+            value={form.dataPrevista}
+            onChange={(e) => onFormChange({ ...form, dataPrevista: e.target.value })}
+          />
+        </div>
+        <p className="campo-largo m-0 text-[13px]" style={{ color: mutedText }}>
+          A manutenção vence no que vier primeiro: a quilometragem prevista ou o prazo. Quando o
+          tipo tem intervalo cadastrado, a quilometragem já vem sugerida (km atual do veículo +
+          intervalo).
         </p>
-      )}
-      <div className="field w-[230px]">
-        <label htmlFor="veiculoId">Veículo</label>
-        <select
-          id="veiculoId"
-          className="input"
-          required
-          style={{ borderRadius: 0 }}
-          value={form.veiculoId}
-          onChange={(e) => onAplicarSelecao(e.target.value, form.tipoManutencaoId)}
-        >
-          <option value="">Selecione…</option>
-          {veiculos.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.placa} — {v.nomeVeiculo} ({formatKm(v.quilometragem)})
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="field w-[230px]">
-        <label htmlFor="tipoManutencaoId">Tipo</label>
-        <select
-          id="tipoManutencaoId"
-          className="input"
-          required
-          style={{ borderRadius: 0 }}
-          value={form.tipoManutencaoId}
-          onChange={(e) => onAplicarSelecao(form.veiculoId, e.target.value)}
-        >
-          <option value="">Selecione…</option>
-          {tipos.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.nome}
-              {t.intervaloKm ? ` (a cada ${formatKm(t.intervaloKm)})` : ''}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="field w-[190px]">
-        <label htmlFor="quilometragemPrevista">Quilometragem prevista</label>
-        <input
-          id="quilometragemPrevista"
-          className="input"
-          type="number"
-          min={1}
-          max={2000000}
-          required
-          placeholder="0"
-          style={{ borderRadius: 0 }}
-          value={form.quilometragemPrevista}
-          onChange={(e) => onFormChange({ ...form, quilometragemPrevista: e.target.value })}
-        />
-      </div>
-      <div className="field w-[170px]">
-        <label htmlFor="dataPrevista">Prazo (opcional)</label>
-        <input
-          id="dataPrevista"
-          className="input"
-          type="date"
-          // No agendamento novo a API recusa data no passado; na edição, permite replanejar.
-          min={editando ? undefined : hojeInputDate()}
-          style={{ borderRadius: 0 }}
-          value={form.dataPrevista}
-          onChange={(e) => onFormChange({ ...form, dataPrevista: e.target.value })}
-        />
-      </div>
-      <div className="field min-w-[220px] flex-1">
-        <label htmlFor="observacao">Observação (opcional)</label>
-        <input
-          id="observacao"
-          className="input"
-          type="text"
-          maxLength={500}
-          placeholder="Ex.: levar filtro sobressalente"
-          style={{ borderRadius: 0 }}
-          value={form.observacao}
-          onChange={(e) => onFormChange({ ...form, observacao: e.target.value })}
-        />
-      </div>
-      <button
-        type="submit"
-        className="btn btn-primary"
-        style={{ borderRadius: 0, padding: '10px 20px' }}
-        disabled={pending}
-      >
-        {pending ? 'Salvando…' : editando ? 'Salvar alterações' : 'Agendar'}
-      </button>
-      <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-        A manutenção vence no que vier primeiro: a quilometragem prevista ou o prazo. Quando o tipo
-        tem intervalo cadastrado, a quilometragem já vem sugerida (km atual do veículo + intervalo).
-      </p>
-      <div className="w-full">
-        <ErrorList mensagens={erros} />
-      </div>
-    </InlineForm>
+      </SecaoCampos>
+
+      <SecaoCampos titulo="Observação">
+        <div className="field campo-largo">
+          <label htmlFor="observacao">Observação (opcional)</label>
+          <input
+            id="observacao"
+            className="input"
+            type="text"
+            maxLength={500}
+            placeholder="Ex.: levar filtro sobressalente"
+            value={form.observacao}
+            onChange={(e) => onFormChange({ ...form, observacao: e.target.value })}
+          />
+        </div>
+      </SecaoCampos>
+    </FormDialog>
   )
 }
 
@@ -431,62 +442,60 @@ function ConclusaoManutencaoFormulario({
       onSubmit={onSubmit}
       onCancelar={onCancelar}
     >
-      <div className="field w-[190px]">
-        <label htmlFor="quilometragemRealizada">Quilometragem realizada</label>
-        <input
-          id="quilometragemRealizada"
-          className="input"
-          type="number"
-          min={1}
-          max={2000000}
-          required
-          autoFocus
-          style={{ borderRadius: 0 }}
-          value={form.quilometragemRealizada}
-          onChange={(e) => onFormChange({ ...form, quilometragemRealizada: e.target.value })}
-        />
-      </div>
-      <div className="field w-[170px]">
-        <label htmlFor="dataRealizacao">Data da realização</label>
-        <input
-          id="dataRealizacao"
-          className="input"
-          type="date"
-          required
-          // A API recusa data futura (com margem de 1 dia por causa do fuso).
-          max={hojeInputDate()}
-          style={{ borderRadius: 0 }}
-          value={form.dataRealizacao}
-          onChange={(e) => onFormChange({ ...form, dataRealizacao: e.target.value })}
-        />
-      </div>
-      <div className="field w-[150px]">
-        <label htmlFor="custo">Custo (opcional)</label>
-        <input
-          id="custo"
-          className="input"
-          type="number"
-          min={0}
-          step="0.01"
-          placeholder="0,00"
-          style={{ borderRadius: 0 }}
-          value={form.custo}
-          onChange={(e) => onFormChange({ ...form, custo: e.target.value })}
-        />
-      </div>
-      <div className="field w-full">
-        <label htmlFor="observacaoConclusao">Observação (opcional)</label>
-        <input
-          id="observacaoConclusao"
-          className="input"
-          type="text"
-          maxLength={500}
-          placeholder="Ex.: trocado filtro junto"
-          style={{ borderRadius: 0 }}
-          value={form.observacao}
-          onChange={(e) => onFormChange({ ...form, observacao: e.target.value })}
-        />
-      </div>
+      <SecaoCampos>
+        <div className="field">
+          <label htmlFor="quilometragemRealizada">Quilometragem realizada</label>
+          <input
+            id="quilometragemRealizada"
+            className="input"
+            type="number"
+            min={1}
+            max={2000000}
+            required
+            autoFocus
+            value={form.quilometragemRealizada}
+            onChange={(e) => onFormChange({ ...form, quilometragemRealizada: e.target.value })}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="dataRealizacao">Data da realização</label>
+          <input
+            id="dataRealizacao"
+            className="input"
+            type="date"
+            required
+            // A API recusa data futura (com margem de 1 dia por causa do fuso).
+            max={hojeInputDate()}
+            value={form.dataRealizacao}
+            onChange={(e) => onFormChange({ ...form, dataRealizacao: e.target.value })}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="custo">Custo (opcional)</label>
+          <input
+            id="custo"
+            className="input"
+            type="number"
+            min={0}
+            step="0.01"
+            placeholder="0,00"
+            value={form.custo}
+            onChange={(e) => onFormChange({ ...form, custo: e.target.value })}
+          />
+        </div>
+        <div className="field campo-largo">
+          <label htmlFor="observacaoConclusao">Observação (opcional)</label>
+          <input
+            id="observacaoConclusao"
+            className="input"
+            type="text"
+            maxLength={500}
+            placeholder="Ex.: trocado filtro junto"
+            value={form.observacao}
+            onChange={(e) => onFormChange({ ...form, observacao: e.target.value })}
+          />
+        </div>
+      </SecaoCampos>
     </FormDialog>
   )
 }
@@ -547,6 +556,7 @@ function useManutencoesController() {
   })
 
   const manutencoes = manutencoesQuery.data ?? []
+  const paginacao = usePaginacao(manutencoes)
   const veiculos = veiculosQuery.data ?? []
   const tipos = tiposQuery.data ?? []
 
@@ -684,8 +694,6 @@ function useManutencoesController() {
     setKmSugerido('')
     setErros([])
     setAberto(true)
-    // O formulário abre acima da tabela — a linha editada pode estar fora da tela.
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function fecharForm() {
@@ -750,6 +758,7 @@ function useManutencoesController() {
     temFiltro,
     manutencoesQuery,
     manutencoes,
+    paginacao,
     veiculos,
     tipos,
     aplicarSelecao,
@@ -784,16 +793,15 @@ export function ManutencoesPage() {
             <button
               type="button"
               className="btn btn-primary"
-              style={{ borderRadius: 0 }}
-              onClick={c.aberto ? c.fecharForm : c.abrirCadastro}
-              disabled={c.semCadastrosBase && !c.aberto}
+              onClick={c.abrirCadastro}
+              disabled={c.semCadastrosBase}
               title={
                 c.semCadastrosBase
                   ? 'É preciso ter ao menos um veículo e um tipo de manutenção ativo.'
                   : undefined
               }
             >
-              {c.aberto ? 'Cancelar' : 'Nova manutenção'}
+              Nova manutenção
             </button>
           )
         }
@@ -825,6 +833,7 @@ export function ManutencoesPage() {
           onFormChange={c.setForm}
           onAplicarSelecao={c.aplicarSelecao}
           onSubmit={c.handleSubmit}
+          onCancelar={c.fecharForm}
           pending={c.salvarMutation.isPending}
           erros={c.erros}
           veiculos={c.veiculos}
@@ -849,7 +858,7 @@ export function ManutencoesPage() {
       />
 
       <TabelaManutencoes
-        manutencoes={c.manutencoes}
+        manutencoes={c.paginacao.itensDaPagina}
         colunas={c.colunas}
         mostrarCusto={c.mostrarCusto}
         mostrarAcoes={c.mostrarAcoes}
@@ -866,6 +875,8 @@ export function ManutencoesPage() {
           c.setParaExcluir(m)
         }}
       />
+
+      <Paginacao {...c.paginacao} pending={c.manutencoesQuery.isFetching} />
 
       {c.paraConcluir && (
         <ConclusaoManutencaoFormulario

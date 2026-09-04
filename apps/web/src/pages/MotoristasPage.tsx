@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { motoristasApi } from '../api/motoristas'
 import { AppLayout, PageHeader } from '../components/AppLayout'
-import { TableStates } from '../components/Table'
+import { Paginacao, TableStates } from '../components/Table'
+import { usePaginacao } from '../lib/paginacao'
 import { formatCpf, formatDate } from '../lib/format'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
@@ -15,6 +16,7 @@ export function MotoristasPage() {
   const motoristasQuery = useQuery({ queryKey: ['motoristas'], queryFn: motoristasApi.getAll })
 
   const motoristas = motoristasQuery.data ?? []
+  const p = usePaginacao(motoristas)
 
   return (
     <AppLayout>
@@ -45,7 +47,7 @@ export function MotoristasPage() {
               textoErro="Não foi possível carregar os motoristas."
               textoVazio="Nenhum usuário com o perfil Motorista ainda."
             />
-            {motoristas.map((m) => (
+            {p.itensDaPagina.map((m) => (
               <tr key={m.id}>
                 <td className="font-semibold">{m.nome}</td>
                 <td>{m.email}</td>
@@ -65,6 +67,8 @@ export function MotoristasPage() {
           </tbody>
         </table>
       </div>
+
+      <Paginacao {...p} pending={motoristasQuery.isFetching} />
 
       <p className="mt-4 text-[13px]" style={{ color: mutedText }}>
         Um motorista é um usuário com esse perfil — abre e encerra as próprias rotas em "Minhas

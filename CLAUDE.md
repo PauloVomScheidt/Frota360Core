@@ -112,6 +112,8 @@ Para poupar esse passo em dev, `./scripts/seed-dev.ps1` faz o bootstrap inteiro 
 
 Os demais comandos (build, testes, migrations, lint) estão no `CLAUDE.md` de cada app.
 
+O **Playwright MCP** está registrado no escopo `user` (todas as suas sessões, em qualquer projeto) para verificação visual do front — o que fazer com ele, e o atalho de testar CSS sem subir o sistema inteiro, está em [apps/web/CLAUDE.md](apps/web/CLAUDE.md) (§ Comandos).
+
 ## CI
 
 `.github/workflows/ci.yml`, em PR e push para `main`/`develop`. Três jobs — `api`, `web` e

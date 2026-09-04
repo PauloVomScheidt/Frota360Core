@@ -6,7 +6,15 @@ import type { TipoCombustivelResponse, TipoCombustivelUpdateRequest } from '../a
 import { pode } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { ConfirmDialog, InlineForm, RowActions, TableStates } from '../components/Table'
+import {
+  ConfirmDialog,
+  FormDialog,
+  Paginacao,
+  RowActions,
+  SecaoCampos,
+  TableStates,
+} from '../components/Table'
+import { usePaginacao } from '../lib/paginacao'
 import { formatDate } from '../lib/format'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
@@ -106,8 +114,6 @@ export function TiposCombustivelPage() {
     setForm({ nome: tipo.nome, ativo: String(tipo.ativo) })
     setErros([])
     setAberto(true)
-    // O formulário abre acima da tabela — a linha editada pode estar fora da tela.
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function fecharForm() {
@@ -118,6 +124,7 @@ export function TiposCombustivelPage() {
   }
 
   const tipos = tiposQuery.data ?? []
+  const p = usePaginacao(tipos)
   const mostrarAcoes = podeCadastrar || podeExcluir
   const colunas = mostrarAcoes ? 4 : 3
 
@@ -131,67 +138,59 @@ export function TiposCombustivelPage() {
             <button
               type="button"
               className="btn btn-primary"
-              style={{ borderRadius: 0 }}
-              onClick={aberto ? fecharForm : abrirCadastro}
+              onClick={abrirCadastro}
             >
-              {aberto ? 'Cancelar' : 'Novo tipo'}
+              Novo tipo
             </button>
           )
         }
       />
 
       {aberto && podeCadastrar && (
-        <InlineForm onSubmit={handleSubmit}>
-          {editando && (
-            <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-              Editando <strong style={{ color: 'var(--color-text)' }}>{editando.nome}</strong>.
-            </p>
-          )}
-          <div className="field min-w-[220px] flex-1">
-            <label htmlFor="nomeTipoCombustivel">Nome</label>
-            <input
-              id="nomeTipoCombustivel"
-              className="input"
-              type="text"
-              placeholder="Ex.: Diesel S10"
-              maxLength={100}
-              required
-              style={{ borderRadius: 0 }}
-              value={form.nome}
-              onChange={(e) => setForm({ ...form, nome: e.target.value })}
-            />
-          </div>
-          {editando && (
-            <div className="field w-[150px]">
-              <label htmlFor="ativoTipoCombustivel">Situação</label>
-              <select
-                id="ativoTipoCombustivel"
+        <FormDialog
+          titulo={editando ? 'Editar tipo de combustível' : 'Novo tipo de combustível'}
+          descricao={editando ? `Editando ${editando.nome}.` : undefined}
+          textoConfirmar={editando ? 'Salvar alterações' : 'Cadastrar'}
+          textoPendente="Salvando…"
+          pending={salvarMutation.isPending}
+          erros={erros}
+          onSubmit={handleSubmit}
+          onCancelar={fecharForm}
+        >
+          <SecaoCampos>
+            <div className="field campo-largo">
+              <label htmlFor="nomeTipoCombustivel">Nome</label>
+              <input
+                id="nomeTipoCombustivel"
                 className="input"
-                style={{ borderRadius: 0 }}
-                value={form.ativo}
-                onChange={(e) => setForm({ ...form, ativo: e.target.value })}
-              >
-                <option value="true">Ativo</option>
-                <option value="false">Inativo</option>
-              </select>
+                type="text"
+                placeholder="Ex.: Diesel S10"
+                maxLength={100}
+                required
+                value={form.nome}
+                onChange={(e) => setForm({ ...form, nome: e.target.value })}
+              />
             </div>
-          )}
-          <button
-            type="submit"
-            className="btn btn-primary"
-            style={{ borderRadius: 0, padding: '10px 20px' }}
-            disabled={salvarMutation.isPending}
-          >
-            {salvarMutation.isPending ? 'Salvando…' : editando ? 'Salvar alterações' : 'Cadastrar'}
-          </button>
-          <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-            O nome é único por empresa. Combustível inativo some do seletor de lançamento, mas
-            continua nomeando os abastecimentos antigos.
-          </p>
-          <div className="w-full">
-            <ErrorList mensagens={erros} />
-          </div>
-        </InlineForm>
+            {editando && (
+              <div className="field">
+                <label htmlFor="ativoTipoCombustivel">Situação</label>
+                <select
+                  id="ativoTipoCombustivel"
+                  className="input"
+                  value={form.ativo}
+                  onChange={(e) => setForm({ ...form, ativo: e.target.value })}
+                >
+                  <option value="true">Ativo</option>
+                  <option value="false">Inativo</option>
+                </select>
+              </div>
+            )}
+            <p className="campo-largo m-0 text-[13px]" style={{ color: mutedText }}>
+              O nome é único por empresa. Combustível inativo some do seletor de lançamento, mas
+              continua nomeando os abastecimentos antigos.
+            </p>
+          </SecaoCampos>
+        </FormDialog>
       )}
 
       <div className="mb-3">
@@ -218,7 +217,7 @@ export function TiposCombustivelPage() {
               textoErro="Não foi possível carregar os tipos de combustível."
               textoVazio="Nenhum tipo cadastrado ainda — cadastre o primeiro para poder lançar abastecimentos."
             />
-            {tipos.map((tipo) => (
+            {p.itensDaPagina.map((tipo) => (
               <tr key={tipo.id} style={{ opacity: tipo.ativo ? 1 : 0.6 }}>
                 <td className="font-semibold">{tipo.nome}</td>
                 <td>
@@ -261,6 +260,8 @@ export function TiposCombustivelPage() {
           </tbody>
         </table>
       </div>
+
+      <Paginacao {...p} pending={tiposQuery.isFetching} />
 
       {paraExcluir && (
         <ConfirmDialog

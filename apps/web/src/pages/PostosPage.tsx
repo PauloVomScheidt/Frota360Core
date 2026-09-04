@@ -6,7 +6,15 @@ import type { PostoResponse, PostoUpdateRequest } from '../api/types'
 import { pode } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { ConfirmDialog, InlineForm, RowActions, TableStates } from '../components/Table'
+import {
+  ConfirmDialog,
+  FormDialog,
+  Paginacao,
+  RowActions,
+  SecaoCampos,
+  TableStates,
+} from '../components/Table'
+import { usePaginacao } from '../lib/paginacao'
 import { formatDate } from '../lib/format'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
@@ -121,8 +129,6 @@ export function PostosPage() {
     })
     setErros([])
     setAberto(true)
-    // O formulário abre acima da tabela — a linha editada pode estar fora da tela.
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function fecharForm() {
@@ -133,6 +139,7 @@ export function PostosPage() {
   }
 
   const postos = postosQuery.data ?? []
+  const p = usePaginacao(postos)
   const mostrarAcoes = podeCadastrar || podeExcluir
   const colunas = mostrarAcoes ? 6 : 5
 
@@ -146,93 +153,87 @@ export function PostosPage() {
             <button
               type="button"
               className="btn btn-primary"
-              style={{ borderRadius: 0 }}
-              onClick={aberto ? fecharForm : abrirCadastro}
+              onClick={abrirCadastro}
             >
-              {aberto ? 'Cancelar' : 'Novo posto'}
+              Novo posto
             </button>
           )
         }
       />
 
       {aberto && podeCadastrar && (
-        <InlineForm onSubmit={handleSubmit}>
-          {editando && (
-            <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-              Editando <strong style={{ color: 'var(--color-text)' }}>{editando.nome}</strong>.
-            </p>
-          )}
-          <div className="field min-w-[220px] flex-1">
-            <label htmlFor="nomePosto">Nome</label>
-            <input
-              id="nomePosto"
-              className="input"
-              type="text"
-              placeholder="Ex.: Posto Ipiranga BR-101"
-              maxLength={100}
-              required
-              style={{ borderRadius: 0 }}
-              value={form.nome}
-              onChange={(e) => setForm({ ...form, nome: e.target.value })}
-            />
-          </div>
-          <div className="field w-[190px]">
-            <label htmlFor="cnpjPosto">CNPJ</label>
-            <input
-              id="cnpjPosto"
-              className="input"
-              type="text"
-              placeholder="Opcional"
-              maxLength={18}
-              style={{ borderRadius: 0 }}
-              value={form.cnpj}
-              onChange={(e) => setForm({ ...form, cnpj: e.target.value })}
-            />
-          </div>
-          <div className="field w-[190px]">
-            <label htmlFor="cidadePosto">Cidade</label>
-            <input
-              id="cidadePosto"
-              className="input"
-              type="text"
-              placeholder="Opcional"
-              maxLength={100}
-              style={{ borderRadius: 0 }}
-              value={form.cidade}
-              onChange={(e) => setForm({ ...form, cidade: e.target.value })}
-            />
-          </div>
-          {editando && (
-            <div className="field w-[150px]">
-              <label htmlFor="ativoPosto">Situação</label>
-              <select
-                id="ativoPosto"
+        <FormDialog
+          titulo={editando ? 'Editar posto' : 'Novo posto'}
+          descricao={editando ? `Editando ${editando.nome}.` : undefined}
+          textoConfirmar={editando ? 'Salvar alterações' : 'Cadastrar'}
+          textoPendente="Salvando…"
+          largura={760}
+          pending={salvarMutation.isPending}
+          erros={erros}
+          onSubmit={handleSubmit}
+          onCancelar={fecharForm}
+        >
+          <SecaoCampos titulo="Identificação">
+            <div className="field campo-largo">
+              <label htmlFor="nomePosto">Nome</label>
+              <input
+                id="nomePosto"
                 className="input"
-                style={{ borderRadius: 0 }}
-                value={form.ativo}
-                onChange={(e) => setForm({ ...form, ativo: e.target.value })}
-              >
-                <option value="true">Credenciado</option>
-                <option value="false">Descredenciado</option>
-              </select>
+                type="text"
+                placeholder="Ex.: Posto Ipiranga BR-101"
+                maxLength={100}
+                required
+                value={form.nome}
+                onChange={(e) => setForm({ ...form, nome: e.target.value })}
+              />
             </div>
+            <div className="field">
+              <label htmlFor="cnpjPosto">CNPJ</label>
+              <input
+                id="cnpjPosto"
+                className="input"
+                type="text"
+                placeholder="Opcional"
+                maxLength={18}
+                value={form.cnpj}
+                onChange={(e) => setForm({ ...form, cnpj: e.target.value })}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="cidadePosto">Cidade</label>
+              <input
+                id="cidadePosto"
+                className="input"
+                type="text"
+                placeholder="Opcional"
+                maxLength={100}
+                value={form.cidade}
+                onChange={(e) => setForm({ ...form, cidade: e.target.value })}
+              />
+            </div>
+            <p className="campo-largo m-0 text-[13px]" style={{ color: mutedText }}>
+              O nome é único por empresa. Posto descredenciado some do seletor de lançamento, mas
+              continua nomeando os abastecimentos antigos.
+            </p>
+          </SecaoCampos>
+
+          {editando && (
+            <SecaoCampos titulo="Situação">
+              <div className="field">
+                <label htmlFor="ativoPosto">Credenciamento</label>
+                <select
+                  id="ativoPosto"
+                  className="input"
+                  value={form.ativo}
+                  onChange={(e) => setForm({ ...form, ativo: e.target.value })}
+                >
+                  <option value="true">Credenciado</option>
+                  <option value="false">Descredenciado</option>
+                </select>
+              </div>
+            </SecaoCampos>
           )}
-          <button
-            type="submit"
-            className="btn btn-primary"
-            style={{ borderRadius: 0, padding: '10px 20px' }}
-            disabled={salvarMutation.isPending}
-          >
-            {salvarMutation.isPending ? 'Salvando…' : editando ? 'Salvar alterações' : 'Cadastrar'}
-          </button>
-          <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-            O nome é único por empresa. Posto descredenciado some do seletor de lançamento, mas
-            continua nomeando os abastecimentos antigos.
-          </p>
-          <div className="w-full">
-            <ErrorList mensagens={erros} />
-          </div>
-        </InlineForm>
+        </FormDialog>
       )}
 
       <div className="mb-3">
@@ -261,7 +262,7 @@ export function PostosPage() {
               textoErro="Não foi possível carregar os postos."
               textoVazio="Nenhum posto credenciado ainda — cadastre o primeiro para poder lançar abastecimentos."
             />
-            {postos.map((posto) => (
+            {p.itensDaPagina.map((posto) => (
               <tr key={posto.id} style={{ opacity: posto.ativo ? 1 : 0.6 }}>
                 <td className="font-semibold">{posto.nome}</td>
                 <td>{posto.cnpj ?? '—'}</td>
@@ -306,6 +307,8 @@ export function PostosPage() {
           </tbody>
         </table>
       </div>
+
+      <Paginacao {...p} pending={postosQuery.isFetching} />
 
       {paraExcluir && (
         <ConfirmDialog

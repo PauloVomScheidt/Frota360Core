@@ -4,6 +4,7 @@ import { custosApi } from '../api/custos'
 import { motoristasApi } from '../api/motoristas'
 import { veiculosApi } from '../api/veiculos'
 import type {
+  CustoFiltro,
   CustoPorMesResponse,
   CustoPorVeiculoResponse,
   LancamentoCustoResponse,
@@ -13,13 +14,12 @@ import type {
   VeiculoResponse,
 } from '../api/types'
 import { AppLayout, PageHeader } from '../components/AppLayout'
-import { FiltroPeriodo, Paginacao, TableStates } from '../components/Table'
+import { FiltroPeriodo, PainelDialog, Paginacao, TableStates } from '../components/Table'
+import { useTamanhoPagina } from '../lib/paginacao'
 import { DinheiroIcon, FuelIcon, ReciboIcon, RouteIcon, WrenchIcon } from '../components/icons'
 import { formatDate, formatKm, formatMoeda } from '../lib/format'
 import { formatConsumo, formatCustoPorKm, rotuloDoMes, ROTULO_ORIGEM } from '../lib/custo'
 import { intervaloDoPeriodo, type Periodo } from '../lib/periodo'
-
-const TAMANHO_PAGINA = 25
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
@@ -272,10 +272,12 @@ function TabelaPorVeiculo({
   veiculos,
   pending,
   error,
+  onVerLancamentos,
 }: {
   veiculos: CustoPorVeiculoResponse[]
   pending: boolean
   error: unknown
+  onVerLancamentos: (veiculo: CustoPorVeiculoResponse) => void
 }) {
   return (
     <section className="mb-8">
@@ -294,11 +296,12 @@ function TabelaPorVeiculo({
               <th>Km rodado</th>
               <th>Custo por km</th>
               <th>Consumo</th>
+              <th style={{ textAlign: 'right' }}>Lançamentos</th>
             </tr>
           </thead>
           <tbody>
             <TableStates
-              colSpan={8}
+              colSpan={9}
               pending={pending}
               error={error}
               empty={veiculos.length === 0}
@@ -321,6 +324,18 @@ function TabelaPorVeiculo({
                 <td>{v.km > 0 ? formatKm(v.km) : '—'}</td>
                 <td>{formatCustoPorKm(v.custoPorKm)}</td>
                 <td>{formatConsumo(v.consumoMedio)}</td>
+                <td style={{ textAlign: 'right' }}>
+                  {/* Botão de texto, e não um ícone de `RowActions`: isto não é editar nem
+                      excluir — é abrir o detalhe que sustenta os números da linha. */}
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ padding: '4px 12px', fontSize: 13 }}
+                    onClick={() => onVerLancamentos(v)}
+                  >
+                    Ver
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -391,8 +406,79 @@ function TabelaLancamentos({
   )
 }
 
-export function CustosPage() {
+/**
+ * Os lançamentos de um veículo, sob demanda. Saíram da tela principal porque competiam com
+ * o resumo pela atenção: quem abre `/custos` quer o total, e só desce ao lançamento quando
+ * um número não fecha.
+ *
+ * O `recorte` que chega é o mesmo da tela (período, origem, motorista) — o modal só
+ * acrescenta o veículo. Assim o que se vê aqui explica exatamente a linha que foi clicada.
+ */
+function LancamentosDoVeiculoDialog({
+  veiculo,
+  recorte,
+  temFiltro,
+  onFechar,
+}: {
+  veiculo: CustoPorVeiculoResponse
+  recorte: Omit<CustoFiltro, 'pagina' | 'tamanhoPagina' | 'veiculoId'>
+  temFiltro: boolean
+  onFechar: () => void
+}) {
   const [pagina, setPagina] = useState(1)
+  const { tamanhoPagina, setTamanhoPagina } = useTamanhoPagina()
+
+  const filtro: CustoFiltro = {
+    ...recorte,
+    veiculoId: veiculo.veiculoId,
+    pagina,
+    tamanhoPagina,
+  }
+
+  // Mesmo prefixo `['custos']` das outras consultas — a invalidação de abastecimento,
+  // manutenção, despesa e encerramento de rota já alcança este modal sem nada novo.
+  const query = useQuery({
+    queryKey: ['custos', filtro],
+    queryFn: () => custosApi.consultar(filtro),
+  })
+
+  const dados = query.data
+
+  return (
+    <PainelDialog
+      titulo={`Lançamentos — ${veiculo.veiculoPlaca}`}
+      descricao={`${veiculo.veiculoNome} · ${formatMoeda(veiculo.total)} no recorte atual da tela.`}
+      largura={900}
+      onFechar={onFechar}
+    >
+      <TabelaLancamentos
+        lancamentos={dados?.itens ?? []}
+        pending={query.isPending}
+        error={query.error}
+        temFiltro={temFiltro}
+      />
+
+      {dados && (
+        <Paginacao
+          pagina={dados.pagina}
+          totalPaginas={dados.totalPaginas}
+          total={dados.total}
+          tamanhoPagina={dados.tamanhoPagina}
+          onMudar={setPagina}
+          onMudarTamanho={(t) => {
+            setTamanhoPagina(t)
+            setPagina(1)
+          }}
+          pending={query.isFetching}
+        />
+      )}
+    </PainelDialog>
+  )
+}
+
+export function CustosPage() {
+  /** O veículo cujo detalhe está aberto. Nulo = tela de resumo, sem modal. */
+  const [lancamentosDe, setLancamentosDe] = useState<CustoPorVeiculoResponse | null>(null)
   const [filtroVeiculo, setFiltroVeiculo] = useState('')
   const [filtroMotorista, setFiltroMotorista] = useState('')
   const [filtroOrigem, setFiltroOrigem] = useState('')
@@ -402,7 +488,10 @@ export function CustosPage() {
 
   const intervalo = intervaloDoPeriodo(periodo)
 
-  /** O recorte que vale para as duas consultas — sem paginação, que só a lista usa. */
+  /**
+   * O recorte da tela. Alimenta o resumo e é repassado ao modal de lançamentos, que só
+   * acrescenta o veículo e a paginação.
+   */
   const recorte = {
     veiculoId: filtroVeiculo === '' ? undefined : Number(filtroVeiculo),
     motoristaId: filtroMotorista === '' ? undefined : Number(filtroMotorista),
@@ -410,13 +499,6 @@ export function CustosPage() {
     de: intervalo.de,
     ate: intervalo.ate,
   }
-
-  const filtroDaLista = { ...recorte, pagina, tamanhoPagina: TAMANHO_PAGINA }
-
-  const custosQuery = useQuery({
-    queryKey: ['custos', filtroDaLista],
-    queryFn: () => custosApi.consultar(filtroDaLista),
-  })
 
   const resumoQuery = useQuery({
     queryKey: ['custos', 'resumo', recorte],
@@ -427,16 +509,17 @@ export function CustosPage() {
   const veiculosQuery = useQuery({ queryKey: ['veiculos'], queryFn: veiculosApi.getAll })
   const motoristasQuery = useQuery({ queryKey: ['motoristas'], queryFn: motoristasApi.getAll })
 
-  const dados = custosQuery.data
-  const lancamentos = dados?.itens ?? []
   const resumo = resumoQuery.data
 
   const temFiltro = filtroVeiculo !== '' || filtroMotorista !== '' || filtroOrigem !== '' || periodo !== 'todos'
-  const atualizando = custosQuery.isFetching || resumoQuery.isFetching
+  const atualizando = resumoQuery.isFetching
 
-  /** Qualquer mudança de filtro volta para a primeira página — senão a tela abre vazia. */
-  function resetarPaginacao() {
-    setPagina(1)
+  /**
+   * Mudar filtro fecha o detalhe aberto: o modal mostra o recorte da tela, e mantê-lo
+   * aberto sobre um recorte que mudou embaixo dele diria uma coisa e mostraria outra.
+   */
+  function fecharDetalhe() {
+    setLancamentosDe(null)
   }
 
   function limparFiltros() {
@@ -444,23 +527,20 @@ export function CustosPage() {
     setFiltroMotorista('')
     setFiltroOrigem('')
     setPeriodo('todos')
-    resetarPaginacao()
+    fecharDetalhe()
   }
 
   return (
     <AppLayout>
       <PageHeader
         titulo="Custos"
-        subtitulo="Abastecimentos e manutenções concluídas em uma visão só. Os lançamentos continuam sendo feitos nas telas de origem."
+        subtitulo='Abastecimentos, manutenções concluídas e despesas em uma visão só. O lançamento continua sendo feito nas telas de origem; para ver os de um veículo, use "Ver" na linha dele.'
         acoes={
           <button
             type="button"
             className="btn btn-secondary"
             style={{ borderRadius: 0 }}
-            onClick={() => {
-              custosQuery.refetch()
-              resumoQuery.refetch()
-            }}
+            onClick={() => resumoQuery.refetch()}
             disabled={atualizando}
           >
             {atualizando ? 'Atualizando…' : 'Atualizar'}
@@ -478,19 +558,19 @@ export function CustosPage() {
         temFiltro={temFiltro}
         onFiltroVeiculoChange={(valor) => {
           setFiltroVeiculo(valor)
-          resetarPaginacao()
+          fecharDetalhe()
         }}
         onFiltroMotoristaChange={(valor) => {
           setFiltroMotorista(valor)
-          resetarPaginacao()
+          fecharDetalhe()
         }}
         onFiltroOrigemChange={(valor) => {
           setFiltroOrigem(valor)
-          resetarPaginacao()
+          fecharDetalhe()
         }}
         onPeriodoChange={(valor) => {
           setPeriodo(valor)
-          resetarPaginacao()
+          fecharDetalhe()
         }}
         onLimpar={limparFiltros}
       />
@@ -530,27 +610,15 @@ export function CustosPage() {
         veiculos={resumo?.porVeiculo ?? []}
         pending={resumoQuery.isPending}
         error={resumoQuery.error}
+        onVerLancamentos={setLancamentosDe}
       />
 
-      <h3 className="mb-3" style={{ margin: '0 0 12px' }}>
-        Lançamentos
-      </h3>
-
-      <TabelaLancamentos
-        lancamentos={lancamentos}
-        pending={custosQuery.isPending}
-        error={custosQuery.error}
-        temFiltro={temFiltro}
-      />
-
-      {dados && (
-        <Paginacao
-          pagina={dados.pagina}
-          totalPaginas={dados.totalPaginas}
-          total={dados.total}
-          tamanhoPagina={dados.tamanhoPagina}
-          onMudar={setPagina}
-          pending={custosQuery.isFetching}
+      {lancamentosDe && (
+        <LancamentosDoVeiculoDialog
+          veiculo={lancamentosDe}
+          recorte={recorte}
+          temFiltro={temFiltro}
+          onFechar={fecharDetalhe}
         />
       )}
     </AppLayout>

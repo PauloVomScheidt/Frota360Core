@@ -3,7 +3,7 @@
 > Documento **único** de referência do front-end (React + Vite): arquitetura, rotas, endpoints consumidos, o que cada tela faz e as armadilhas conhecidas.
 > Complementa [`contexto-api.md`](contexto-api.md): lá está o contrato do servidor, aqui está o que a aplicação faz com ele.
 > **Caminhos**: relativos à raiz do monorepo — o código do front vive em `apps/web/`, e os comandos `npm` rodam de lá.
-> Última atualização: 2026-08-28 — tela `/perfil` (§5.11): o próprio usuário corrige nome, CPF e nascimento, em qualquer papel. Também nesta rodada: o 422 da RN08 ao excluir veículo com rota (§5.3) e a placa aceita nos dois formatos e normalizada em maiúsculas pelo servidor.
+> Última atualização: 2026-09-04 — duas rodadas no mesmo dia. (1) **Todo cadastro/edição virou modal** (§8): o `InlineForm` acima da tabela saiu, o `FormDialog` passou a servir as onze telas de escrita e os campos agora se agrupam em `SecaoCampos` por categoria. (2) **Toda listagem pagina** (§8.2), com seletor de 10/15/20 lembrado no navegador — e `/custos` (§5.12) perdeu a tabela de lançamentos da tela principal: agora é um botão por linha de "Por veículo" abrindo o detalhe daquele veículo em modal.
 
 ---
 
@@ -275,9 +275,9 @@ Gestão da equipe, tudo editado direto na linha:
 
 ### 5.8 `/convites` (Admin)
 
-- Formulário sempre visível: e-mail + permissão. A descrição do papel selecionado é mostrada abaixo, junto do aviso de que reenviar invalida o convite pendente anterior.
+- Botão "Novo convite" abre o modal: e-mail + permissão. A descrição do papel selecionado é mostrada abaixo, junto do aviso de que reenviar invalida o convite pendente anterior.
 - **`Motorista` é só mais uma opção do select de permissão** — o formulário não muda, não pede nada a mais, e o convite segue o mesmo caminho das outras roles.
-- Após criar, o **link em claro** retornado pela API aparece num painel destacado com botão "Copiar link" — em dev o e-mail só vai para o log da API, então esse é o caminho prático.
+- Após criar, o modal fecha e o **link em claro** retornado pela API aparece num painel destacado **na página**, com botão "Copiar link" — em dev o e-mail só vai para o log da API, então esse é o caminho prático. O link fica fora do modal de propósito: quem copia precisa dele depois de enviar, não durante o preenchimento.
 - Tabela com status **derivado no cliente**: `utilizadoEm` → "Utilizado" (verde); `expiraEm` no passado → "Expirado" (âmbar); senão "Pendente" (azul). Os três têm cor própria: expirado é uma falha que pede reenvio e antes ficava idêntico a um aceito — os dois eram neutros (§8.1).
 - Convites não utilizados podem ser cancelados; os utilizados mostram a data do aceite no lugar do botão.
 
@@ -308,6 +308,8 @@ A **única tela que todo mundo lê e escreve**: quem abastece na estrada é o mo
 
 O apontamento é **fiscal** desde 03/09/2026 — veículo, motorista, **combustível, posto, litros, valor do litro, odômetro e nota fiscal**, mais frentista (opcional), data e observação. A versão anterior era deliberadamente curta, apostando que precisão não se paga no posto; a aposta foi revista com o stakeholder, porque sem litros nem odômetro **km/l e R$/l eram impossíveis de apurar** — e é o que a gestão de frota precisa medir.
 
+São treze campos, o maior formulário do app — e por isso o modal os divide em **quatro `SecaoCampos`**: **Veículo e motorista** (só no cadastro), **Abastecimento** (combustível, litros, R$/litro, valor total, odômetro, data, mais os avisos de odômetro retroativo e de consumo estimado), **Dados do posto** (posto, nota fiscal, frentista) e **Observação**. É a tela que justifica o agrupamento: numa fileira única os treze campos não têm hierarquia nenhuma.
+
 | Ação | Quem |
 |---|---|
 | Ver a frota inteira | Admin, Supervisor, Operador |
@@ -327,7 +329,7 @@ O apontamento é **fiscal** desde 03/09/2026 — veículo, motorista, **combust�
 - A prévia usa uma query própria — `['abastecimentos', 'doVeiculo', id]`, **sem recorte de data**, porque o abastecimento anterior pode ser de qualquer época e o filtro da listagem (que abre no mês corrente) esconderia justamente a referência. Só busca com o formulário aberto; o prefixo `['abastecimentos']` faz o `invalidar()` já existente alcançá-la.
 - ⚠️ **Para a role Motorista a prévia pode sair inflada, e é por isso que a referência aparece nomeada.** A lista dele vem recortada pelo servidor: se o abastecimento anterior daquele caminhão foi de outra pessoa, a conta vai pegar um lançamento mais antigo dele mesmo — km maior, litros do tanque errado. Mostrar a data e o odômetro da referência deixa isso visível em vez de silencioso; corrigir exigiria afrouxar o recorte, o que não vale a troca.
 - **Combustível e posto vêm dos catálogos** (`/tipos-combustivel` e `/postos`), carregados com `apenasAtivos: true` e **sem `enabled`**, ao contrário de `['motoristas']`: a API abre a leitura dos dois a todos os papéis justamente para o motorista conseguir lançar. Sem catálogo cadastrado o botão de novo lançamento fica desabilitado, com o motivo no `title` — mesma mecânica de "sem veículos"/"sem motoristas".
-- **Veículo e motorista não são editáveis na correção** — trocar qualquer um reatribuiria o gasto. Para isso, exclua e lance de novo; a tela diz isso no formulário. Todo o resto do apontamento é corrigível.
+- **Veículo e motorista não são editáveis na correção** — trocar qualquer um reatribuiria o gasto. Para isso, exclua e lance de novo; na correção a seção inteira "Veículo e motorista" some, e a `descricao` do modal diz o motivo. Todo o resto do apontamento é corrigível.
 - A rota é **contexto derivado**: a API vincula sozinha quando há rota aberta do motorista naquele veículo, e a tabela mostra "Origem → Destino" no lugar do modelo. Ninguém escolhe rota na tela.
 - Litros e R$/litro dividem uma célula na tabela (`48,5 L` com `R$ 6,19/L · 152.340 km` embaixo), no mesmo formato de duas linhas da célula de veículo — a tabela já tem nove colunas.
 - Rodapé com o total **do que está filtrado** (quantidade e valor), não da frota inteira.
@@ -338,16 +340,19 @@ Cache: `['abastecimentos', filtro]`, com `filtro` incluindo `motoristaId`.
 
 Onde o gasto da frota fica visível numa tela só. Antes dela, a resposta para "quanto esse veículo custou em agosto" exigia abrir duas telas e somar à mão: `/abastecimentos` totalizava no cliente, `/manutencoes` exibia a coluna `Custo` e nem isso. Hoje são **três** origens — abastecimento, manutenção concluída e despesa avulsa (§5.9.3).
 
-**Somente leitura, e de propósito.** Não há `InlineForm` nem `RowActions`: o lançamento continua acontecendo nas telas de origem. Do lado da API não existe tabela de custos — as duas origens são unidas na leitura (§ 8.2 do contexto-api), e é isso que faz corrigir um valor em `/abastecimentos` corrigir o total aqui.
+**Somente leitura, e de propósito.** Não há botão "Novo", `FormDialog` nem `RowActions`: o lançamento continua acontecendo nas telas de origem. Do lado da API não existe tabela de custos — as duas origens são unidas na leitura (§ 8.2 do contexto-api), e é isso que faz corrigir um valor em `/abastecimentos` corrigir o total aqui.
 
 **Só gestão.** O endpoint devolve totais da frota inteira, que é justamente o que o motorista não pode ver — a API já esconde dele o custo da manutenção. Sendo a tela fechada na porta (`Roles.Gestao` → 403), nenhum valor precisa ser escondido condicionalmente aqui dentro.
 
-A tela tem quatro blocos, nesta ordem:
+A tela tem **três** blocos, nesta ordem — a tabela de lançamentos era o quarto e saiu: uma lista longa embaixo do resumo competia com ele pela atenção, e quem abre `/custos` quer o total, descendo ao lançamento só quando um número não fecha.
 
 1. **Faixa de KPIs** no formato do dashboard, em **seis** cartões: custo total (com a contagem de lançamentos), combustível, manutenção e despesas (cada um com sua participação no total), **custo por km** e **consumo médio**. Os números vêm somados do banco, não de `reduce` no cliente.
 2. **Gráfico de evolução mensal** — barras empilhadas por origem, some quando o período cabe num mês só. Feito com divs e altura em porcentagem: uma biblioteca de gráfico seria a primeira dependência de front do projeto para desenhar três retângulos. As três séries usam degraus da rampa do acento (`--color-accent-700`, `-400` e `-200`), **não** as classes `.tag-*`: aquelas são reservadas a situação (§8.1), e série de gráfico é categoria.
-3. **Tabela por veículo** — combustível, manutenção, despesas, total, km rodado e R$/km, do maior total para o menor.
-4. **Tabela de lançamentos** paginada (25 por página, teto de 100 no servidor), com o componente `Paginacao`.
+3. **Tabela por veículo** — combustível, manutenção, despesas, total, km rodado e R$/km, do maior total para o menor. A última coluna traz um botão **"Ver"** por linha, e é por ele que se chega aos lançamentos.
+
+**Os lançamentos são detalhe sob demanda.** O botão da linha abre o `PainelDialog` `LancamentosDoVeiculoDialog`, que consulta `GET /custo` com o **recorte da tela** (período, origem, motorista) mais o `veiculoId` daquela linha — então o que se vê ali explica exatamente o número que foi clicado, nunca um recorte diferente. Paginação do servidor, com o mesmo seletor de 10/15/20 do resto do painel (teto de 100 no servidor). Mudar qualquer filtro **fecha o modal**: mantê-lo aberto sobre um recorte que mudou embaixo dele diria uma coisa e mostraria outra.
+
+⚠️ **Não há mais uma visão de "todos os lançamentos" sem escolher veículo.** É a troca consciente por uma tela de resumo limpa; o caminho para a lista crua de um período é o filtro da própria tela de origem (`/abastecimentos`, `/despesas`, `/manutencoes`).
 
 **Dois avisos em `tag-warning`, e ambos existem porque sem eles o número mente:**
 
@@ -380,7 +385,7 @@ Onde entra o custo que não tinha lugar nenhum: pedágio, multa, IPVA, seguro, l
 
 ⚠️ **A exclusão pelo Supervisor é a única do app que não é exclusiva do Admin** (§7). Na tela isso é `pode.excluirDespesa`, entrada separada de `pode.excluir` de propósito — afrouxar aquela afetaria todas as outras telas.
 
-Formato de `/abastecimentos`: `InlineForm` acima da tabela, filtros, e rodapé com o total **do que está filtrado**. As diferenças:
+Mesmo formato de `/abastecimentos`: cadastro em `FormDialog`, filtros, e rodapé com o total **do que está filtrado**. Duas seções no modal — **Despesa** (veículo, tipo, motorista) e **Lançamento** (valor, data, observação). As diferenças:
 
 - **O motorista é opcional** e o select abre em "Não atribuída". Multa tem dono; IPVA e seguro não. É esse campo que faz o filtro por motorista de `/custos` alcançar a despesa.
 - **O veículo é obrigatório** — sem ele o resumo por veículo não fecharia com os totais.
@@ -414,7 +419,7 @@ Os dois catálogos que sustentam o apontamento de abastecimento, no mesmo format
 
 ### 5.10 `/auditoria` (Admin)
 
-Trilha do que a equipe alterou. **Somente leitura** — não há `InlineForm` nem `RowActions`, porque a API não expõe caminho para alterar ou apagar uma linha (nem para o Admin).
+Trilha do que a equipe alterou. **Somente leitura** — não há botão "Novo" nem `RowActions`, porque a API não expõe caminho para alterar ou apagar uma linha (nem para o Admin).
 
 - **Filtros no servidor**, como em `/manutencoes`: o quê (entidade), ação, quem (select alimentado por `['usuarios']` — a tela é Admin, a query já existe) e período de/até. Qualquer mudança de filtro **volta para a página 1**; sem isso a tela abriria vazia ao filtrar estando na página 4.
 - Colunas: **Quando** (`formatDateTime`), **Quem** (nome + o papel *do momento da ação*, que vem gravado na linha e não é o papel atual), **Ação** (`tag`), **Registro** (`Entidade #id`) e **O que aconteceu** (a `descricao` pronta que vem do servidor — nunca montada no cliente).
@@ -565,6 +570,21 @@ Tokens e classes em [`apps/web/src/styles/design-system.css`](apps/web/src/style
 
 Classes: `.btn` (`.btn-primary`, `.btn-secondary`, `.btn-icon`, `.btn-danger`), `.field` + `.input` (`.input-underline` no login), `.tag` (ver abaixo), `.nav`, `.table`, `.dialog*`.
 
+Os três tokens `--radius-*` já valem `0px`, então **`style={{ borderRadius: 0 }}` num botão ou campo novo é ruído** — não escreva.
+
+O diálogo tem quatro classes além de `.dialog`/`.dialog-title`/`.dialog-body`/`.dialog-actions`, todas nascidas com a migração dos formulários para modal:
+
+| Classe | O que faz |
+|---|---|
+| `.dialog-corpo` | O **único trecho rolável** do diálogo. O `.dialog` para em `85vh`; título e botões ficam fixos e só os campos rolam. O `min-height: 0` é o que permite o overflow acontecer dentro do flex |
+| `.dialog-secao-titulo` | Cabeçalho de cada `SecaoCampos` — 11px, caixa alta, régua de 1px embaixo: a mesma linguagem do `<th>` da `.table` |
+| `.dialog-grid` | `repeat(auto-fit, minmax(190px, 1fr))` — três colunas no modal de cadastro (760px), uma no celular, sem media query. **É ele quem decide a largura dos campos**; largura fixa no wrapper do campo quebra o grid |
+| `.campo-largo` | `grid-column: 1 / -1`, para observação, aviso e nota explicativa |
+
+⚠️ **`.dialog` precisa declarar `inset: 0` e `margin: auto` à mão.** O centramento de um `<dialog>` modal é do navegador e sai desse par na folha do UA — mas o **preflight do Tailwind v4 zera `margin` em `*`**, `<dialog>` incluído, e sem as duas linhas o diálogo cola no canto superior esquerdo da tela. Vale para os três (`ConfirmDialog`, `FormDialog` e o que vier depois), já que todos usam a mesma classe. A largura é `calc(100vw - 2rem)` no limite inferior, e não `100%`, para o backdrop continuar visível no celular.
+
+⚠️ **O `useAbrirModalAoMontar` empurra o foco para o primeiro campo — e isso não é enfeite.** Quando o formulário é longo o bastante para `.dialog-corpo` rolar, o Chrome torna o **contêiner de rolagem** focável (é ele quem responde a PageUp/PageDown) e o `showModal()` pousa o foco ali: o anel de `:focus-visible` contorna o formulário inteiro e quem abriu o diálogo começa sem cursor em campo nenhum. O hook só age nesse caso exato — testa `document.activeElement === corpo` antes —, então o `autoFocus` do Cancelar no `ConfirmDialog` e os declarados nas telas continuam valendo.
+
 ### 8.1 Cor de situação — a tabela normativa
 
 **Situação se sinaliza pela classe `.tag`, nunca por `style` inline.** Barra de 3px na cor do estado (`border-left: 3px solid currentColor`), fundo tonal, caixa alta e peso 600 — a mesma classe usada nos mocks de UI da landing (§3.1), não uma imitação. A barra é o que chama o olho numa tabela longa sem que o fundo precise gritar.
@@ -588,17 +608,28 @@ Onde a cor de estado precisa aparecer **fora** de uma tag (texto de andamento em
 
 Os helpers que decidem rótulo e classe vivem em `lib/`, nunca dentro da página: [`lib/rota.ts`](apps/web/src/lib/rota.ts) (`statusDaRota`) e [`lib/manutencao.ts`](apps/web/src/lib/manutencao.ts) (`badgeDaManutencao`, `estaVencendo`, `textoKmRestantes`, `FAIXA_AVISO`) — duas telas nomeiam o mesmo estado e precisam nomeá-lo igual.
 
+### 8.2 Paginação — o corte é no cliente
+
+`lib/paginacao.ts` é o dono da regra. **`usePaginacao(itens)`** recebe a lista já filtrada e devolve a fatia junto com as props do `Paginacao`; **`useTamanhoPagina()`** é só a preferência, para quem pagina no servidor. O tamanho (10/15/20, padrão 15) fica no `localStorage` (`frota360.itensPorPagina`) e vale para o painel inteiro — quem prefere 20 escolhe uma vez.
+
+**Por que no cliente.** Não foi economia de trabalho: `/abastecimentos` e `/despesas` fecham com "N lançamentos · Total: R$ X" somando o **filtro inteiro**, e paginar no servidor reduziria esses números à página visível. Consertar isso exigiria um endpoint de agregação novo em cada recurso, só para desfazer uma regressão. Enquanto a lista couber numa requisição, fatiar no cliente mantém o rodapé honesto de graça. Em `/abastecimentos` a contagem chega ao componente da tabela pela prop **`quantidade`**, separada das linhas, justamente para não haver confusão entre as duas.
+
+⚠️ **O `usePaginacao` clampa a página no render** (`Math.min(pagina, totalPaginas)`), então uma lista que encolhe por um filtro nunca deixa a tela vazia — e **nenhuma tela precisa chamar `resetarPaginacao()` ao filtrar**. Como consequência, página vazia só existe quando a lista inteira é vazia; é por isso que passar a fatia para o `empty` de um `TableStates` continua correto.
+
+**As duas exceções paginam no servidor** e seguem regra própria: `/auditoria` e `/custos` mandam `tamanhoPagina` na consulta e **precisam voltar para a página 1 a cada filtro**, porque o clamp do cliente não alcança o que o servidor recortou. O teto do servidor é 100 nos dois validators.
+
 Componentes reutilizados pelas telas:
 
 | Componente | Onde | O que faz |
 |---|---|---|
 | `AppLayout`, `PageHeader`, `ErrorList` | `components/AppLayout.tsx` | Casca das telas internas, cabeçalho e lista de erros |
 | `AuthScreen`, `AuthHeading` | `components/AuthScreen.tsx` | Casca das telas de autenticação |
-| `InlineForm`, `TableStates` | `components/Table.tsx` | Formulário acima da tabela e as linhas de carregando/erro/vazio |
-| `Paginacao` | `components/Table.tsx` | Rodapé "X–Y de Z" + anterior/próxima. Só `/auditoria` usa (é a única lista que a API pagina) e some quando cabe tudo numa página |
+| `TableStates` | `components/Table.tsx` | As linhas de carregando/erro/vazio dentro de um `<tbody>` |
+| `Paginacao` | `components/Table.tsx` | Rodapé de toda listagem: seletor de itens por página (10/15/20), "X–Y de Z" e anterior/próxima. **Some quando o total cabe na menor opção** — não quando há uma página só, senão esconderia o seletor de quem tem 12 registros e quer ver 10 |
+| `PainelDialog` | `components/Table.tsx` | O diálogo que só mostra conteúdo, com "Fechar" como única ação — irmão do `ConfirmDialog` (confirma) e do `FormDialog` (submete). Serve detalhe sob demanda: hoje, os lançamentos de um veículo em `/custos` |
 | `FiltroPeriodo` | `components/Table.tsx` | Select de período pronto, usado por `/manutencoes` e `/abastecimentos`; a conversão para `de`/`ate` está em `lib/periodo.ts` |
 | `RowActions`, `ConfirmDialog` | `components/Table.tsx` | Ícones de editar/excluir na linha e confirmação de ação consequente (exclusão ou troca de permissão — `variante="padrao"` tira o vermelho quando não é destrutiva) |
-| `FormDialog` | `components/Table.tsx` | Diálogo com campos (concluir uma manutenção, encerrar uma rota) |
+| `FormDialog`, `SecaoCampos` | `components/Table.tsx` | **Todo cadastro/edição do painel** e as transições com campos (concluir manutenção, encerrar rota). `<dialog>` nativo — `showModal()` traz trava de foco, Escape e `::backdrop`; a tabela fica visível ao fundo. `largura` é 760 nos cadastros e 520 (o default) nas transições. `SecaoCampos` agrupa os campos por categoria e o `.dialog-grid` decide a largura de cada um — largura fixa no wrapper, não; `campo-largo` para quem ocupa a linha inteira |
 | `LogoMark`, `Wordmark` | `components/Logo.tsx` | Marca (versões clara e escura) |
 | `icons.tsx` | — | Ícones SVG traçados, 24×24, `currentColor` |
 | `lib/format.ts` | — | Datas, CPF, quilometragem, moeda, iniciais, `paraInputDate` e `hojeInputDate` para `<input type="date">` |
@@ -609,7 +640,7 @@ Componentes reutilizados pelas telas:
 
 ## 9. O que ainda não existe
 
-- **Paginação e ordenação** nas demais listas — tudo vem de uma vez. As exceções são `/auditoria` (§5.10) e `/custos` (§5.12), os dois endpoints paginados da API; `ResultadoPaginado<T>` e o componente `Paginacao` já nascem genéricos para as próximas listas que precisarem.
+- **Ordenação por coluna** — nenhuma tabela deixa clicar no cabeçalho para reordenar; a ordem é a que o servidor devolve. (**Paginação deixou de ser uma pendência**: toda listagem pagina desde 04/09/2026 — no cliente, via `usePaginacao`, exceto `/auditoria` e `/custos`, que já paginavam no servidor. Ver §8.)
 - **Biblioteca de gráfico**: não há nenhuma no `package.json`. O gráfico de `/custos` é feito com divs e altura em porcentagem — uma dependência nova não se paga por três barras empilhadas.
 - **Toasts globais**: erros e sucessos são exibidos no local da ação, não há notificação central.
 - **Tratamento específico de 429**: a mensagem do rate limit chega como erro comum.
