@@ -110,13 +110,13 @@ namespace Frota360.Api.Controllers
             return Ok(ApiResponse<TipoCombustivelResponse>.Ok(atualizado, "Tipo de combustível atualizado com sucesso."));
         }
 
-        /// <summary>Remove um tipo de combustível ainda não utilizado. (Admin)</summary>
+        /// <summary>Remove um tipo de combustível ainda não utilizado. (Admin, Supervisor)</summary>
         /// <response code="200">Removido com sucesso</response>
         /// <response code="403">Sem permissão</response>
         /// <response code="404">Tipo não encontrado</response>
         /// <response code="422">Combustível em uso por abastecimentos; inative-o em vez de excluir</response>
         [HttpDelete("{id:int}")]
-        [Authorize(Roles = Roles.Admin)]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Supervisor}")]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]

@@ -3,8 +3,8 @@ import type { Role } from '../api/types'
 export const ROLES: Role[] = ['Admin', 'Supervisor', 'Operador', 'Motorista']
 
 export const DESCRICAO_ROLE: Record<Role, string> = {
-  Admin: 'Acesso total: usuários, convites e exclusões.',
-  Supervisor: 'Cadastra e edita veículos, rotas e manutenções.',
+  Admin: 'Acesso total: único a administrar usuários, convites e auditoria.',
+  Supervisor: 'Cadastro completo: cria, edita e exclui veículos, rotas, manutenções e catálogos.',
   Operador: 'Visualiza a frota e gerencia rotas.',
   Motorista: 'Abre e encerra as próprias rotas; vê veículos e manutenções sem editar.',
 }
@@ -25,7 +25,11 @@ export const pode = {
   /** Trilha de auditoria (`/auditoria`): só o Admin enxerga o que a equipe alterou. */
   verAuditoria: (role?: Role) => role === 'Admin',
   editarCadastros: (role?: Role) => role === 'Admin' || role === 'Supervisor',
-  excluir: (role?: Role) => role === 'Admin',
+  /**
+   * Excluir acompanha editar: em toda tela de gestão, quem cadastra também apaga. O que
+   * segue exclusivo do Admin são as telas dele — usuários, convites e auditoria.
+   */
+  excluir: (role?: Role) => role === 'Admin' || role === 'Supervisor',
 
   // ----- Visibilidade de tela -----
   verDashboard: gestao,
@@ -75,12 +79,6 @@ export const pode = {
    */
   editarTiposCombustivel: (role?: Role) => role === 'Admin' || role === 'Supervisor',
   editarPostos: (role?: Role) => role === 'Admin' || role === 'Supervisor',
-  /**
-   * ⚠️ **Exceção deliberada** à regra de que só o Admin exclui (`pode.excluir`): por decisão
-   * de produto, o Supervisor também apaga despesa. Entrada separada de propósito — mexer em
-   * `pode.excluir` afetaria todas as outras telas.
-   */
-  excluirDespesa: (role?: Role) => role === 'Admin' || role === 'Supervisor',
 }
 
 /**

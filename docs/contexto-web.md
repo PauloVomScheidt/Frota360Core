@@ -209,7 +209,7 @@ Cadastro completo para a gestão; **leitura para o motorista**, que chega aqui p
 | Ação | Quem |
 |---|---|
 | Ver / criar / editar / encerrar | Gestão (Admin / Supervisor / Operador) |
-| Excluir | Admin |
+| Excluir | Admin, Supervisor |
 
 Esta é a tela de **toda a frota**. O motorista não a alcança — ele tem `/minhas-rotas` (§5.9).
 
@@ -235,7 +235,7 @@ A rota tem um ciclo de vida: nasce **ativa** com o hodômetro de abertura e é *
 |---|---|
 | Ver a lista | Todos |
 | Agendar / editar / concluir | Admin, Supervisor |
-| Excluir | Admin |
+| Excluir | Admin, Supervisor |
 
 A tela de manutenção preventiva. Um registro nasce **planejado** (veículo + tipo + km previsto) e recebe os dados de execução ao ser concluído — é o mesmo registro nos dois momentos.
 
@@ -258,7 +258,7 @@ Catálogo da empresa que alimenta o seletor de agendamento.
 
 - A lista vem **sem** `apenasAtivos` — os inativos aparecem esmaecidos, para poderem ser reativados.
 - Formulário: nome (único por empresa, ≤ 100 caracteres) e intervalo em km (opcional; em branco vira `null`, não `0`). O campo "Situação" só aparece na edição, porque o POST não aceita `ativo`.
-- **Inativar em vez de excluir**: cada linha tem um botão Inativar/Ativar (um `PUT` com o `ativo` invertido). O DELETE fica só para Admin e responde 422 quando o tipo já é referenciado por alguma manutenção — o diálogo de confirmação avisa disso antes.
+- **Inativar em vez de excluir**: cada linha tem um botão Inativar/Ativar (um `PUT` com o `ativo` invertido). O DELETE é de Admin e Supervisor, e responde 422 quando o tipo já é referenciado por alguma manutenção — o diálogo de confirmação avisa disso antes.
 - O intervalo é **informativo**: serve para sugerir a quilometragem no agendamento. A recorrência automática não existe na API.
 
 ### 5.7 `/usuarios` (Admin)
@@ -315,7 +315,7 @@ São treze campos, o maior formulário do app — e por isso o modal os divide e
 | Ver a frota inteira | Admin, Supervisor, Operador |
 | Ver **o que é dele** | Motorista |
 | Lançar e corrigir | Todos |
-| Excluir | Admin |
+| Excluir | Admin, Supervisor |
 
 - **O recorte do motorista é do servidor** (sai do `sub` do token), como em `/minhas-rotas`: um `motoristaId` enviado por ele é sobrescrito — filtro de cliente não é isolamento. Consequência prática na tela: **toda linha que o motorista enxerga é dele**, então o botão de corrigir não precisa de condicional por dono. Para ele a coluna "Quem lançou" some (seria sempre alguém da gestão ou ele mesmo) e o filtro por motorista também.
 - **"Motorista" e "Quem lançou" são pessoas diferentes** quando a gestão lança em nome de alguém: o gasto é do motorista, o registro é de quem digitou. O recorte do motorista é pelo **primeiro** — ele enxerga o que o supervisor lançou **para** ele.
@@ -381,9 +381,7 @@ Onde entra o custo que não tinha lugar nenhum: pedágio, multa, IPVA, seguro, l
 | Ação | Quem |
 |---|---|
 | Ver e lançar | Admin, Supervisor, Operador |
-| **Excluir** | **Admin e Supervisor** ⚠️ |
-
-⚠️ **A exclusão pelo Supervisor é a única do app que não é exclusiva do Admin** (§7). Na tela isso é `pode.excluirDespesa`, entrada separada de `pode.excluir` de propósito — afrouxar aquela afetaria todas as outras telas.
+| Excluir | Admin, Supervisor |
 
 Mesmo formato de `/abastecimentos`: cadastro em `FormDialog`, filtros, e rodapé com o total **do que está filtrado**. Duas seções no modal — **Despesa** (veículo, tipo, motorista) e **Lançamento** (valor, data, observação). As diferenças:
 
@@ -400,7 +398,6 @@ Cache: `['despesas', filtro]`. Toda mutação invalida também `['custos']` (§6
 Gêmeo de `/tipos-manutencao`, sem o campo de intervalo em km. Catálogo por empresa, com nome único, semeado no provisionamento (Pedágio, Multa de trânsito, IPVA, Licenciamento, Seguro, Lavagem, Estacionamento) — as empresas que já existiam foram semeadas pela migration, então a tela nunca abre vazia num cliente antigo.
 
 - **Inativar é o caminho, não excluir**: o atalho na linha tira o tipo do seletor de lançamento sem apagar o histórico. O DELETE de um tipo em uso devolve 422 dizendo exatamente isso, exibido dentro do `ConfirmDialog`.
-- Exclusão é **só Admin** aqui — a exceção do Supervisor vale para a despesa, não para o catálogo.
 - ⚠️ Renomear um tipo muda o que **três** telas exibem: o catálogo, a lista de despesas (que desnormaliza o nome) e a coluna Categoria de `/custos`. Por isso a mutação invalida as três chaves (§6.4).
 
 ### 5.9.5 `/tipos-combustivel` e `/postos` (Admin / Supervisor)
@@ -499,9 +496,9 @@ Cruzamentos que não são óbvios, conferidos no código:
 | **auditoria** | `GET /auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` (Admin) | AuditoriaPage — paginado: `dados` é um `ResultadoPaginado<T>`, não um array |
 | **custo** | `GET /custo?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&origem=&de=&ate=` · `GET /custo/resumo?veiculoId=&motoristaId=&origem=&de=&ate=` (gestão) | CustosPage — a lista é paginada (`ResultadoPaginado<T>`); o resumo é a **única agregação servida pela API** |
 | **despesa** | `GET /despesa?pagina=&tamanhoPagina=&veiculoId=&tipoDespesaId=&motoristaId=&de=&ate=` · `GET /despesa/resumo?<mesmos filtros>` | DespesasPage |
-| **tipodespesa** | `GET /tipodespesa?apenasAtivos=`, `POST`, `PUT /{id}`, `DELETE /{id}` (gestão; escrita Admin+Supervisor, DELETE só Admin) | TiposDespesaPage e o seletor de DespesasPage |
-| **tipocombustivel** | `GET /tipocombustivel?apenasAtivos=` (**qualquer autenticado**, Motorista incluído), `POST`, `PUT /{id}` (Admin+Supervisor), `DELETE /{id}` (Admin) | TiposCombustivelPage e o seletor de AbastecimentosPage — a query **não** usa `enabled`, ao contrário de `['motoristas']` |
-| **posto** | `GET /posto?apenasAtivos=` (**qualquer autenticado**), `POST`, `PUT /{id}` (Admin+Supervisor), `DELETE /{id}` (Admin) | PostosPage e o seletor de AbastecimentosPage; item em uso no DELETE → **422** pedindo para inativar |
+| **tipodespesa** | `GET /tipodespesa?apenasAtivos=`, `POST`, `PUT /{id}`, `DELETE /{id}` (gestão; escrita e DELETE Admin+Supervisor) | TiposDespesaPage e o seletor de DespesasPage |
+| **tipocombustivel** | `GET /tipocombustivel?apenasAtivos=` (**qualquer autenticado**, Motorista incluído), `POST`, `PUT /{id}`, `DELETE /{id}` (Admin+Supervisor) | TiposCombustivelPage e o seletor de AbastecimentosPage — a query **não** usa `enabled`, ao contrário de `['motoristas']` |
+| **posto** | `GET /posto?apenasAtivos=` (**qualquer autenticado**), `POST`, `PUT /{id}`, `DELETE /{id}` (Admin+Supervisor) | PostosPage e o seletor de AbastecimentosPage; item em uso no DELETE → **422** pedindo para inativar |
 | **usuario** | `GET /usuario` (Admin) | UsuariosPage, **AuditoriaPage** (select "Quem") |
 | | `PUT /usuario/{id}/role` | muda permissão — revoga a sessão do alvo |
 | | `PUT /usuario/{id}/ativo` | ativa/desativa — idem; último admin ativo → 422 |
@@ -512,7 +509,7 @@ Cruzamentos que não são óbvios, conferidos no código:
 | **abastecimento** | `GET /abastecimento?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&de=&ate=` · `GET /abastecimento/resumo?<mesmos filtros>` · `GET /abastecimento/anterior?veiculoId=&odometro=&ignorarId=` | AbastecimentosPage — **paginado**. `motoristaId` serve à gestão; para o Motorista a API o sobrescreve com o do token, **inclusive no `total` e no `/resumo`**. O `/anterior` é a referência do km/l e enxerga o histórico do veículo (não o do motorista), devolvendo só data e odômetro |
 | | `POST /abastecimento` | lançamento — a API resolve motorista (token, para a role Motorista) e rota, **calcula o `valor`** (litros × R$/l; o corpo não o envia) e **avança o odômetro do veículo**; veículo fora da rota aberta, combustível/posto inativo ou de outra empresa → **422** |
 | | `PUT /abastecimento/{id}` | correção de todo o apontamento **menos** veículo e motorista; lançamento de outro motorista → 404 para ele |
-| | `DELETE /abastecimento/{id}` (Admin) | exclusão |
+| | `DELETE /abastecimento/{id}` (Admin, Supervisor) | exclusão |
 | **veiculo** | `GET/POST /veiculo`, `GET/PUT/DELETE /veiculo/{id}` | VeiculosPage, Dashboard — a resposta traz `emRota` derivado (existe rota aberta com o veículo); placa nos dois formatos, normalizada em maiúsculas pelo servidor; DELETE com rota **ou abastecimento** associado → **422** (RN08) |
 | **rota** | `GET /rota?pagina=&tamanhoPagina=&ativo=` · `GET /rota/minhas?<idem>` · `GET /rota/resumo?de=&ate=` · `POST /rota`, `GET/PUT/DELETE /rota/{id}` | RotasPage, Dashboard — o POST leva `kmInicial` e **pode avançar o odômetro do veículo**; o PUT não mexe em `kmInicial`, `ativo` nem `dataFim` |
 | | `GET /rota/minhas` (Motorista) | MinhasRotasPage — sem parâmetro: o motorista vem da claim |
@@ -523,7 +520,7 @@ Cruzamentos que não são óbvios, conferidos no código:
 | **manutencao** | `GET /manutencao?pagina=&tamanhoPagina=&veiculoId=&status=&de=&ate=` | ManutencoesPage — todos os filtros vão para o servidor, período incluído |
 | | `POST /manutencao`, `PUT /manutencao/{id}` | agendar / replanejar (só pendente) |
 | | `POST /manutencao/{id}/concluir` | conclusão — **pode avançar o odômetro do veículo** |
-| | `DELETE /manutencao/{id}` (Admin) | descarte (não há endpoint de cancelar) |
+| | `DELETE /manutencao/{id}` (Admin, Supervisor) | descarte (não há endpoint de cancelar) |
 
 ---
 
@@ -542,17 +539,16 @@ Cruzamentos que não são óbvios, conferidos no código:
 | Lançar e corrigir abastecimento | ✅ | ✅ | ✅ | ✅ (só o que é dele) |
 | Ver os custos consolidados (`/custos`) | ✅ | ✅ | ✅ | — |
 | Lançar e corrigir despesa (`/despesas`) | ✅ | ✅ | ✅ | — |
-| **Excluir despesa** ⚠️ | ✅ | ✅ | — | — |
 | Manter o catálogo de tipos de despesa | ✅ | ✅ | — | — |
 | Manter os catálogos de combustível e postos ⚠️ | ✅ | ✅ | — | — |
-| Excluir qualquer registro | ✅ | — | — | — |
+| Excluir qualquer registro das telas de gestão | ✅ | ✅ | — | — |
 | Usuários e convites | ✅ | — | — | — |
 | Ver a trilha de auditoria | ✅ | — | — | — |
 | Editar o **próprio** cadastro (`/perfil`) | ✅ | ✅ | ✅ | ✅ |
 
 ⚠️ **Os catálogos de combustível e posto são o único caso em que a tela é mais restrita que o endpoint.** A **leitura** de `/tipocombustivel` e `/posto` é aberta a todos os papéis na API — o motorista precisa dela para lançar abastecimento —, mas as telas `/tipos-combustivel` e `/postos` são de Admin/Supervisor. A linha acima descreve a tela, não o endpoint.
 
-⚠️ **Excluir despesa é a única exclusão que não é exclusiva do Admin.** É decisão de produto, e por isso `permissions.ts` tem uma entrada separada (`pode.excluirDespesa`) em vez de afrouxar `pode.excluir`, que continua Admin-only e serve todas as outras telas.
+**Exclusão acompanha edição**: quem cadastra numa tela também apaga ali, e por isso `pode.excluir` é uma entrada única para as nove telas de gestão. O Admin segue sozinho nas telas dele — usuários, convites e auditoria —, e o cancelamento de convite (`DELETE /convite/{id}`) é a única exclusão que continua Admin-only.
 
 A linha do perfil é a única em que as quatro colunas são ✅ — e por isso `/perfil` não tem entrada em `pode.*`: um predicado que devolve `true` para todo mundo é ruído, não permissão. Corrigir o cadastro **de outra pessoa** não aparece na matriz porque não existe em papel nenhum, o Admin incluído.
 
@@ -656,9 +652,9 @@ Componentes reutilizados pelas telas:
 - **Testes**: não há suíte no front.
 - Sino de notificações e os links do rodapé/termos de uso são placeholders.
 - A landing usa dados fictícios no mock do painel — nada ali reflete a base real.
-- **Cancelar manutenção**: a API ainda não expõe `POST /manutencao/{id}/cancelar`, então descartar um agendamento passa pelo DELETE (Admin) e o filtro "Cancelada" nem é oferecido.
+- **Cancelar manutenção**: a API ainda não expõe `POST /manutencao/{id}/cancelar`, então descartar um agendamento passa pelo DELETE (Admin, Supervisor) e o filtro "Cancelada" nem é oferecido.
 - **Atualizar só a quilometragem do veículo**: não há `PATCH` dedicado. O odômetro sobe pelo `PUT /veiculo/{id}` completo, pela conclusão de uma manutenção e — desde a RN10 — pela abertura e pelo encerramento de rotas, que é o caminho do dia a dia e o que finalmente alimenta os alertas de atraso.
-- **Reabrir uma rota encerrada**: a API não expõe o caminho inverso do encerramento, e o `PUT` não mexe mais em `ativo`/`dataFim`. Corrigir um encerramento errado passa por excluir a rota (Admin) e recriá-la.
+- **Reabrir uma rota encerrada**: a API não expõe o caminho inverso do encerramento, e o `PUT` não mexe mais em `ativo`/`dataFim`. Corrigir um encerramento errado passa por excluir a rota (Admin, Supervisor) e recriá-la.
 - O dashboard ainda não mostra nada de manutenção (nenhum KPI de atrasadas).
 - **Corrigir o cadastro de outra pessoa**: não existe, nem para o Admin. `/perfil` (§5.11) é autoatendimento — se alguém precisa de correção e não consegue entrar, o caminho é reenviar convite ou solicitação formal ao controlador.
 - **Trocar o próprio e-mail**: fora do escopo de `/perfil`. É a chave de login e exigiria reverificação, além de mexer em convite e refresh token.

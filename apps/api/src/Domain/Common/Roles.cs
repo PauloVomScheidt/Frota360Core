@@ -2,8 +2,9 @@ namespace Frota360.Domain.Common
 {
     /// <summary>
     /// Roles do sistema (matriz de permissões no PLANO-AUTH-ROLES.md):
-    /// Admin gerencia tudo (único que exclui e administra usuários);
-    /// Supervisor cria/edita motoristas, veículos e rotas;
+    /// Admin gerencia tudo (único que administra usuários, convites e auditoria);
+    /// Supervisor tem cadastro completo — cria, edita e exclui veículos, rotas,
+    /// manutenções, lançamentos e catálogos;
     /// Operador cria/edita apenas rotas e visualiza o restante;
     /// Motorista enxerga apenas as próprias rotas — abre e encerra, nada mais.
     /// </summary>

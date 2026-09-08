@@ -94,8 +94,8 @@ Alterar role ou desativar. Ambos revogam a sessão (forçam novo login para o to
 
 | Role | Alcance |
 |---|---|
-| `Admin` | Tudo. Único que exclui e que administra usuários/convites. |
-| `Supervisor` | Cadastra e edita veículos, rotas e manutenções. |
+| `Admin` | Tudo. Único que administra usuários, convites e auditoria. |
+| `Supervisor` | Cadastro completo — cria, edita **e exclui** veículos, rotas, manutenções, lançamentos e catálogos. Não administra usuários nem vê a auditoria. |
 | `Operador` | Visualiza a frota e opera rotas (abre, edita, encerra). |
 | `Motorista` | Opera **só as próprias rotas** (`GET /rota/minhas`, `POST /rota`, `POST /rota/{id}/encerrar`) e **lê** veículos e manutenções (`GET /veiculo`, `GET /manutencao`) — precisa saber o estado do caminhão que vai pegar. O `Custo` da manutenção é omitido para ele. Convite, promoção e rebaixamento são iguais aos das demais roles. |
 
@@ -181,7 +181,7 @@ Além do odômetro, o encerramento grava `Veiculo.UltimoMotorista` e `Veiculo.Da
 | `TipoCombustivel` | `Nome` | `TiposCombustivelPadrao` — 7 itens, via `BackofficeService` (empresa nova) e `INSERT` no `Up` da migration (empresas existentes) |
 | `Posto` | `Nome`, `Cnpj?`, `Cidade?` | **nenhum** — rede credenciada não tem padrão, cada empresa cadastra a sua |
 
-⚠️ **Os dois controllers têm `[Authorize]` na classe, não `Roles.Gestao`.** É a diferença em relação a `TipoDespesaController`: o motorista lança abastecimento e precisa **ler** os dois catálogos para preencher o formulário. Como os atributos de classe e de ação se combinam por **E**, `Roles.Gestao` na classe barraria também o `GET`. A escrita fica nas ações (`Admin,Supervisor` para POST/PUT; `Admin` para DELETE).
+⚠️ **Os dois controllers têm `[Authorize]` na classe, não `Roles.Gestao`.** É a diferença em relação a `TipoDespesaController`: o motorista lança abastecimento e precisa **ler** os dois catálogos para preencher o formulário. Como os atributos de classe e de ação se combinam por **E**, `Roles.Gestao` na classe barraria também o `GET`. A escrita fica nas ações — `Admin,Supervisor` para POST/PUT **e para DELETE**.
 
 Item inativo do catálogo continua nomeando o passado mas **não recebe lançamento novo**: `Create`/`UpdateAbastecimentoHandler` resolvem combustível e posto por `GetByIdAsync(id, empresaId)` — id de outra empresa "não existe" — e recusam com 422 quando `Ativo` é falso.
 
@@ -206,7 +206,7 @@ A gestão escolhe o motorista, e ele é **obrigatório**: sem ele o handler recu
 
 `RotaId` **saiu do contrato de entrada**: é sempre derivado no servidor. A FK continua `SetNull` — excluir a rota não pode levar junto o gasto, que aconteceu de verdade.
 
-Escrita é aberta a **todos os papéis** (quem abastece na estrada é o motorista, no pátio é o operador); exclusão é só Admin, como no resto. Veículo, motorista e rota não entram no `PUT` — todo o resto do apontamento entra: trocar qualquer um dos três reatribuiria o gasto. Nesse caso, exclua e lance de novo.
+Escrita é aberta a **todos os papéis** (quem abastece na estrada é o motorista, no pátio é o operador); exclusão é de Admin e Supervisor, como no resto. Veículo, motorista e rota não entram no `PUT` — todo o resto do apontamento entra: trocar qualquer um dos três reatribuiria o gasto. Nesse caso, exclua e lance de novo.
 
 **RN08 estendida:** veículo com abastecimento lançado não pode ser excluído (a FK é `Restrict`, então sem a guarda o usuário veria 500 em vez da explicação). A mesma guarda vale para os catálogos: `IAbastecimentoRepository.ExisteComTipoCombustivelAsync`/`ExisteComPostoAsync` sustentam o 422 dos dois `Delete*Handler`.
 
@@ -341,17 +341,14 @@ Despesa       Id, EmpresaId
 
 **O `PUT` altera tudo**, inclusive veículo, tipo e motorista — divergência consciente do abastecimento, onde só valor/data/observação são editáveis. Lá a trava existe porque a troca reatribuiria um gasto sujeito a recorte por dono; aqui não há recorte, e a auditoria grava o diff campo a campo. Exigir "exclua e lance de novo" para corrigir um IPVA digitado no veículo errado seria atrito sem regra por trás.
 
-**Papéis — e uma exceção deliberada:**
+**Papéis:**
 
 | Ação | Quem |
 |---|---|
 | Ler e lançar despesa | Admin, Supervisor, Operador (`Roles.Gestao`) |
-| **Excluir despesa** | **Admin e Supervisor** ⚠️ |
+| Excluir despesa | Admin, Supervisor |
 | Ler o catálogo | `Roles.Gestao` |
-| Criar/editar tipo | Admin, Supervisor |
-| Excluir tipo | Admin |
-
-⚠️ **A exclusão de despesa pelo Supervisor rompe a regra "Admin é o único que exclui"** que vale no resto da API. É decisão de produto, não descuido — está anotada no atributo do `DespesaController` e em `apps/api/CLAUDE.md`. O catálogo mantém a regra original.
+| Criar/editar/excluir tipo | Admin, Supervisor |
 
 O Motorista recebe **403** em `/despesa` e `/tipodespesa`: o lançamento é administrativo e ele não vê valor de frota. Como em `/custo`, é isso que dispensa os handlers de replicar a regra de `ManutencaoVisibilidade.SemCustoParaMotorista`.
 
@@ -459,17 +456,17 @@ Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou 
 | GET | `/veiculo` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**) — a resposta traz `emRota` derivado |
 | GET | `/manutencao?veiculoId=&status=&de=&ate=` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**, sem `custo`) |
 | GET/POST/PUT | `/abastecimento?veiculoId=&motoristaId=&de=&ate=` (+ `/{id}`) — apontamento fiscal; `valor` **não** entra no corpo, é derivado de litros × R$/l | qualquer autenticado — o Motorista só alcança o que é dele, e `motoristaId` é ignorado para ele |
-| GET/POST/PUT | `/despesa?veiculoId=&motoristaId=&tipoDespesaId=&de=&ate=` (+ `/{id}`) — custo avulso; **DELETE aqui é Admin *e* Supervisor** | Admin, Supervisor, Operador |
-| GET | `/tipodespesa?apenasAtivos=` (+ `/{id}`) — catálogo; POST/PUT Admin+Supervisor, DELETE só Admin | Admin, Supervisor, Operador |
-| GET | `/tipocombustivel?apenasAtivos=` (+ `/{id}`) — catálogo; POST/PUT Admin+Supervisor, DELETE só Admin | **qualquer autenticado** (inclui Motorista): ele precisa do catálogo para lançar |
-| GET | `/posto?apenasAtivos=` (+ `/{id}`) — rede credenciada; POST/PUT Admin+Supervisor, DELETE só Admin | **qualquer autenticado** (inclui Motorista) |
+| GET/POST/PUT | `/despesa?veiculoId=&motoristaId=&tipoDespesaId=&de=&ate=` (+ `/{id}`) — custo avulso; DELETE Admin+Supervisor | Admin, Supervisor, Operador |
+| GET | `/tipodespesa?apenasAtivos=` (+ `/{id}`) — catálogo; POST/PUT/DELETE Admin+Supervisor | Admin, Supervisor, Operador |
+| GET | `/tipocombustivel?apenasAtivos=` (+ `/{id}`) — catálogo; POST/PUT/DELETE Admin+Supervisor | **qualquer autenticado** (inclui Motorista): ele precisa do catálogo para lançar |
+| GET | `/posto?apenasAtivos=` (+ `/{id}`) — rede credenciada; POST/PUT/DELETE Admin+Supervisor | **qualquer autenticado** (inclui Motorista) |
 | GET | `/motorista` (+ `/{id}`) — **somente leitura**: os usuários com a role Motorista | Admin, Supervisor, Operador |
 | GET | `/rota`, `/tipomanutencao?apenasAtivos=` (+ `/{id}`) | Admin, Supervisor, Operador |
 | GET | `/rota/minhas` | **Motorista** (rotas do próprio, pelo `sub` do token) |
 | POST/PUT | `/veiculo`, `/tipomanutencao`, `/manutencao`, `/manutencao/{id}/concluir` | Admin, Supervisor |
 | PUT | `/rota/{id}` | Admin, Supervisor, Operador |
 | POST | `/rota`, `/rota/{id}/encerrar` | qualquer autenticado — o Motorista só alcança as próprias rotas |
-| DELETE | `/{qualquer}/{id}` (não há DELETE de motorista) — `/veiculo/{id}` responde 422 se houver rota associada (RN08) | **Admin** (único que exclui) |
+| DELETE | `/{qualquer}/{id}` (não há DELETE de motorista) — `/veiculo/{id}` responde 422 se houver rota associada (RN08) | **Admin, Supervisor** — exceto `/convite/{id}`, que é Admin |
 | GET | `/health`, `/health/detail`, `/scalar/v1` | aberto |
 
 ## Infra e config

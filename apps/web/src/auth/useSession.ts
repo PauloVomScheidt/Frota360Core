@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { tokenStorage, type StoredUser } from '../api/tokenStorage'
+import { tokenStorage, USER_KEY, type StoredUser } from '../api/tokenStorage'
 
 // localStorage não notifica a própria aba; o evento abaixo cobre login/logout
 // feitos por esta aba, e 'storage' cobre as outras.
@@ -22,7 +22,7 @@ let cache: { raw: string | null; user: StoredUser | null } = { raw: null, user: 
 
 function getSnapshot(): StoredUser | null {
   // useSyncExternalStore exige identidade estável entre renders sem mudança.
-  const raw = localStorage.getItem('frota360.user')
+  const raw = localStorage.getItem(USER_KEY)
   if (raw !== cache.raw) cache = { raw, user: tokenStorage.getUser() }
   return cache.user
 }

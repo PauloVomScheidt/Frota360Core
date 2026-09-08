@@ -196,12 +196,12 @@ namespace Frota360.Api.Controllers
             return Ok(ApiResponse<RotaResponse>.Ok(encerrada, "Rota encerrada com sucesso."));
         }
 
-        /// <summary>Remove uma rota. (Admin)</summary>
+        /// <summary>Remove uma rota. (Admin, Supervisor)</summary>
         /// <response code="200">Removido com sucesso</response>
         /// <response code="403">Sem permissão</response>
         /// <response code="404">Rota não encontrada</response>
         [HttpDelete("{id:int}")]
-        [Authorize(Roles = Roles.Admin)]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Supervisor}")]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]

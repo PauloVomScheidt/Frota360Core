@@ -294,8 +294,7 @@ export function DespesasPage() {
   const queryClient = useQueryClient()
   const user = useSession()
   const podeLancar = pode.lancarDespesa(user?.role)
-  // Exceção deliberada: aqui o Supervisor também exclui, não só o Admin.
-  const podeExcluir = pode.excluirDespesa(user?.role)
+  const podeExcluir = pode.excluir(user?.role)
 
   const [aberto, setAberto] = useState(false)
   const [editando, setEditando] = useState<DespesaResponse | null>(null)

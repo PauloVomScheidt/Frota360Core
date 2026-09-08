@@ -102,13 +102,13 @@ namespace Frota360.Api.Controllers
             return Ok(ApiResponse<VeiculoResponse>.Ok(atualizado, "Veículo atualizado com sucesso."));
         }
 
-        /// <summary>Remove um veículo da frota sem rotas associadas. (Admin)</summary>
+        /// <summary>Remove um veículo da frota sem rotas associadas. (Admin, Supervisor)</summary>
         /// <response code="200">Removido com sucesso</response>
         /// <response code="403">Sem permissão</response>
         /// <response code="404">Veículo não encontrado</response>
         /// <response code="422">Veículo com rotas associadas (RN08); encerre ou remova as rotas antes</response>
         [HttpDelete("{id:int}")]
-        [Authorize(Roles = Roles.Admin)]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Supervisor}")]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
