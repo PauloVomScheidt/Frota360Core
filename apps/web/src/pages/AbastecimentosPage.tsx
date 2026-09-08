@@ -1,22 +1,44 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { abastecimentosApi } from '../api/abastecimentos'
+import { tiposCombustivelApi } from '../api/tiposCombustivel'
+import { postosApi } from '../api/postos'
 import { motoristasApi } from '../api/motoristas'
 import { rotasApi } from '../api/rotas'
 import { veiculosApi } from '../api/veiculos'
 import { mensagensDeErro } from '../api/errors'
 import type {
+  AbastecimentoAnteriorResponse,
   AbastecimentoFiltro,
   AbastecimentoResponse,
   MotoristaResponse,
+  PostoResponse,
   RotaResponse,
+  TipoCombustivelResponse,
   VeiculoResponse,
 } from '../api/types'
 import { pode } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
-import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { ConfirmDialog, FiltroPeriodo, InlineForm, RowActions, TableStates } from '../components/Table'
-import { formatDate, formatMoeda, hojeInputDate, paraInputDate } from '../lib/format'
+import { AppLayout, PageHeader } from '../components/AppLayout'
+import {
+  ConfirmDialog,
+  FiltroPeriodo,
+  FormDialog,
+  Paginacao,
+  RowActions,
+  SecaoCampos,
+  TableStates,
+} from '../components/Table'
+import { usePaginacaoServidor } from '../lib/paginacao'
+import {
+  formatConsumo,
+  formatDate,
+  formatKm,
+  formatLitros,
+  formatMoeda,
+  hojeInputDate,
+  paraInputDate,
+} from '../lib/format'
 import { intervaloDoPeriodo, type Periodo } from '../lib/periodo'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
@@ -24,7 +46,13 @@ const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 const FORM_VAZIO = {
   veiculoId: '',
   motoristaId: '',
-  valor: '',
+  tipoCombustivelId: '',
+  postoId: '',
+  litros: '',
+  valorLitro: '',
+  odometro: '',
+  notaFiscal: '',
+  frentista: '',
   dataAbastecimento: '',
   observacao: '',
 }
@@ -32,7 +60,18 @@ const FORM_VAZIO = {
 type FormularioAbastecimento = typeof FORM_VAZIO
 
 /**
- * Painel de cadastro/edição — extraído à parte por ser, sozinho, o maior bloco de JSX
+ * A média estimada desde o abastecimento anterior daquele veículo. Carrega a referência
+ * junto de propósito: a tela nomeia a data e o odômetro dela para quem lança conseguir ver
+ * que o cálculo pegou o lançamento certo — ou o errado.
+ */
+type ConsumoEstimado = {
+  anterior: AbastecimentoAnteriorResponse
+  km: number
+  kmPorLitro: number
+}
+
+/**
+ * Modal de cadastro/edição — extraído à parte por ser, sozinho, o maior bloco de JSX
  * da tela (as três variações de campo motorista/veículo conforme papel e estado de
  * edição). Nenhuma regra muda de lugar: cada `onFormChange` chama o mesmo `setForm`
  * que já existia aqui dentro.
@@ -42,162 +81,306 @@ function AbastecimentoFormulario({
   form,
   onFormChange,
   onSubmit,
+  onCancelar,
   pending,
   erros,
   veiculosDisponiveis,
   veiculos,
   motoristas,
+  combustiveis,
+  postos,
   motorista,
   nomeUsuario,
   rotaAtiva,
+  valorTotal,
+  consumoEstimado,
 }: {
   editando: AbastecimentoResponse | null
   form: FormularioAbastecimento
   onFormChange: (form: FormularioAbastecimento) => void
   onSubmit: (e: FormEvent) => void
+  onCancelar: () => void
   pending: boolean
   erros: string[]
   veiculosDisponiveis: VeiculoResponse[]
   veiculos: VeiculoResponse[]
   motoristas: MotoristaResponse[]
+  combustiveis: TipoCombustivelResponse[]
+  postos: PostoResponse[]
   motorista: boolean
   nomeUsuario: string
   rotaAtiva: RotaResponse | null
+  /** Derivado de litros × valor do litro; o servidor recalcula e ignora o que chegar. */
+  valorTotal: number
+  /** Nulo quando não há abastecimento anterior daquele veículo abaixo do odômetro digitado. */
+  consumoEstimado: ConsumoEstimado | null
 }) {
+  /**
+   * Odômetro abaixo da ficha do veículo é **aceito** — pode ser lançamento retroativo, e o
+   * servidor apenas não retrocede a quilometragem. Mas é também a cara de um erro de
+   * digitação, e um número furado aqui envenena o km/l daquele veículo depois. O aviso pega
+   * o dedo errado enquanto quem lança ainda sabe a verdade, sem bloquear o caso legítimo.
+   */
+  const quilometragemDaFicha = useMemo(() => {
+    const veiculo = veiculos.find((v) => v.id === Number(form.veiculoId))
+    const odometro = Number(form.odometro)
+
+    if (!veiculo || form.odometro === '' || !Number.isFinite(odometro)) return null
+
+    return odometro < veiculo.quilometragem ? veiculo.quilometragem : null
+  }, [veiculos, form.veiculoId, form.odometro])
+
   return (
-    <InlineForm onSubmit={onSubmit}>
-      {editando && (
-        <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-          Corrigindo o abastecimento do veículo{' '}
-          <strong style={{ color: 'var(--color-text)' }}>{editando.veiculoPlaca}</strong> de{' '}
-          {formatDate(editando.dataAbastecimento)}. Veículo e motorista não podem ser trocados
-          — para isso, exclua e lance de novo.
-        </p>
-      )}
-
-      {/* Trocar o veículo reatribuiria o gasto: só no cadastro. */}
+    <FormDialog
+      titulo={editando ? 'Corrigir abastecimento' : 'Novo abastecimento'}
+      descricao={
+        editando
+          ? `Corrigindo o abastecimento do veículo ${editando.veiculoPlaca} de ${formatDate(editando.dataAbastecimento)}. Veículo e motorista não podem ser trocados — para isso, exclua e lance de novo.`
+          : undefined
+      }
+      textoConfirmar={editando ? 'Salvar correção' : 'Lançar'}
+      textoPendente="Salvando…"
+      largura={760}
+      pending={pending}
+      erros={erros}
+      onSubmit={onSubmit}
+      onCancelar={onCancelar}
+    >
+      {/* Veículo e motorista só existem no cadastro: trocá-los reatribuiria o gasto. */}
       {!editando && (
-        <div className="field w-[230px]">
-          <label htmlFor="veiculoId">Veículo</label>
-          <select
-            id="veiculoId"
-            className="input"
-            required
-            style={{ borderRadius: 0 }}
-            value={form.veiculoId}
-            onChange={(e) => onFormChange({ ...form, veiculoId: e.target.value })}
-          >
-            <option value="">Selecione…</option>
-            {veiculosDisponiveis.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.placa} — {v.nomeVeiculo}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {/* O motorista lança sempre em si mesmo — o campo existe para ele ver de quem é
-          o gasto, não para escolher. Quem escolhe é a gestão. */}
-      {!editando &&
-        (motorista ? (
-          <div className="field w-[200px]">
-            <label htmlFor="motoristaId">Motorista</label>
-            <input
-              id="motoristaId"
-              className="input"
-              disabled
-              style={{ borderRadius: 0 }}
-              value={nomeUsuario}
-            />
-          </div>
-        ) : (
-          <div className="field w-[200px]">
-            <label htmlFor="motoristaId">Motorista</label>
+        <SecaoCampos titulo="Veículo e motorista">
+          <div className="field">
+            <label htmlFor="veiculoId">Veículo</label>
             <select
-              id="motoristaId"
+              id="veiculoId"
               className="input"
               required
-              style={{ borderRadius: 0 }}
-              value={form.motoristaId}
-              onChange={(e) => onFormChange({ ...form, motoristaId: e.target.value })}
+              value={form.veiculoId}
+              onChange={(e) => onFormChange({ ...form, veiculoId: e.target.value })}
             >
               <option value="">Selecione…</option>
-              {motoristas.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.nome}
+              {veiculosDisponiveis.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.placa} — {v.nomeVeiculo}
                 </option>
               ))}
             </select>
           </div>
-        ))}
 
-      <div className="field w-[150px]">
-        <label htmlFor="valor">Valor (R$)</label>
-        <input
-          id="valor"
-          type="number"
-          className="input"
-          required
-          min={0.01}
-          step={0.01}
-          placeholder="0,00"
-          style={{ borderRadius: 0 }}
-          value={form.valor}
-          onChange={(e) => onFormChange({ ...form, valor: e.target.value })}
-        />
-      </div>
+          {/* O motorista lança sempre em si mesmo — o campo existe para ele ver de quem é
+              o gasto, não para escolher. Quem escolhe é a gestão. */}
+          {motorista ? (
+            <div className="field">
+              <label htmlFor="motoristaId">Motorista</label>
+              <input id="motoristaId" className="input" disabled value={nomeUsuario} />
+            </div>
+          ) : (
+            <div className="field">
+              <label htmlFor="motoristaId">Motorista</label>
+              <select
+                id="motoristaId"
+                className="input"
+                required
+                value={form.motoristaId}
+                onChange={(e) => onFormChange({ ...form, motoristaId: e.target.value })}
+              >
+                <option value="">Selecione…</option>
+                {motoristas.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-      <div className="field w-[170px]">
-        <label htmlFor="dataAbastecimento">Data</label>
-        <input
-          id="dataAbastecimento"
-          type="date"
-          className="input"
-          required
-          max={hojeInputDate()}
-          style={{ borderRadius: 0 }}
-          value={form.dataAbastecimento}
-          onChange={(e) => onFormChange({ ...form, dataAbastecimento: e.target.value })}
-        />
-      </div>
-
-      <div className="field w-[260px]">
-        <label htmlFor="observacao">Observação</label>
-        <input
-          id="observacao"
-          className="input"
-          maxLength={500}
-          style={{ borderRadius: 0 }}
-          value={form.observacao}
-          onChange={(e) => onFormChange({ ...form, observacao: e.target.value })}
-        />
-      </div>
-
-      <button
-        type="submit"
-        className="btn btn-primary"
-        style={{ borderRadius: 0, padding: '10px 20px' }}
-        disabled={pending}
-      >
-        {pending ? 'Salvando…' : editando ? 'Salvar correção' : 'Lançar'}
-      </button>
-
-      {!editando && motorista && rotaAtiva && (
-        <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-          Você está em rota com{' '}
-          <strong style={{ color: 'var(--color-text)' }}>
-            {veiculos.find((v) => v.id === rotaAtiva.codigoVeiculo)?.placa ?? 'o veículo da rota'}
-          </strong>{' '}
-          ({rotaAtiva.origem} → {rotaAtiva.destino}) — o lançamento vai para esse veículo e fica
-          vinculado à viagem.
-        </p>
+          {motorista && rotaAtiva && (
+            <p className="campo-largo m-0 text-[13px]" style={{ color: mutedText }}>
+              Você está em rota com{' '}
+              <strong style={{ color: 'var(--color-text)' }}>
+                {veiculos.find((v) => v.id === rotaAtiva.codigoVeiculo)?.placa ??
+                  'o veículo da rota'}
+              </strong>{' '}
+              ({rotaAtiva.origem} → {rotaAtiva.destino}) — o lançamento vai para esse veículo e
+              fica vinculado à viagem.
+            </p>
+          )}
+        </SecaoCampos>
       )}
 
-      <div className="w-full">
-        <ErrorList mensagens={erros} />
-      </div>
-    </InlineForm>
+      <SecaoCampos titulo="Abastecimento">
+        <div className="field">
+          <label htmlFor="tipoCombustivelId">Combustível</label>
+          <select
+            id="tipoCombustivelId"
+            className="input"
+            required
+            value={form.tipoCombustivelId}
+            onChange={(e) => onFormChange({ ...form, tipoCombustivelId: e.target.value })}
+          >
+            <option value="">Selecione…</option>
+            {combustiveis.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nome}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="field">
+          <label htmlFor="litros">Litros</label>
+          <input
+            id="litros"
+            type="number"
+            className="input"
+            required
+            min={0.001}
+            step={0.001}
+            placeholder="0,000"
+            value={form.litros}
+            onChange={(e) => onFormChange({ ...form, litros: e.target.value })}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="valorLitro">Valor do litro (R$)</label>
+          <input
+            id="valorLitro"
+            type="number"
+            className="input"
+            required
+            min={0.001}
+            step={0.001}
+            placeholder="0,000"
+            value={form.valorLitro}
+            onChange={(e) => onFormChange({ ...form, valorLitro: e.target.value })}
+          />
+        </div>
+
+        {/* Somente leitura: o total é derivado, e quem o calcula de verdade é o servidor —
+            este campo é o espelho do que ele vai gravar. */}
+        <div className="field">
+          <label htmlFor="valorTotal">Valor total (R$)</label>
+          <input
+            id="valorTotal"
+            className="input"
+            readOnly
+            tabIndex={-1}
+            style={{ background: 'var(--color-surface)' }}
+            value={formatMoeda(valorTotal)}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="odometro">Odômetro (km)</label>
+          <input
+            id="odometro"
+            type="number"
+            className="input"
+            required
+            min={1}
+            step={1}
+            placeholder="0"
+            value={form.odometro}
+            onChange={(e) => onFormChange({ ...form, odometro: e.target.value })}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="dataAbastecimento">Data</label>
+          <input
+            id="dataAbastecimento"
+            type="date"
+            className="input"
+            required
+            max={hojeInputDate()}
+            value={form.dataAbastecimento}
+            onChange={(e) => onFormChange({ ...form, dataAbastecimento: e.target.value })}
+          />
+        </div>
+
+        {quilometragemDaFicha !== null && (
+          <p className="campo-largo m-0 text-[13px]" style={{ color: 'var(--color-warning)' }}>
+            ⚠ O odômetro informado é menor que a quilometragem atual do veículo (
+            <strong>{formatKm(quilometragemDaFicha)}</strong>). Confirme se o lançamento é
+            retroativo — a ficha do veículo não será alterada.
+          </p>
+        )}
+
+        {consumoEstimado !== null && (
+          <p className="campo-largo m-0 text-[13px]" style={{ color: mutedText }}>
+            Desde o abastecimento de{' '}
+            <strong style={{ color: 'var(--color-text)' }}>
+              {formatDate(consumoEstimado.anterior.dataAbastecimento)}
+            </strong>{' '}
+            ({formatKm(consumoEstimado.anterior.odometro)}): {formatKm(consumoEstimado.km)} ÷{' '}
+            {formatLitros(Number(form.litros))} L ≈{' '}
+            <strong style={{ color: 'var(--color-text)' }}>
+              {formatConsumo(consumoEstimado.kmPorLitro)}
+            </strong>{' '}
+            — estimativa, e só fecha se os dois tanques foram enchidos por igual.
+          </p>
+        )}
+      </SecaoCampos>
+
+      <SecaoCampos titulo="Dados do posto">
+        <div className="field">
+          <label htmlFor="postoId">Posto</label>
+          <select
+            id="postoId"
+            className="input"
+            required
+            value={form.postoId}
+            onChange={(e) => onFormChange({ ...form, postoId: e.target.value })}
+          >
+            <option value="">Selecione…</option>
+            {postos.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.nome}
+                {p.cidade ? ` — ${p.cidade}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="field">
+          <label htmlFor="notaFiscal">Nota fiscal</label>
+          <input
+            id="notaFiscal"
+            className="input"
+            required
+            maxLength={30}
+            value={form.notaFiscal}
+            onChange={(e) => onFormChange({ ...form, notaFiscal: e.target.value })}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="frentista">Frentista</label>
+          <input
+            id="frentista"
+            className="input"
+            maxLength={100}
+            placeholder="Opcional"
+            value={form.frentista}
+            onChange={(e) => onFormChange({ ...form, frentista: e.target.value })}
+          />
+        </div>
+      </SecaoCampos>
+
+      <SecaoCampos titulo="Observação">
+        <div className="field campo-largo">
+          <label htmlFor="observacao">Observação (opcional)</label>
+          <input
+            id="observacao"
+            className="input"
+            maxLength={500}
+            value={form.observacao}
+            onChange={(e) => onFormChange({ ...form, observacao: e.target.value })}
+          />
+        </div>
+      </SecaoCampos>
+    </FormDialog>
   )
 }
 
@@ -284,6 +467,7 @@ function FiltrosAbastecimento({
 /** Tabela + rodapé de totais — a listagem propriamente dita. */
 function TabelaAbastecimentos({
   abastecimentos,
+  quantidade,
   motorista,
   mostrarAcoes,
   podeLancar,
@@ -296,7 +480,10 @@ function TabelaAbastecimentos({
   onEditar,
   onExcluir,
 }: {
+  /** Só as linhas da página corrente. A contagem e o total abaixo são da lista inteira. */
   abastecimentos: AbastecimentoResponse[]
+  /** Quantos lançamentos o filtro devolveu — não quantos cabem na página. */
+  quantidade: number
   motorista: boolean
   mostrarAcoes: boolean
   podeLancar: boolean
@@ -319,6 +506,9 @@ function TabelaAbastecimentos({
               <th>Veículo</th>
               <th>Motorista</th>
               {!motorista && <th>Quem lançou</th>}
+              <th>Combustível</th>
+              <th>Posto</th>
+              <th>Abastecido</th>
               <th>Valor</th>
               <th>Observação</th>
               {mostrarAcoes && <th style={{ width: 90 }}>Ações</th>}
@@ -326,10 +516,10 @@ function TabelaAbastecimentos({
           </thead>
           <tbody>
             <TableStates
-              colSpan={(motorista ? 5 : 6) + (mostrarAcoes ? 1 : 0)}
+              colSpan={(motorista ? 8 : 9) + (mostrarAcoes ? 1 : 0)}
               pending={pending}
               error={error}
-              empty={isSuccess && abastecimentos.length === 0}
+              empty={isSuccess && quantidade === 0}
               textoCarregando="Carregando abastecimentos…"
               textoErro="Não foi possível carregar os abastecimentos."
               textoVazio={
@@ -349,6 +539,20 @@ function TabelaAbastecimentos({
                 </td>
                 <td>{a.motoristaNome}</td>
                 {!motorista && <td>{a.usuarioNome}</td>}
+                <td>{a.tipoCombustivelNome}</td>
+                <td>
+                  <div>{a.postoNome}</div>
+                  <div className="text-[12px]" style={{ color: mutedText }}>
+                    NF {a.notaFiscal}
+                  </div>
+                </td>
+                {/* Litros e preço na mesma célula: são um dado só, e a tabela já é larga. */}
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  <div>{formatLitros(a.litros)} L</div>
+                  <div className="text-[12px]" style={{ color: mutedText }}>
+                    {formatMoeda(a.valorLitro)}/L · {a.odometro.toLocaleString('pt-BR')} km
+                  </div>
+                </td>
                 <td style={{ whiteSpace: 'nowrap' }}>{formatMoeda(a.valor)}</td>
                 <td style={{ color: a.observacao ? undefined : mutedText }}>
                   {a.observacao ?? '—'}
@@ -370,14 +574,16 @@ function TabelaAbastecimentos({
         </table>
       </div>
 
-      {abastecimentos.length > 0 && (
+      {/* ⚠️ Contagem e total são do filtro inteiro, não da página: virar de página não
+          pode mexer no que a tela diz que foi gasto. */}
+      {quantidade > 0 && (
         <div
           className="mt-4 flex flex-wrap items-center gap-6 py-3 text-[13px]"
           style={{ borderTop: '1px solid var(--color-divider)', color: mutedText }}
         >
           <span>
-            <strong style={{ color: 'var(--color-text)' }}>{abastecimentos.length}</strong>{' '}
-            {abastecimentos.length === 1 ? 'lançamento' : 'lançamentos'}
+            <strong style={{ color: 'var(--color-text)' }}>{quantidade}</strong>{' '}
+            {quantidade === 1 ? 'lançamento' : 'lançamentos'}
           </span>
           <span>
             Total: <strong style={{ color: 'var(--color-text)' }}>{formatMoeda(total)}</strong>
@@ -410,11 +616,20 @@ export function AbastecimentosPage() {
   // O período vira `de`/`ate` aqui: a API não conhece "últimos 7 dias".
   const { de, ate } = intervaloDoPeriodo(periodo)
 
-  const filtro: AbastecimentoFiltro = {
+  const paginacao = usePaginacaoServidor()
+
+  /** O recorte da tela, sem paginação — é ele que o resumo do rodapé também usa. */
+  const recorte: AbastecimentoFiltro = {
     veiculoId: filtroVeiculo === '' ? undefined : Number(filtroVeiculo),
     motoristaId: filtroMotorista === '' ? undefined : Number(filtroMotorista),
     de,
     ate,
+  }
+
+  const filtro: AbastecimentoFiltro = {
+    ...recorte,
+    pagina: paginacao.pagina,
+    tamanhoPagina: paginacao.tamanhoPagina,
   }
 
   const temFiltro = filtroVeiculo !== '' || filtroMotorista !== '' || periodo !== 'todos'
@@ -422,6 +637,16 @@ export function AbastecimentosPage() {
   const abastecimentosQuery = useQuery({
     queryKey: ['abastecimentos', filtro],
     queryFn: () => abastecimentosApi.getAll(filtro),
+  })
+
+  /**
+   * O rodapé "N lançamentos · Total: R$ X" vem do servidor, somando o **filtro inteiro**.
+   * Somar a página diria um número diferente a cada virada — e é justamente por isso que o
+   * endpoint existe. A chave carrega só o `recorte`: mudar de página não a invalida.
+   */
+  const resumoQuery = useQuery({
+    queryKey: ['abastecimentos', 'resumo', recorte],
+    queryFn: () => abastecimentosApi.resumo(recorte),
   })
   const veiculosQuery = useQuery({ queryKey: ['veiculos'], queryFn: veiculosApi.getAll })
 
@@ -434,16 +659,49 @@ export function AbastecimentosPage() {
 
   // O motorista lança no carro da rota aberta, quando tem uma. É a mesma derivação de
   // MinhasRotasPage — "ativa" não é um endpoint, é `ativo` na lista dele.
+  // Uma linha, não o histórico inteiro: `ativo=true` com página de 1 é o que substituiu o
+  // `find(r => r.ativo)` sobre a lista completa, que a paginação do servidor inviabilizou.
   const minhasRotasQuery = useQuery({
-    queryKey: ['rotas', 'minhas'],
-    queryFn: rotasApi.getMinhas,
+    queryKey: ['rotas', 'minhas', 'ativa'],
+    queryFn: () => rotasApi.getMinhas({ ativo: true, pagina: 1, tamanhoPagina: 1 }),
     enabled: motorista,
   })
 
-  const abastecimentos = abastecimentosQuery.data ?? []
+  // Os dois catálogos alimentam o formulário e a API os abre a todos os papéis — sem
+  // `enabled`, ao contrário de `['motoristas']`. `apenasAtivos`: item aposentado continua
+  // nomeando o passado mas não recebe lançamento novo.
+  const combustiveisQuery = useQuery({
+    queryKey: ['tiposCombustivel', 'ativos'],
+    queryFn: () => tiposCombustivelApi.getAll(true),
+  })
+
+  const postosQuery = useQuery({
+    queryKey: ['postos', 'ativos'],
+    queryFn: () => postosApi.getAll(true),
+  })
+
+  /**
+   * A referência da estimativa de km/l — o abastecimento de maior odômetro abaixo do
+   * digitado, naquele veículo. Antes a tela baixava o histórico inteiro e procurava no
+   * cliente; agora é uma consulta de uma linha, e o servidor enxerga o histórico do veículo
+   * (não o do motorista logado), o que corrige o número inflado que a role Motorista via.
+   *
+   * A chave começa com `['abastecimentos']`, então o `invalidar()` já a alcança.
+   */
+  const anteriorQuery = useQuery({
+    queryKey: ['abastecimentos', 'anterior', Number(form.veiculoId), Number(form.odometro), editando?.id ?? null],
+    queryFn: () =>
+      abastecimentosApi.anterior(Number(form.veiculoId), Number(form.odometro), editando?.id),
+    enabled: aberto && form.veiculoId !== '' && Number(form.odometro) > 0,
+  })
+
+  const dados = abastecimentosQuery.data
+  const abastecimentos = dados?.itens ?? []
   const veiculos = veiculosQuery.data ?? []
   const motoristas = motoristasQuery.data ?? []
-  const rotaAtiva = (minhasRotasQuery.data ?? []).find((r) => r.ativo) ?? null
+  const combustiveis = combustiveisQuery.data ?? []
+  const postos = postosQuery.data ?? []
+  const rotaAtiva = (minhasRotasQuery.data?.itens ?? [])[0] ?? null
 
   // Com rota aberta o veículo é um só: mostrar a frota inteira seria oferecer o que o
   // servidor vai recusar com 422.
@@ -456,18 +714,63 @@ export function AbastecimentosPage() {
   }, [veiculosQuery.data, rotaAtiva])
 
   /**
-   * Sem odômetro em jogo, o lançamento não toca em veículo nem em manutenção — mas o valor
-   * é metade do que a tela de custos soma.
+   * O abastecimento passou a mover o odômetro do veículo — é o **terceiro** caminho, ao
+   * lado de abrir/encerrar rota e concluir manutenção. Por isso a cadeia inteira:
+   * `atrasada`/`kmRestantes` da manutenção derivam do odômetro da ficha.
+   *
+   * `['custos']` continua entrando porque o valor é metade do que aquela tela soma.
    */
   function invalidar() {
     queryClient.invalidateQueries({ queryKey: ['abastecimentos'] })
     queryClient.invalidateQueries({ queryKey: ['custos'] })
+    queryClient.invalidateQueries({ queryKey: ['veiculos'] })
+    queryClient.invalidateQueries({ queryKey: ['manutencoes'] })
   }
+
+  /**
+   * Consumo desde o abastecimento anterior daquele veículo, no método tanque a tanque: os
+   * litros que estão sendo colocados agora são os que repuseram o trecho percorrido.
+   *
+   * Quem escolhe a referência é o servidor (maior odômetro abaixo do digitado, ignorando o
+   * próprio registro em modo de correção); aqui só se faz a divisão. A tela continua nomeando
+   * a data e o odômetro da referência, para quem lança ver que a conta pegou o lançamento
+   * certo — ou o errado.
+   */
+  const consumoEstimado = useMemo<ConsumoEstimado | null>(() => {
+    const anterior = anteriorQuery.data
+    const odometro = Number(form.odometro)
+    const litros = Number(form.litros)
+
+    if (!anterior || !Number.isFinite(odometro) || !Number.isFinite(litros) || litros <= 0) return null
+
+    const km = odometro - anterior.odometro
+    if (km <= 0) return null
+
+    return { anterior, km, kmPorLitro: km / litros }
+  }, [anteriorQuery.data, form.odometro, form.litros])
+
+  /**
+   * O total é derivado, e o campo da tela é só um espelho: o corpo não o carrega e o
+   * servidor o recalcula. Memoizado sobre os dois campos que o compõem.
+   */
+  const valorTotal = useMemo(() => {
+    const litros = Number(form.litros)
+    const preco = Number(form.valorLitro)
+    if (!Number.isFinite(litros) || !Number.isFinite(preco)) return 0
+    return Math.round(litros * preco * 100) / 100
+  }, [form.litros, form.valorLitro])
 
   const salvarMutation = useMutation({
     mutationFn: () => {
+      // `valor` fica de fora de propósito — quem o calcula é a API.
       const corpo = {
-        valor: Number(form.valor),
+        tipoCombustivelId: Number(form.tipoCombustivelId),
+        postoId: Number(form.postoId),
+        litros: Number(form.litros),
+        valorLitro: Number(form.valorLitro),
+        odometro: Number(form.odometro),
+        notaFiscal: form.notaFiscal.trim(),
+        frentista: form.frentista.trim() === '' ? null : form.frentista.trim(),
         dataAbastecimento: form.dataAbastecimento,
         observacao: form.observacao === '' ? null : form.observacao,
       }
@@ -523,13 +826,18 @@ export function AbastecimentosPage() {
     setForm({
       veiculoId: String(a.veiculoId),
       motoristaId: String(a.motoristaId),
-      valor: String(a.valor),
+      tipoCombustivelId: String(a.tipoCombustivelId),
+      postoId: String(a.postoId),
+      litros: String(a.litros),
+      valorLitro: String(a.valorLitro),
+      odometro: String(a.odometro),
+      notaFiscal: a.notaFiscal,
+      frentista: a.frentista ?? '',
       dataAbastecimento: paraInputDate(a.dataAbastecimento),
       observacao: a.observacao ?? '',
     })
     setErros([])
     setAberto(true)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function fecharForm() {
@@ -540,16 +848,15 @@ export function AbastecimentosPage() {
 
   const semVeiculos = veiculosQuery.isSuccess && veiculos.length === 0
   const semMotoristas = !motorista && motoristasQuery.isSuccess && motoristas.length === 0
-  const naoPodeAbrir = semVeiculos || semMotoristas
+  // Combustível e posto são obrigatórios: sem catálogo, o formulário não fecha.
+  const semCombustiveis = combustiveisQuery.isSuccess && combustiveis.length === 0
+  const semPostos = postosQuery.isSuccess && postos.length === 0
+  const naoPodeAbrir = semVeiculos || semMotoristas || semCombustiveis || semPostos
   const mostrarAcoes = podeLancar || podeExcluir
 
-  // Total do que está na tela — o recorte é o do filtro, não da frota inteira.
-  // Memoizado sobre `*.data` e não sobre o array com fallback `?? []`, que muda de
-  // identidade a cada render (mesmo cuidado de ManutencoesPage).
-  const total = useMemo(
-    () => (abastecimentosQuery.data ?? []).reduce((s, a) => s + a.valor, 0),
-    [abastecimentosQuery.data],
-  )
+  // ⚠️ Contagem e total do **filtro inteiro**, vindos do servidor. Somar `abastecimentos`
+  // (a página) faria os dois números mudarem a cada virada de página.
+  const resumo = resumoQuery.data
 
   return (
     <AppLayout>
@@ -557,26 +864,29 @@ export function AbastecimentosPage() {
         titulo="Abastecimentos"
         subtitulo={
           motorista
-            ? 'Seus abastecimentos. Registre o gasto em poucos campos — veículo, valor e data.'
-            : 'Combustível da frota. Cada lançamento fica atribuído a um motorista, para o gasto por pessoa, veículo e período.'
+            ? 'Seus abastecimentos. Registre o que abasteceu, onde e por quanto — o total sai de litros × valor do litro.'
+            : 'Combustível da frota. Cada lançamento fica atribuído a um motorista e a um posto credenciado, para o gasto por pessoa, veículo, posto e período.'
         }
         acoes={
           podeLancar && (
             <button
               type="button"
               className="btn btn-primary"
-              style={{ borderRadius: 0 }}
-              onClick={aberto ? fecharForm : abrirCadastro}
-              disabled={naoPodeAbrir && !aberto}
+              onClick={abrirCadastro}
+              disabled={naoPodeAbrir}
               title={
                 semVeiculos
                   ? 'É preciso ter ao menos um veículo cadastrado.'
                   : semMotoristas
                     ? 'É preciso ter ao menos um motorista cadastrado.'
-                    : undefined
+                    : semCombustiveis
+                      ? 'É preciso ter ao menos um tipo de combustível ativo no catálogo.'
+                      : semPostos
+                        ? 'É preciso ter ao menos um posto credenciado.'
+                        : undefined
               }
             >
-              {aberto ? 'Cancelar' : 'Novo abastecimento'}
+              Novo abastecimento
             </button>
           )
         }
@@ -588,14 +898,19 @@ export function AbastecimentosPage() {
           form={form}
           onFormChange={setForm}
           onSubmit={handleSubmit}
+          onCancelar={fecharForm}
           pending={salvarMutation.isPending}
           erros={erros}
           veiculosDisponiveis={veiculosDisponiveis}
           veiculos={veiculos}
           motoristas={motoristas}
+          combustiveis={combustiveis}
+          postos={postos}
           motorista={motorista}
           nomeUsuario={user?.nome ?? ''}
           rotaAtiva={rotaAtiva}
+          valorTotal={valorTotal}
+          consumoEstimado={consumoEstimado}
         />
       )}
 
@@ -607,18 +922,31 @@ export function AbastecimentosPage() {
         filtroMotorista={filtroMotorista}
         periodo={periodo}
         temFiltro={temFiltro}
-        onFiltroVeiculoChange={setFiltroVeiculo}
-        onFiltroMotoristaChange={setFiltroMotorista}
-        onPeriodoChange={setPeriodo}
+        // ⚠️ Paginação do servidor: todo filtro volta para a página 1, senão a tela abre
+        // vazia ao filtrar estando na página 4 — o clamp do cliente não alcança isto.
+        onFiltroVeiculoChange={(v) => {
+          setFiltroVeiculo(v)
+          paginacao.resetar()
+        }}
+        onFiltroMotoristaChange={(v) => {
+          setFiltroMotorista(v)
+          paginacao.resetar()
+        }}
+        onPeriodoChange={(p) => {
+          setPeriodo(p)
+          paginacao.resetar()
+        }}
         onLimpar={() => {
           setFiltroVeiculo('')
           setFiltroMotorista('')
           setPeriodo('todos')
+          paginacao.resetar()
         }}
       />
 
       <TabelaAbastecimentos
         abastecimentos={abastecimentos}
+        quantidade={resumo?.quantidade ?? 0}
         motorista={motorista}
         mostrarAcoes={mostrarAcoes}
         podeLancar={podeLancar}
@@ -627,10 +955,12 @@ export function AbastecimentosPage() {
         pending={abastecimentosQuery.isPending}
         error={abastecimentosQuery.error}
         isSuccess={abastecimentosQuery.isSuccess}
-        total={total}
+        total={resumo?.valorTotal ?? 0}
         onEditar={abrirEdicao}
         onExcluir={setParaExcluir}
       />
+
+      <Paginacao {...paginacao.props(dados)} pending={abastecimentosQuery.isFetching} />
 
       {paraExcluir && (
         <ConfirmDialog

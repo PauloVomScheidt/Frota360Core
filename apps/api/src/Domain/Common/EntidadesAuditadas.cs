@@ -11,13 +11,18 @@
         public const string Manutencao = "Manutencao";
         public const string Abastecimento = "Abastecimento";
         public const string TipoManutencao = "TipoManutencao";
+        public const string Despesa = "Despesa";
+        public const string TipoDespesa = "TipoDespesa";
+        public const string TipoCombustivel = "TipoCombustivel";
+        public const string Posto = "Posto";
         public const string Usuario = "Usuario";
         public const string Convite = "Convite";
 
         /// <summary>Vocabulário fechado — o validator do filtro recusa o que estiver fora daqui.</summary>
         public static readonly IReadOnlyList<string> Todas =
         [
-            Veiculo, Rota, Manutencao, Abastecimento, TipoManutencao, Usuario, Convite
+            Veiculo, Rota, Manutencao, Abastecimento, TipoManutencao,
+            Despesa, TipoDespesa, TipoCombustivel, Posto, Usuario, Convite
         ];
     }
 }

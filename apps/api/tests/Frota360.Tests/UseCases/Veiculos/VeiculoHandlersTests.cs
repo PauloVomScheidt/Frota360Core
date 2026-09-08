@@ -21,9 +21,11 @@ namespace Frota360.Tests.UseCases.Veiculos
         private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
         private readonly IAuditoriaService _auditoria = Substitute.For<IAuditoriaService>();
         private readonly IAbastecimentoRepository _abastecimentoRepository = Substitute.For<IAbastecimentoRepository>();
+        private readonly IDespesaRepository _despesaRepository = Substitute.For<IDespesaRepository>();
 
         private DeleteVeiculoHandler CriarDeleteHandler() =>
-            new(_repository, _rotaRepository, _abastecimentoRepository, _currentUser, _auditoria, NullLogger<DeleteVeiculoHandler>.Instance);
+            new(_repository, _rotaRepository, _abastecimentoRepository, _despesaRepository,
+                _currentUser, _auditoria, NullLogger<DeleteVeiculoHandler>.Instance);
 
         public VeiculoHandlersTests()
         {

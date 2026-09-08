@@ -390,4 +390,7 @@ appsettings.Local.json
 # Configuração local do Claude Code
 .claude/settings.local.json
 
+# Snapshots e logs de console do Playwright MCP, gravados a cada verificação visual
+.playwright-mcp/
+
 # O front tem seu próprio .gitignore em apps/web (node_modules, dist)

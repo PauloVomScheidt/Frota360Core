@@ -3,6 +3,7 @@ import { mensagensDeErro } from '../api/errors'
 import { ErrorList } from './AppLayout'
 import { PencilIcon, TrashIcon } from './icons'
 import { PERIODOS, type Periodo } from '../lib/periodo'
+import { TAMANHOS_PAGINA, type TamanhoPagina } from '../lib/paginacao'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
@@ -14,27 +15,24 @@ const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
  */
 function useAbrirModalAoMontar(ref: React.RefObject<HTMLDialogElement | null>) {
   useEffect(() => {
-    ref.current?.showModal()
-  }, [ref])
-}
+    const dialogo = ref.current
+    if (!dialogo) return
 
-/** Painel de cadastro que abre acima da tabela (padrão "Novo X" do design). */
-export function InlineForm({
-  onSubmit,
-  children,
-}: {
-  onSubmit: (e: FormEvent) => void
-  children: ReactNode
-}) {
-  return (
-    <form
-      onSubmit={onSubmit}
-      className="mb-8 flex flex-wrap items-end gap-4 p-5"
-      style={{ border: '1px solid var(--color-divider)', background: 'var(--color-surface)' }}
-    >
-      {children}
-    </form>
-  )
+    dialogo.showModal()
+
+    // ⚠️ Quando o formulário é longo o bastante para `.dialog-corpo` rolar, o Chrome torna
+    // o próprio contêiner de rolagem focável (é ele quem responde a PageUp/PageDown) e o
+    // `showModal()` pousa o foco ali, e não no primeiro campo: o anel de `:focus-visible`
+    // contorna o formulário inteiro e quem abre o diálogo começa sem cursor em lugar nenhum.
+    // A correção só age nesse caso exato — com o foco em qualquer outro lugar (o Cancelar
+    // do ConfirmDialog, um `autoFocus` declarado na tela), nada acontece aqui.
+    const corpo = dialogo.querySelector('.dialog-corpo')
+    if (corpo === null || document.activeElement !== corpo) return
+
+    dialogo
+      .querySelector<HTMLElement>('input:not([tabindex="-1"]), select, textarea')
+      ?.focus()
+  }, [ref])
 }
 
 /** Linha de carregando / erro / vazio dentro de um tbody. */
@@ -211,14 +209,20 @@ export function ConfirmDialog({
 }
 
 /**
- * Diálogo com formulário (concluir uma manutenção, encerrar uma rota). Diferente do
- * `ConfirmDialog`, que só confirma uma ação destrutiva, aqui há campos a preencher.
+ * Diálogo com formulário — todo cadastro/edição do painel e as transições de estado que
+ * pedem campos (concluir manutenção, encerrar rota). Diferente do `ConfirmDialog`, que só
+ * confirma uma ação destrutiva, aqui há campos a preencher.
+ *
+ * `largura` separa os dois usos: 520 (o default) para as transições, de dois ou três
+ * campos; 760 para os formulários de cadastro, onde o `.dialog-grid` das seções tem espaço
+ * para três colunas.
  */
 export function FormDialog({
   titulo,
   descricao,
   textoConfirmar,
   textoPendente,
+  largura = 520,
   pending,
   erros,
   onSubmit,
@@ -226,9 +230,10 @@ export function FormDialog({
   children,
 }: {
   titulo: string
-  descricao?: string
+  descricao?: ReactNode
   textoConfirmar: string
   textoPendente: string
+  largura?: number
   pending: boolean
   erros: string[]
   onSubmit: (e: FormEvent) => void
@@ -243,7 +248,9 @@ export function FormDialog({
       ref={dialogRef}
       className="dialog"
       aria-labelledby="form-dialog-titulo"
-      style={{ width: 'min(520px, 100%)' }}
+      // `calc(100vw - 2rem)` em vez de `100%`: no celular o diálogo encostaria nas duas
+      // bordas da tela, e o backdrop deixa de se ver.
+      style={{ width: `min(${largura}px, calc(100vw - 2rem))` }}
       // Mesmo padrão do ConfirmDialog logo acima — sem clique-no-backdrop, ver o
       // comentário lá para o motivo (no-noninteractive-element-interactions).
       onClose={onCancelar}
@@ -257,13 +264,14 @@ export function FormDialog({
           {titulo}
         </h3>
         {descricao && <p className="dialog-body">{descricao}</p>}
-        <div className="flex flex-wrap items-end gap-4">{children}</div>
+        {/* Só os campos rolam: título e ações continuam à vista num formulário longo. */}
+        <div className="dialog-corpo">{children}</div>
         <ErrorList mensagens={erros} />
         <div className="dialog-actions">
           <button
             type="button"
             className="btn btn-secondary"
-            style={{ borderRadius: 0, padding: '10px 18px' }}
+            style={{ padding: '10px 18px' }}
             onClick={onCancelar}
             disabled={pending}
           >
@@ -272,7 +280,7 @@ export function FormDialog({
           <button
             type="submit"
             className="btn btn-primary"
-            style={{ borderRadius: 0, padding: '10px 18px' }}
+            style={{ padding: '10px 18px' }}
             disabled={pending}
           >
             {pending ? textoPendente : textoConfirmar}
@@ -284,11 +292,85 @@ export function FormDialog({
 }
 
 /**
- * Rodapé de listagem paginada. Hoje só `/auditoria` usa — é a única lista que a API
- * pagina —, mas o componente nasce genérico para as próximas.
+ * Bloco de campos dentro de um `FormDialog`. O título agrupa o que pertence junto ("Dados
+ * do posto", "Veículo e motorista") — é o que impede um formulário de treze campos de virar
+ * uma fileira sem hierarquia.
  *
- * Some por completo quando cabe tudo numa página só: um rodapé de paginação em cima
- * de sete linhas é ruído.
+ * Sem `titulo`, é só o grid: o formato dos diálogos curtos, que não têm o que separar.
+ * A largura de cada campo é do grid, não do campo — quem precisa da linha inteira
+ * (observação, aviso, nota) usa a classe `campo-largo`.
+ */
+export function SecaoCampos({ titulo, children }: { titulo?: string; children: ReactNode }) {
+  return (
+    <section>
+      {titulo && <h4 className="dialog-secao-titulo">{titulo}</h4>}
+      <div className="dialog-grid">{children}</div>
+    </section>
+  )
+}
+
+/**
+ * O terceiro diálogo: só mostra conteúdo. O `ConfirmDialog` confirma uma ação e o
+ * `FormDialog` submete campos — aqui não há o que decidir nem o que enviar, então a única
+ * ação é fechar. Serve o detalhamento sob demanda, como os lançamentos de um veículo em
+ * `/custos`.
+ *
+ * Herda dos outros dois o `<dialog>` nativo e o `useAbrirModalAoMontar` — trava de foco,
+ * Escape, `::backdrop` e o reposicionamento de foco quando o corpo rola.
+ */
+export function PainelDialog({
+  titulo,
+  descricao,
+  largura = 760,
+  onFechar,
+  children,
+}: {
+  titulo: string
+  descricao?: ReactNode
+  largura?: number
+  onFechar: () => void
+  children: ReactNode
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  useAbrirModalAoMontar(dialogRef)
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="dialog"
+      aria-labelledby="painel-dialog-titulo"
+      style={{ width: `min(${largura}px, calc(100vw - 2rem))` }}
+      // Mesmo padrão dos outros dois — sem clique-no-backdrop, ver o comentário no
+      // ConfirmDialog para o motivo.
+      onClose={onFechar}
+    >
+      <h3 id="painel-dialog-titulo" className="dialog-title">
+        {titulo}
+      </h3>
+      {descricao && <p className="dialog-body">{descricao}</p>}
+      <div className="dialog-corpo">{children}</div>
+      <div className="dialog-actions">
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ padding: '10px 18px' }}
+          onClick={onFechar}
+        >
+          Fechar
+        </button>
+      </div>
+    </dialog>
+  )
+}
+
+/**
+ * Rodapé de listagem paginada — o mesmo para quem pagina no cliente (a maioria, via
+ * `usePaginacao`) e para as duas telas que paginam no servidor (`/auditoria`, `/custos`).
+ *
+ * ⚠️ **Some quando o total cabe na menor opção**, e não quando há uma página só. A regra
+ * antiga (`totalPaginas <= 1`) escondia o seletor justamente de quem tem 12 registros e
+ * queria ver 10 — e é o que permite ligar o rodapé em toda lista do painel sem encher um
+ * catálogo de cinco linhas de ruído.
  */
 export function Paginacao({
   pagina,
@@ -296,6 +378,7 @@ export function Paginacao({
   total,
   tamanhoPagina,
   onMudar,
+  onMudarTamanho,
   pending,
 }: {
   pagina: number
@@ -303,26 +386,47 @@ export function Paginacao({
   total: number
   tamanhoPagina: number
   onMudar: (pagina: number) => void
+  /** Ausente, o seletor não aparece — o rodapé fica só com a contagem e o passo a passo. */
+  onMudarTamanho?: (tamanho: TamanhoPagina) => void
   pending?: boolean
 }) {
-  if (totalPaginas <= 1) return null
+  if (total <= TAMANHOS_PAGINA[0]) return null
 
   const primeiro = (pagina - 1) * tamanhoPagina + 1
   const ultimo = Math.min(pagina * tamanhoPagina, total)
 
   return (
     <div
-      className="mt-4 flex items-center justify-between gap-4 py-3"
+      className="mt-4 flex flex-wrap items-center justify-between gap-4 py-3"
       style={{ borderTop: '1px solid var(--color-divider)' }}
     >
-      <span className="text-[13px]" style={{ color: mutedText }}>
-        {primeiro}–{ultimo} de {total}
-      </span>
+      <div className="flex items-center gap-3">
+        {onMudarTamanho && (
+          <label className="flex items-center gap-2 text-[13px]" style={{ color: mutedText }}>
+            Itens por página
+            <select
+              className="input"
+              style={{ width: 'auto', minHeight: 32, padding: '4px 8px' }}
+              value={tamanhoPagina}
+              onChange={(e) => onMudarTamanho(Number(e.target.value) as TamanhoPagina)}
+            >
+              {TAMANHOS_PAGINA.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <span className="text-[13px]" style={{ color: mutedText }}>
+          {primeiro}–{ultimo} de {total}
+        </span>
+      </div>
       <div className="flex items-center gap-2">
         <button
           type="button"
           className="btn btn-secondary"
-          style={{ borderRadius: 0, padding: '6px 14px' }}
+          style={{ padding: '6px 14px' }}
           onClick={() => onMudar(pagina - 1)}
           disabled={pagina <= 1 || pending}
         >
@@ -334,7 +438,7 @@ export function Paginacao({
         <button
           type="button"
           className="btn btn-secondary"
-          style={{ borderRadius: 0, padding: '6px 14px' }}
+          style={{ padding: '6px 14px' }}
           onClick={() => onMudar(pagina + 1)}
           disabled={pagina >= totalPaginas || pending}
         >

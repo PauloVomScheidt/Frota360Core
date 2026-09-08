@@ -15,6 +15,8 @@ namespace Frota360.Application.DTOs.Custo.Response
 
         public decimal TotalManutencao { get; set; }
 
+        public decimal TotalDespesa { get; set; }
+
         public decimal Total { get; set; }
     }
 }

@@ -12,6 +12,11 @@ namespace Frota360.Infrastructure.Repositories
     /// Não há tabela de custos. O custo mora na tabela de origem e aqui é unido na leitura,
     /// o que mantém uma fonte de verdade só: corrigir o valor no abastecimento já corrige o
     /// relatório, sem sincronia nenhuma para dar errado.
+    ///
+    /// São três origens. Abastecimento e manutenção têm tela própria e este read model
+    /// apenas as lê; <c>Despesa</c> é diferente — ela existe porque o gasto não tinha onde
+    /// morar, então ali a tabela é fonte de verdade. A distinção não aparece aqui: as três
+    /// entram como <c>LancamentoCusto</c> e o resto do sistema não sabe a diferença.
     /// </summary>
     public class CustoRepository(Frota360DbContext context) : ICustoRepository
     {
@@ -55,6 +60,16 @@ namespace Frota360.Infrastructure.Repositories
                     .Take(teto)).ToListAsync());
             }
 
+            if (IncluirDespesas(filtro))
+            {
+                var consulta = Despesas(empresaId, filtro);
+                total += await consulta.CountAsync();
+                lancamentos.AddRange(await Projetar(consulta
+                    .OrderByDescending(d => d.DataDespesa)
+                    .ThenByDescending(d => d.Id)
+                    .Take(teto)).ToListAsync());
+            }
+
             var itens = lancamentos
                 .OrderByDescending(l => l.Data)
                 // Ids de tabelas diferentes colidem, então o desempate passa pela origem antes
@@ -88,6 +103,14 @@ namespace Frota360.Infrastructure.Repositories
                         OrigemCusto.Manutencao, g.Sum(m => m.Custo!.Value), g.Count()))
                     .ToListAsync());
 
+            if (IncluirDespesas(filtro))
+                totais.AddRange(await Despesas(empresaId, filtro)
+                    .GroupBy(d => new { d.VeiculoId, d.Veiculo!.NomeVeiculo, d.Veiculo!.Placa })
+                    .Select(g => new TotalCustoPorVeiculo(
+                        g.Key.VeiculoId, g.Key.NomeVeiculo, g.Key.Placa,
+                        OrigemCusto.Despesa, g.Sum(d => d.Valor), g.Count()))
+                    .ToListAsync());
+
             return totais;
         }
 
@@ -107,6 +130,13 @@ namespace Frota360.Infrastructure.Repositories
                     .GroupBy(m => new { m.DataRealizacao!.Value.Year, m.DataRealizacao!.Value.Month })
                     .Select(g => new TotalCustoPorMes(
                         g.Key.Year, g.Key.Month, OrigemCusto.Manutencao, g.Sum(m => m.Custo!.Value)))
+                    .ToListAsync());
+
+            if (IncluirDespesas(filtro))
+                totais.AddRange(await Despesas(empresaId, filtro)
+                    .GroupBy(d => new { d.DataDespesa.Year, d.DataDespesa.Month })
+                    .Select(g => new TotalCustoPorMes(
+                        g.Key.Year, g.Key.Month, OrigemCusto.Despesa, g.Sum(d => d.Valor)))
                     .ToListAsync());
 
             return totais;
@@ -183,6 +213,44 @@ namespace Frota360.Infrastructure.Repositories
         }
 
         /// <summary>
+        /// Litros e km por veículo, para o km/l da tela de custos.
+        ///
+        /// <para>
+        /// A agregação é feita <b>em memória</b>, sobre uma projeção de três colunas. Não é
+        /// preguiça: o cálculo precisa dos litros do <b>primeiro</b> abastecimento de cada
+        /// veículo para descontá-los, e isso é window function — exatamente o que o EF não
+        /// traduz, a mesma lição que <c>TraducaoDeConsultaTests</c> guarda sobre a união das
+        /// origens. O conjunto é limitado pelo período do filtro, então cabe.
+        /// </para>
+        /// </summary>
+        public async Task<IEnumerable<ConsumoPorVeiculo>> SomarConsumoPorVeiculoAsync(int empresaId, FiltroCusto filtro)
+        {
+            var linhas = await Abastecimentos(empresaId, filtro)
+                .Select(a => new { a.VeiculoId, a.Veiculo!.NomeVeiculo, a.Veiculo!.Placa, a.Odometro, a.Litros })
+                .ToListAsync();
+
+            return linhas
+                .GroupBy(l => l.VeiculoId)
+                .Select(g =>
+                {
+                    // Ordenar por odômetro e não por data: lançamento retroativo é aceito pelo
+                    // sistema, então a ordem cronológica não é a ordem da estrada.
+                    var porOdometro = g.OrderBy(l => l.Odometro).ToList();
+
+                    var km = porOdometro[^1].Odometro - porOdometro[0].Odometro;
+
+                    // Os litros do primeiro pagaram o trecho ANTERIOR ao período; incluí-los
+                    // infla o denominador e subestima o km/l de forma sistemática.
+                    var litros = porOdometro.Skip(1).Sum(l => l.Litros);
+
+                    return new ConsumoPorVeiculo(
+                        g.Key, porOdometro[0].NomeVeiculo, porOdometro[0].Placa,
+                        litros, km, porOdometro.Count);
+                })
+                .ToList();
+        }
+
+        /// <summary>
         /// Sem <c>Include</c> de propósito: a navegação é lida <b>dentro</b> do <c>Select</c>,
         /// que o EF traduz para JOIN. Um <c>Include</c> aqui seria descartado em silêncio.
         /// </summary>
@@ -213,6 +281,20 @@ namespace Frota360.Infrastructure.Repositories
                 m.Tipo!.Nome,
                 m.Custo!.Value,
                 m.Observacao));
+
+        private static IQueryable<LancamentoCusto> Projetar(IQueryable<Despesa> consulta)
+            => consulta.Select(d => new LancamentoCusto(
+                OrigemCusto.Despesa,
+                d.Id,
+                d.DataDespesa,
+                d.VeiculoId,
+                d.Veiculo!.NomeVeiculo,
+                d.Veiculo!.Placa,
+                d.MotoristaId,
+                d.Motorista!.Nome,
+                d.Tipo!.Nome,
+                d.Valor,
+                d.Observacao));
 
         private IQueryable<Abastecimento> Abastecimentos(int empresaId, FiltroCusto filtro)
         {
@@ -273,14 +355,49 @@ namespace Frota360.Infrastructure.Repositories
             return consulta;
         }
 
+        /// <summary>
+        /// Despesa tem motorista quando é de alguém (multa), então — ao contrário da
+        /// manutenção — filtrar por motorista <b>não</b> a descarta: ela é recortada pela
+        /// coluna, e as despesas sem dono (IPVA, seguro) é que ficam de fora.
+        /// </summary>
+        private IQueryable<Despesa> Despesas(int empresaId, FiltroCusto filtro)
+        {
+            var consulta = context.Despesas.AsNoTracking()
+                .Where(d => d.EmpresaId == empresaId);
+
+            if (filtro.VeiculoId is not null)
+                consulta = consulta.Where(d => d.VeiculoId == filtro.VeiculoId);
+
+            if (filtro.MotoristaId is not null)
+                consulta = consulta.Where(d => d.MotoristaId == filtro.MotoristaId);
+
+            if (filtro.De is not null)
+            {
+                var inicio = filtro.De.Value.Date;
+                consulta = consulta.Where(d => d.DataDespesa >= inicio);
+            }
+
+            if (filtro.Ate is not null)
+            {
+                var fim = filtro.Ate.Value.Date.AddDays(1);
+                consulta = consulta.Where(d => d.DataDespesa < fim);
+            }
+
+            return consulta;
+        }
+
         private static bool IncluirAbastecimentos(FiltroCusto filtro)
             => filtro.Origem is null or OrigemCusto.Abastecimento;
 
         /// <summary>
         /// Filtrar por motorista descarta a manutenção inteira: ela não é atribuída a
-        /// motorista no modelo, e deduzi-la pela rota do veículo seria um chute.
+        /// motorista no modelo, e deduzi-la pela rota do veículo seria um chute. É a única
+        /// das três origens que some nesse recorte.
         /// </summary>
         private static bool IncluirManutencoes(FiltroCusto filtro)
             => filtro.MotoristaId is null && filtro.Origem is null or OrigemCusto.Manutencao;
+
+        private static bool IncluirDespesas(FiltroCusto filtro)
+            => filtro.Origem is null or OrigemCusto.Despesa;
     }
 }

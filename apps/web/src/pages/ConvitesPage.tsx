@@ -5,7 +5,8 @@ import { mensagensDeErro } from '../api/errors'
 import type { ConviteResponse, Role } from '../api/types'
 import { DESCRICAO_ROLE, ROLES } from '../auth/permissions'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { InlineForm, TableStates } from '../components/Table'
+import { FormDialog, Paginacao, SecaoCampos, TableStates } from '../components/Table'
+import { usePaginacao } from '../lib/paginacao'
 import { formatDateTime } from '../lib/format'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
@@ -29,11 +30,15 @@ const CLASSE_STATUS: Record<StatusConvite, string> = {
 
 export function ConvitesPage() {
   const queryClient = useQueryClient()
+  const [aberto, setAberto] = useState(false)
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<Role>('Operador')
   const [linkGerado, setLinkGerado] = useState<string | null>(null)
   const [copiado, setCopiado] = useState(false)
+  // Dois destinos diferentes: o erro do envio vive dentro do modal, o do cancelamento
+  // de linha fica na página — o modal nem está aberto quando ele acontece.
   const [erros, setErros] = useState<string[]>([])
+  const [erroLinha, setErroLinha] = useState<string[]>([])
 
   const convitesQuery = useQuery({ queryKey: ['convites'], queryFn: convitesApi.getAll })
   const invalidar = () => queryClient.invalidateQueries({ queryKey: ['convites'] })
@@ -44,6 +49,7 @@ export function ConvitesPage() {
       setErros([])
       setEmail('')
       setCopiado(false)
+      setAberto(false)
       // Em dev o e-mail só vai para o log da API — o link em claro é o caminho prático.
       setLinkGerado(convite.linkConvite ?? null)
       invalidar()
@@ -54,15 +60,27 @@ export function ConvitesPage() {
   const cancelarMutation = useMutation({
     mutationFn: convitesApi.cancelar,
     onSuccess: () => {
-      setErros([])
+      setErroLinha([])
       invalidar()
     },
-    onError: (error) => setErros(mensagensDeErro(error, 'Não foi possível cancelar o convite.')),
+    onError: (error) => setErroLinha(mensagensDeErro(error, 'Não foi possível cancelar o convite.')),
   })
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
     criarMutation.mutate({ email, role })
+  }
+
+  function abrirCadastro() {
+    setEmail('')
+    setRole('Operador')
+    setErros([])
+    setAberto(true)
+  }
+
+  function fecharForm() {
+    setAberto(false)
+    setErros([])
   }
 
   async function copiarLink() {
@@ -72,59 +90,69 @@ export function ConvitesPage() {
   }
 
   const convites = convitesQuery.data ?? []
+  const p = usePaginacao(convites)
 
   return (
     <AppLayout>
       <PageHeader
         titulo="Convites"
         subtitulo="Convide pessoas para a sua empresa. O convite vale 7 dias e só pode ser usado uma vez."
+        acoes={
+          <button type="button" className="btn btn-primary" onClick={abrirCadastro}>
+            Novo convite
+          </button>
+        }
       />
 
-      <InlineForm onSubmit={handleSubmit}>
-        <div className="field min-w-[260px] flex-1">
-          <label htmlFor="email">E-mail do convidado</label>
-          <input
-            id="email"
-            className="input"
-            type="email"
-            placeholder="pessoa@empresa.com"
-            required
-            style={{ borderRadius: 0 }}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </div>
-        <div className="field w-[180px]">
-          <label htmlFor="role">Permissão</label>
-          <select
-            id="role"
-            className="input"
-            style={{ borderRadius: 0 }}
-            value={role}
-            onChange={(e) => setRole(e.target.value as Role)}
-          >
-            {ROLES.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button
-          type="submit"
-          className="btn btn-primary"
-          style={{ borderRadius: 0, padding: '10px 20px' }}
-          disabled={criarMutation.isPending}
+      {aberto && (
+        <FormDialog
+          titulo="Novo convite"
+          textoConfirmar="Enviar convite"
+          textoPendente="Enviando…"
+          pending={criarMutation.isPending}
+          erros={erros}
+          onSubmit={handleSubmit}
+          onCancelar={fecharForm}
         >
-          {criarMutation.isPending ? 'Enviando…' : 'Enviar convite'}
-        </button>
-        <p className="m-0 w-full text-xs" style={{ color: mutedText }}>
-          {DESCRICAO_ROLE[role]} Reenviar para o mesmo e-mail invalida o convite pendente anterior.
-        </p>
-      </InlineForm>
+          <SecaoCampos>
+            <div className="field campo-largo">
+              <label htmlFor="email">E-mail do convidado</label>
+              <input
+                id="email"
+                className="input"
+                type="email"
+                placeholder="pessoa@empresa.com"
+                required
+                autoFocus
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="role">Permissão</label>
+              <select
+                id="role"
+                className="input"
+                value={role}
+                onChange={(e) => setRole(e.target.value as Role)}
+              >
+                {ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="campo-largo m-0 text-xs" style={{ color: mutedText }}>
+              {DESCRICAO_ROLE[role]} Reenviar para o mesmo e-mail invalida o convite pendente
+              anterior.
+            </p>
+          </SecaoCampos>
+        </FormDialog>
+      )}
 
       <div className="mb-4">
-        <ErrorList mensagens={erros} />
+        <ErrorList mensagens={erroLinha} />
       </div>
 
       {linkGerado && (
@@ -171,7 +199,7 @@ export function ConvitesPage() {
               textoErro="Não foi possível carregar os convites."
               textoVazio="Nenhum convite enviado ainda."
             />
-            {convites.map((convite) => {
+            {p.itensDaPagina.map((convite) => {
               const status = statusDoConvite(convite)
               return (
                 <tr key={convite.id}>
@@ -205,6 +233,8 @@ export function ConvitesPage() {
           </tbody>
         </table>
       </div>
+
+      <Paginacao {...p} pending={convitesQuery.isFetching} />
     </AppLayout>
   )
 }

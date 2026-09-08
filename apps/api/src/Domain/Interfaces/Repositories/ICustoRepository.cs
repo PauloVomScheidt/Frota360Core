@@ -34,5 +34,15 @@ namespace Frota360.Domain.Interfaces.Repositories
 
         /// <summary>Km apurado por veículo no período — denominador do custo por km.</summary>
         Task<IEnumerable<KmPorVeiculo>> SomarKmPorVeiculoAsync(int empresaId, FiltroCusto filtro);
+
+        /// <summary>
+        /// Litros e km por veículo no período — o que sustenta o km/l. O km aqui sai do
+        /// <b>odômetro do abastecimento</b>, não das rotas encerradas: são medidas diferentes,
+        /// e esta é a única correta para combustível.
+        ///
+        /// O filtro de <c>Origem</c> é ignorado, como em <see cref="SomarKmPorVeiculoAsync"/> —
+        /// o consumo do veículo é o mesmo, esteja a tela recortada em manutenção ou não.
+        /// </summary>
+        Task<IEnumerable<ConsumoPorVeiculo>> SomarConsumoPorVeiculoAsync(int empresaId, FiltroCusto filtro);
     }
 }

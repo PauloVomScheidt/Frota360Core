@@ -26,6 +26,19 @@ export function formatKm(km: number): string {
   return `${km.toLocaleString('pt-BR')} km`
 }
 
+/** Volume da bomba: até 3 casas, sem zeros à direita inúteis (48,5 e não 48,500). */
+export function formatLitros(litros: number): string {
+  return litros.toLocaleString('pt-BR', { maximumFractionDigits: 3 })
+}
+
+/**
+ * km/l com uma casa. Duas dariam falsa precisão a um número que já é estimativa —
+ * abastecimento parcial e veículo flex distorcem a conta.
+ */
+export function formatConsumo(kmPorLitro: number): string {
+  return `${kmPorLitro.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km/l`
+}
+
 /** Número → R$ 1.234,50. Custo é opcional na manutenção, daí o traço. */
 export function formatMoeda(valor: number | null | undefined): string {
   if (valor === null || valor === undefined) return '—'

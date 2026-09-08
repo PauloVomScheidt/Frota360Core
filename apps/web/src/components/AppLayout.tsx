@@ -5,6 +5,7 @@ import { logout } from '../api/auth'
 import { pode } from '../auth/permissions'
 import { notificarMudancaDeSessao, useSession } from '../auth/useSession'
 import { iniciais } from '../lib/format'
+import { gravarPreferencia, lerPreferenciaBooleana } from '../lib/preferencias'
 import { LogoMark, Wordmark } from './Logo'
 import {
   BellIcon,
@@ -13,6 +14,7 @@ import {
   ChevronRightIcon,
   DinheiroIcon,
   FuelIcon,
+  ReciboIcon,
   GridIcon,
   HistoricoIcon,
   LogoutIcon,
@@ -25,23 +27,6 @@ import {
 } from './icons'
 
 const SIDEBAR_KEY = 'frota360.sidebarExpanded'
-
-function lerPreferencia(chave: string, padrao: boolean): boolean {
-  try {
-    const raw = localStorage.getItem(chave)
-    return raw === null ? padrao : raw === 'true'
-  } catch {
-    return padrao
-  }
-}
-
-function gravarPreferencia(chave: string, valor: boolean) {
-  try {
-    localStorage.setItem(chave, String(valor))
-  } catch {
-    // Preferência é conveniência: se o storage falhar, segue sem persistir.
-  }
-}
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
@@ -71,6 +56,24 @@ interface ItemNav {
 const ITENS_VISUALIZACAO: ItemNav[] = [
   { to: '/veiculos', rotulo: 'Veículos', icone: <TruckIcon size={17} /> },
   { to: '/manutencoes', rotulo: 'Manutenções', icone: <WrenchIcon size={17} /> },
+]
+
+/**
+ * Os catálogos que alimentam os seletores das telas de lançamento. Ficam juntos porque são
+ * a mesma natureza de trabalho — configurar antes de operar —, e não porque compartilham
+ * assunto: manutenção, despesa e combustível não têm nada entre si além disso.
+ *
+ * `/postos` entra aqui apesar de não se chamar "tipo": é catálogo como os outros, mantido
+ * pelas mesmas pessoas e consumido do mesmo jeito pelo formulário de abastecimento.
+ *
+ * A categoria inteira é gated por `mantemCatalogos`, então nenhum item precisa de guarda
+ * própria — ver o comentário lá embaixo sobre os quatro predicados coincidirem hoje.
+ */
+const ITENS_PARAMETRIZACAO: ItemNav[] = [
+  { to: '/tipos-manutencao', rotulo: 'Tipos de manutenção', icone: <ClipboardIcon size={17} /> },
+  { to: '/tipos-despesa', rotulo: 'Tipos de despesa', icone: <ClipboardIcon size={17} /> },
+  { to: '/tipos-combustivel', rotulo: 'Tipos de combustível', icone: <ClipboardIcon size={17} /> },
+  { to: '/postos', rotulo: 'Postos', icone: <ClipboardIcon size={17} /> },
 ]
 
 // A categoria inteira já é admin-only, então nenhum item aqui precisa de guarda própria.
@@ -139,12 +142,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const user = useSession()
   const admin = pode.gerenciarUsuarios(user?.role)
-  const gestor = pode.editarTiposManutencao(user?.role)
+  // Os quatro catálogos de `ITENS_PARAMETRIZACAO` têm hoje o **mesmo** predicado
+  // (Admin/Supervisor), então um gate só serve à categoria inteira. Se algum dia um deles
+  // divergir, ele passa a precisar de guarda própria na lista — e este gate vira um OR.
+  const mantemCatalogos = pode.editarTiposManutencao(user?.role)
   const motorista = pode.verMinhasRotas(user?.role)
 
-  const [expanded, setExpanded] = useState(() => lerPreferencia(SIDEBAR_KEY, true))
+  const [expanded, setExpanded] = useState(() => lerPreferenciaBooleana(SIDEBAR_KEY, true))
   const [catDashboard, setCatDashboard] = useState(true)
   const [catVisualizacao, setCatVisualizacao] = useState(true)
+  const [catParametrizacao, setCatParametrizacao] = useState(true)
   const [catControle, setCatControle] = useState(true)
 
   function toggleSidebar() {
@@ -175,11 +182,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
         { to: '/rotas', rotulo: 'Rotas', icone: <RouteIcon size={17} /> },
         { to: '/manutencoes', rotulo: 'Manutenções', icone: <WrenchIcon size={17} /> },
         { to: '/abastecimentos', rotulo: 'Abastecimentos', icone: <FuelIcon size={17} /> },
+        { to: '/despesas', rotulo: 'Despesas', icone: <ReciboIcon size={17} /> },
         { to: '/custos', rotulo: 'Custos', icone: <DinheiroIcon size={17} /> },
-        // O catálogo de tipos só aparece para quem pode mantê-lo (Admin/Supervisor).
-        ...(gestor
-          ? [{ to: '/tipos-manutencao', rotulo: 'Tipos de manutenção', icone: <ClipboardIcon size={17} /> }]
-          : []),
       ]
 
   return (
@@ -233,6 +237,15 @@ export function AppLayout({ children }: { children: ReactNode }) {
               expanded={expanded}
               aberta={catVisualizacao}
               onToggle={() => setCatVisualizacao((v) => !v)}
+            />
+          )}
+          {mantemCatalogos && (
+            <SidebarCategoria
+              titulo="Parametrização"
+              itens={ITENS_PARAMETRIZACAO}
+              expanded={expanded}
+              aberta={catParametrizacao}
+              onToggle={() => setCatParametrizacao((v) => !v)}
             />
           )}
           {admin && (

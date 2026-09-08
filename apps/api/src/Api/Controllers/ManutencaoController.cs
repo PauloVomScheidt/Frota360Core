@@ -26,7 +26,8 @@ namespace Frota360.Api.Controllers
     public class ManutencaoController(IDispatcher dispatcher,
                                       IValidator<CreateManutencaoRequest> createValidator,
                                       IValidator<UpdateManutencaoRequest> updateValidator,
-                                      IValidator<ConcluirManutencaoRequest> concluirValidator) : ControllerBase
+                                      IValidator<ConcluirManutencaoRequest> concluirValidator,
+                                      IValidator<ConsultarManutencoesRequest> consultarValidator) : ControllerBase
     {
         /// <summary>Lista as manutenções da frota, opcionalmente filtradas por veículo, status e período.</summary>
         /// <param name="veiculoId">Restringe a um veículo.</param>
@@ -36,13 +37,18 @@ namespace Frota360.Api.Controllers
         /// <response code="200">Lista retornada com sucesso</response>
         /// <response code="422">Data final anterior à inicial</response>
         [HttpGet]
-        [ProducesResponseType<ApiResponse<IEnumerable<ManutencaoResponse>>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<ResultadoPaginado<ManutencaoResponse>>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status422UnprocessableEntity)]
-        public async Task<IActionResult> GetAll([FromQuery] int? veiculoId, [FromQuery] StatusManutencao? status,
-                                                [FromQuery] DateTime? de, [FromQuery] DateTime? ate)
+        public async Task<IActionResult> GetAll([FromQuery] ConsultarManutencoesRequest request)
         {
-            var manutencoes = await dispatcher.SendAsync(new GetAllManutencoesQuery(veiculoId, status, de, ate));
-            return Ok(ApiResponse<IEnumerable<ManutencaoResponse>>.Ok(manutencoes));
+            var validation = await consultarValidator.ValidateAsync(request);
+            if (!validation.IsValid)
+                return BadRequest(ApiResponse<object>.Fail("Dados inválidos.",
+                    validation.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}")));
+
+            var pagina = await dispatcher.SendAsync(new GetAllManutencoesQuery(request));
+            return Ok(ApiResponse<ResultadoPaginado<ManutencaoResponse>>.Ok(pagina));
         }
 
         /// <summary>Retorna uma manutenção pelo id.</summary>

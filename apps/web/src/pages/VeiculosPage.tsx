@@ -5,8 +5,16 @@ import { mensagensDeErro } from '../api/errors'
 import type { VeiculoRequest, VeiculoResponse } from '../api/types'
 import { pode } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
-import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { ConfirmDialog, InlineForm, RowActions, TableStates } from '../components/Table'
+import { AppLayout, PageHeader } from '../components/AppLayout'
+import {
+  ConfirmDialog,
+  FormDialog,
+  Paginacao,
+  RowActions,
+  SecaoCampos,
+  TableStates,
+} from '../components/Table'
+import { usePaginacao } from '../lib/paginacao'
 import { formatDate, formatKm } from '../lib/format'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
@@ -92,8 +100,6 @@ export function VeiculosPage() {
     })
     setErros([])
     setAberto(true)
-    // O formulário abre acima da tabela — a linha editada pode estar fora da tela.
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function fecharForm() {
@@ -104,6 +110,7 @@ export function VeiculosPage() {
   }
 
   const veiculos = veiculosQuery.data ?? []
+  const p = usePaginacao(veiculos)
   const mostrarAcoes = podeCadastrar || podeExcluir
   const colunas = mostrarAcoes ? 8 : 7
 
@@ -117,87 +124,84 @@ export function VeiculosPage() {
             <button
               type="button"
               className="btn btn-primary"
-              style={{ borderRadius: 0 }}
-              onClick={aberto ? fecharForm : abrirCadastro}
+              onClick={abrirCadastro}
             >
-              {aberto ? 'Cancelar' : 'Novo veículo'}
+              Novo veículo
             </button>
           )
         }
       />
 
       {aberto && podeCadastrar && (
-        <InlineForm onSubmit={handleSubmit}>
-          {editando && (
-            <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-              Editando <strong style={{ color: 'var(--color-text)' }}>{editando.placa}</strong> —{' '}
-              {editando.nomeVeiculo}.
+        <FormDialog
+          titulo={editando ? 'Editar veículo' : 'Novo veículo'}
+          descricao={editando ? `Editando ${editando.placa} — ${editando.nomeVeiculo}.` : undefined}
+          textoConfirmar={editando ? 'Salvar alterações' : 'Cadastrar'}
+          textoPendente="Salvando…"
+          largura={760}
+          pending={salvarMutation.isPending}
+          erros={erros}
+          onSubmit={handleSubmit}
+          onCancelar={fecharForm}
+        >
+          <SecaoCampos titulo="Identificação">
+            <div className="field">
+              <label htmlFor="nomeVeiculo">Nome do veículo</label>
+              <input
+                id="nomeVeiculo"
+                className="input"
+                type="text"
+                placeholder="Ex.: Caminhão Baú"
+                required
+                value={form.nomeVeiculo}
+                onChange={(e) => setForm({ ...form, nomeVeiculo: e.target.value })}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="marcaVeiculo">Marca</label>
+              <input
+                id="marcaVeiculo"
+                className="input"
+                type="text"
+                placeholder="Ex.: Volvo"
+                required
+                value={form.marcaVeiculo}
+                onChange={(e) => setForm({ ...form, marcaVeiculo: e.target.value })}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="placa">Placa</label>
+              <input
+                id="placa"
+                className="input"
+                type="text"
+                placeholder="FRT-0000"
+                required
+                value={form.placa}
+                onChange={(e) => setForm({ ...form, placa: e.target.value.toUpperCase() })}
+              />
+            </div>
+          </SecaoCampos>
+
+          <SecaoCampos titulo="Odômetro">
+            <div className="field">
+              <label htmlFor="quilometragem">Quilometragem</label>
+              <input
+                id="quilometragem"
+                className="input"
+                type="number"
+                min={0}
+                placeholder="0"
+                value={form.quilometragem}
+                onChange={(e) => setForm({ ...form, quilometragem: e.target.value })}
+              />
+            </div>
+            <p className="campo-largo m-0 text-[13px]" style={{ color: mutedText }}>
+              A quilometragem também avança sozinha pelos lançamentos de rota, manutenção e
+              abastecimento — nenhum deles a faz retroceder.
             </p>
-          )}
-          <div className="field min-w-[180px] flex-1">
-            <label htmlFor="nomeVeiculo">Nome do veículo</label>
-            <input
-              id="nomeVeiculo"
-              className="input"
-              type="text"
-              placeholder="Ex.: Caminhão Baú"
-              required
-              style={{ borderRadius: 0 }}
-              value={form.nomeVeiculo}
-              onChange={(e) => setForm({ ...form, nomeVeiculo: e.target.value })}
-            />
-          </div>
-          <div className="field min-w-[160px] flex-1">
-            <label htmlFor="marcaVeiculo">Marca</label>
-            <input
-              id="marcaVeiculo"
-              className="input"
-              type="text"
-              placeholder="Ex.: Volvo"
-              required
-              style={{ borderRadius: 0 }}
-              value={form.marcaVeiculo}
-              onChange={(e) => setForm({ ...form, marcaVeiculo: e.target.value })}
-            />
-          </div>
-          <div className="field w-[140px]">
-            <label htmlFor="placa">Placa</label>
-            <input
-              id="placa"
-              className="input"
-              type="text"
-              placeholder="FRT-0000"
-              required
-              style={{ borderRadius: 0 }}
-              value={form.placa}
-              onChange={(e) => setForm({ ...form, placa: e.target.value.toUpperCase() })}
-            />
-          </div>
-          <div className="field w-[160px]">
-            <label htmlFor="quilometragem">Quilometragem</label>
-            <input
-              id="quilometragem"
-              className="input"
-              type="number"
-              min={0}
-              placeholder="0"
-              style={{ borderRadius: 0 }}
-              value={form.quilometragem}
-              onChange={(e) => setForm({ ...form, quilometragem: e.target.value })}
-            />
-          </div>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            style={{ borderRadius: 0, padding: '10px 20px' }}
-            disabled={salvarMutation.isPending}
-          >
-            {salvarMutation.isPending ? 'Salvando…' : editando ? 'Salvar alterações' : 'Cadastrar'}
-          </button>
-          <div className="w-full">
-            <ErrorList mensagens={erros} />
-          </div>
-        </InlineForm>
+          </SecaoCampos>
+        </FormDialog>
       )}
 
       <div className="overflow-x-auto">
@@ -224,7 +228,7 @@ export function VeiculosPage() {
               textoErro="Não foi possível carregar os veículos."
               textoVazio="Nenhum veículo cadastrado ainda."
             />
-            {veiculos.map((v) => (
+            {p.itensDaPagina.map((v) => (
               <tr key={v.id}>
                 <td className="font-semibold">{v.nomeVeiculo}</td>
                 <td>{v.marcaVeiculo}</td>
@@ -260,6 +264,8 @@ export function VeiculosPage() {
           </tbody>
         </table>
       </div>
+
+      <Paginacao {...p} pending={veiculosQuery.isFetching} />
 
       {paraExcluir && (
         <ConfirmDialog
