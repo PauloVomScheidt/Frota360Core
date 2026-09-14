@@ -150,13 +150,7 @@ namespace Frota360.Api.Controllers
             return Ok(ApiResponse<DespesaResponse>.Ok(atualizada, "Despesa atualizada com sucesso."));
         }
 
-        /// <summary>
-        /// Exclui uma despesa. (Admin, Supervisor)
-        ///
-        /// ⚠️ Exceção deliberada à regra "Admin é o único que exclui" que vale no resto da
-        /// API: aqui o Supervisor também exclui, por decisão de produto. Não "corrija" isto
-        /// achando que é descuido — está registrado em apps/api/CLAUDE.md.
-        /// </summary>
+        /// <summary>Exclui uma despesa. (Admin, Supervisor)</summary>
         /// <response code="200">Despesa removida com sucesso</response>
         /// <response code="403">Sem permissão</response>
         /// <response code="404">Despesa não encontrada</response>

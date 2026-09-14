@@ -169,12 +169,12 @@ namespace Frota360.Api.Controllers
             return Ok(ApiResponse<AbastecimentoResponse>.Ok(atualizado, "Abastecimento corrigido com sucesso."));
         }
 
-        /// <summary>Remove um abastecimento. (Admin)</summary>
+        /// <summary>Remove um abastecimento. (Admin, Supervisor)</summary>
         /// <response code="200">Removido com sucesso</response>
         /// <response code="403">Sem permissão</response>
         /// <response code="404">Abastecimento não encontrado</response>
         [HttpDelete("{id:int}")]
-        [Authorize(Roles = Roles.Admin)]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Supervisor}")]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]

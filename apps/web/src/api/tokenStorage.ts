@@ -3,7 +3,7 @@ import type { Role, SessaoResponse } from './types'
 // O ":v1" existe para o dia em que o formato do StoredUser mudar: uma chave sem versão faria
 // o JSON.parse de uma sessão salva no formato antigo quebrar (ou, pior, "funcionar" com campos
 // errados). Bastando trocar para ":v2" nesse dia, sessões antigas somem em vez de crashar.
-const USER_KEY = 'frota360.user:v1'
+export const USER_KEY = 'frota360.user:v1'
 
 export interface StoredUser {
   nome: string

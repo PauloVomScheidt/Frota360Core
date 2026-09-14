@@ -158,12 +158,12 @@ namespace Frota360.Api.Controllers
             return Ok(ApiResponse<ManutencaoResponse>.Ok(concluida, "Manutenção concluída com sucesso."));
         }
 
-        /// <summary>Remove uma manutenção. (Admin)</summary>
+        /// <summary>Remove uma manutenção. (Admin, Supervisor)</summary>
         /// <response code="200">Removida com sucesso</response>
         /// <response code="403">Sem permissão</response>
         /// <response code="404">Manutenção não encontrada</response>
         [HttpDelete("{id:int}")]
-        [Authorize(Roles = Roles.Admin)]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Supervisor}")]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
