@@ -112,6 +112,7 @@ As páginas de CRUD (`VeiculosPage`, `RotasPage`, `ManutencoesPage`, `Abastecime
 - `SecaoCampos` — bloco de campos dentro de um `FormDialog`, com título opcional em caixa alta. **Formulário com mais de uns cinco campos agrupa por categoria** ("Dados do posto", "Veículo e motorista", "Vencimento"), em vez de uma fileira sem hierarquia; os diálogos curtos usam uma `SecaoCampos` sem título, que é só o grid. Quem manda na largura de cada campo é o `.dialog-grid` (`auto-fit`/`minmax(190px, 1fr)`) — **não ponha largura fixa no wrapper do campo**; o que precisa da linha inteira (observação, aviso, nota explicativa) recebe a classe `campo-largo`.
 - `Paginacao` — rodapé com o seletor de itens por página (10/15/20) e o "X–Y de Z" + anterior/próxima. Some quando o total cabe na menor opção — ver a regra completa em **Paginação**, acima.
 - `PainelDialog` — o diálogo que só mostra conteúdo, com "Fechar" como única ação. É o irmão do `ConfirmDialog` (confirma) e do `FormDialog` (submete): serve detalhe sob demanda, como os lançamentos de um veículo em `/custos`.
+- `TrajetoRota` / `CampoEndereco` / `MapaRota` — o bloco "Trajeto" do formulário de rota, compartilhado por `/rotas` e `/minhas-rotas`: autocomplete do **Places API (New)**, mapa com traçado e marcadores, e o resumo de distância/duração. **Leia [docs/contexto-web.md §8.3](../../docs/contexto-web.md) antes de mexer** — as decisões não são óbvias: o `PlaceAutocompleteElement` é Web Component (o widget legado quebraria dentro do `<dialog>`), o `APIProvider` fica no componente e não na raiz, e a chave de cache `['rota','calculo',…]` existe porque **cada cálculo é cobrado pela Google**. ⚠️ Três armadilhas ali só apareceram na verificação com Playwright, e nenhuma quebra `tsc -b` nem `oxlint`: o evento entrega `placePrediction` e não `place`; o shadow root é fechado e a caixa do campo tem de ser desenhada no host; e a economia de custo depende de a query ficar desabilitada quando já existe traçado salvo. ⚠️ Nada ali pode bloquear o salvamento: endereço é obrigatório na API, coordenada e traçado não são.
 - `FiltroPeriodo` — select de período pronto (`Hoje`, `Últimos 7/30 dias`, `Este mês`, `Mês passado`), usado por `/manutencoes`, `/abastecimentos`, `/despesas` e `/custos`. **Filtro de data novo usa este componente**, não dois campos `date` soltos; a conversão para `de`/`ate` vive em `lib/periodo.ts` e acontece no cliente — a API só conhece intervalo.
 
 A visibilidade dos botões de novo/editar/excluir é controlada por `pode.*` de `auth/permissions.ts`, não escondendo a página inteira. É assim que `/veiculos` e `/manutencoes` ficam read-only para o motorista sem código condicional novo.
@@ -153,6 +154,17 @@ A sidebar tem **três** categorias para a gestão — **Dashboard** (o dia a dia
 
 **Não há guarda por bloco de papéis** (os antigos `RequireGestao`/`RequireGestor`/`RequireAdmin`/`RequireMotorista` não existem mais): desde que o motorista passou a enxergar parte do painel, quem manda é a tela, não o papel. Por isso as entradas `pode.ver*` são **por tela** — um booleano único de "é gestão" seria mentira.
 
+### Google Maps
+
+`@vis.gl/react-google-maps` (+ `@types/google.maps`, que é dependência **direta** de propósito: veio transitiva e sumiria numa atualização da biblioteca). O `tsconfig.app.json` restringe `types`, então `"google.maps"` precisa estar listado ali — sem isso o `tsc -b` não acha o namespace `google`.
+
+Três bibliotecas do Maps são carregadas (`places`, `marker`, `geometry`). A `geometry` está lá pelo `encoding.decodePath`, que decodifica a polyline **sem dependência extra** — não instale um decodificador de polyline.
+
 ### Configuração de ambiente
 
-`VITE_API_URL` é a única variável de ambiente, definida por ambiente em `.env.development`/`.env.production` (a de produção está intencionalmente em branco e precisa ser preenchida no deploy).
+São duas as variáveis de ambiente, ambas embutidas no bundle em tempo de build:
+
+- `VITE_API_URL` — definida por ambiente em `.env.development`/`.env.production` (a de produção está intencionalmente em branco e precisa ser preenchida no deploy).
+- `VITE_GOOGLE_MAPS_KEY` — chave de browser do Maps JavaScript API + Places API (New). Vive só em `.env.local`, que é gitignored; o modelo comentado está em `.env.example`.
+
+⚠️ **`VITE_` não é segredo.** O Vite substitui a variável no código em tempo de build, então o valor fica legível no bundle servido a qualquer visitante. A única proteção possível é a restrição por referenciador HTTP no Google Cloud Console. Chave que precisa ficar secreta — como a da **Routes API** — mora no backend (`GoogleRoutes:ApiKey`) e nunca ganha um par `VITE_`.

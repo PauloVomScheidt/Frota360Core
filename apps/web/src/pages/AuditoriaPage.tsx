@@ -42,6 +42,7 @@ const ROTULO_ACAO: Record<AcaoAuditoria, string> = {
   Desativou: 'Desativou',
   Cancelou: 'Cancelou',
   Aceitou: 'Aceitou',
+  Calculou: 'Calculou rota',
 }
 
 /**

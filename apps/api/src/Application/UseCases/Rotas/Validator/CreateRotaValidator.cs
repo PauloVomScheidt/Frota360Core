@@ -9,17 +9,25 @@ namespace Frota360.Application.UseCases.Rotas.Validator
     {
         public CreateRotaValidator(ICurrentUserService currentUser)
         {
-            RuleFor(x => x.Origem)
-                .NotEmpty().WithMessage("Origem é obrigatória.")
-                .MaximumLength(100).WithMessage("Origem deve ter no máximo 100 caracteres.");
+            RuleFor(x => x.EnderecoPartida)
+                .NotEmpty().WithMessage("Endereço de partida é obrigatório.")
+                .MaximumLength(250).WithMessage("Endereço de partida deve ter no máximo 250 caracteres.");
 
-            RuleFor(x => x.Destino)
-                .NotEmpty().WithMessage("Destino é obrigatório.")
-                .MaximumLength(150).WithMessage("Destino deve ter no máximo 150 caracteres.")
-                .NotEqual(x => x.Origem).WithMessage("Destino não pode ser igual à origem.");
+            RuleFor(x => x.EnderecoChegada)
+                .NotEmpty().WithMessage("Endereço de chegada é obrigatório.")
+                .MaximumLength(250).WithMessage("Endereço de chegada deve ter no máximo 250 caracteres.")
+                .NotEqual(x => x.EnderecoPartida).WithMessage("Endereço de chegada não pode ser igual ao de partida.");
+
+            RuleFor(x => x.LatitudePartida).LatitudeValida("de partida").When(x => x.LatitudePartida is not null);
+            RuleFor(x => x.LongitudePartida).LongitudeValida("de partida").When(x => x.LongitudePartida is not null);
+            RuleFor(x => x.LatitudeChegada).LatitudeValida("de chegada").When(x => x.LatitudeChegada is not null);
+            RuleFor(x => x.LongitudeChegada).LongitudeValida("de chegada").When(x => x.LongitudeChegada is not null);
 
             // O motorista não escolhe o motorista da rota: o handler grava o da claim e
             // ignora o corpo, então exigir o campo dele seria pedir um dado que não usamos.
+
+            this.AplicarRegrasDeTrajeto();
+
             RuleFor(x => x.CodigoMotorista)
                 .GreaterThan(0).WithMessage("Motorista é obrigatório.")
                 .Unless(_ => currentUser.EhMotorista());

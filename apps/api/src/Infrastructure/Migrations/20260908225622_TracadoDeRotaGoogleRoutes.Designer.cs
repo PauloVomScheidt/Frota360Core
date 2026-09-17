@@ -3,6 +3,7 @@ using System;
 using Frota360.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Frota360.Infrastructure.Migrations
 {
     [DbContext(typeof(Frota360DbContext))]
-    partial class Frota360DbContextModelSnapshot : ModelSnapshot
+    [Migration("20260908225622_TracadoDeRotaGoogleRoutes")]
+    partial class TracadoDeRotaGoogleRoutes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -455,6 +458,11 @@ namespace Frota360.Infrastructure.Migrations
                     b.Property<DateTime>("DataInicio")
                         .HasColumnType("timestamp without time zone");
 
+                    b.Property<string>("Destino")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
                     b.Property<int>("DistanciaMetros")
                         .HasColumnType("integer");
 
@@ -498,6 +506,11 @@ namespace Frota360.Infrastructure.Migrations
                     b.Property<decimal>("LongitudePartida")
                         .HasPrecision(9, 6)
                         .HasColumnType("numeric(9,6)");
+
+                    b.Property<string>("Origem")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<string>("PolylineCodificada")
                         .HasColumnType("text");

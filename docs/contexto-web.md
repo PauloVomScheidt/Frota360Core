@@ -28,7 +28,7 @@ npm run lint     # oxlint
 npm run gen:api  # regenera tipos do OpenAPI (API precisa estar no ar)
 ```
 
-Base da API por ambiente: `VITE_API_URL` (`.env.development` → `https://localhost:7271/api/v1`; `.env.production` → `https://api.frota360app.com.br/api/v1`). **O `/api/v1` faz parte do valor**: os módulos de `src/api` chamam caminhos relativos (`/veiculo`, `/auth/login`) sobre o `baseURL`. Se a variável estiver vazia, o `http.ts` lança na carga do módulo em vez de deixar o axios cair em URLs relativas à origem do front. É a única variável de ambiente do projeto. A porta 5173 do `npm run dev` é fixa — é a origem liberada no CORS da API.
+Base da API por ambiente: `VITE_API_URL` (`.env.development` → `https://localhost:7271/api/v1`; `.env.production` → `https://api.frota360app.com.br/api/v1`). **O `/api/v1` faz parte do valor**: os módulos de `src/api` chamam caminhos relativos (`/veiculo`, `/auth/login`) sobre o `baseURL`. Se a variável estiver vazia, o `http.ts` lança na carga do módulo em vez de deixar o axios cair em URLs relativas à origem do front. A segunda e última variável é `VITE_GOOGLE_MAPS_KEY` (chave de browser do Maps JavaScript + Places API New), que fica em `.env.local` — gitignored, com o modelo em `.env.example`. Nenhuma das duas é segredo: o Vite as embute no bundle em tempo de build, e a proteção da chave do Maps é a restrição por referenciador HTTP no console do Google. A chave da **Routes API** é de servidor e não tem par `VITE_` — ela vive só na API, em `GoogleRoutes:ApiKey`. A porta 5173 do `npm run dev` é fixa — é a origem liberada no CORS da API.
 
 O `empresaId` **nunca** é enviado pelo cliente — vem do JWT. A multi-tenancy é transparente para o front.
 
@@ -215,7 +215,7 @@ Esta é a tela de **toda a frota**. O motorista não a alcança — ele tem `/mi
 
 A rota tem um ciclo de vida: nasce **ativa** com o hodômetro de abertura e é **encerrada** por uma ação própria, que apura a quilometragem percorrida e avança o odômetro do veículo.
 
-- Formulário: origem, destino, motorista (select), veículo (select), início e **quilometragem inicial**. Não há mais campo de "fim" nem de "situação" — a API os removeu dos requests justamente para que encerrar seja a única transição de estado (por `PUT` dava para "encerrar" uma rota sem calcular km nem tocar no odômetro).
+- Formulário: **partida, chegada** (endereços — desde 08/09/2026 substituem os antigos `origem`/`destino`, que saíram da entidade), motorista (select), veículo (select), início e **quilometragem inicial**. Os dois endereços saem do componente compartilhado **`TrajetoRota`** — ver §8.3. Não há mais campo de "fim" nem de "situação" — a API os removeu dos requests justamente para que encerrar seja a única transição de estado (por `PUT` dava para "encerrar" uma rota sem calcular km nem tocar no odômetro).
 - A **quilometragem inicial só aparece na criação**: o `PUT` não altera esse número, então exibi-lo na edição sugeriria um poder que a tela não tem.
 - O formulário **sugere a quilometragem inicial** como o odômetro atual do veículo selecionado, reaplicando a sugestão quando o veículo muda, mas nunca sobrescrevendo um número digitado à mão (mesma mecânica de `/manutencoes`, comparando com a última sugestão emitida). O select de veículos mostra o km atual de cada um.
 - Regras lembradas na própria tela: a quilometragem inicial não pode ser menor que o odômetro do veículo (422 com o km atual na mensagem) e, quando é maior, o odômetro é atualizado **já na abertura** — o veículo rodou fora do sistema, e o número mais recente vence. Por isso o cadastro invalida também `['veiculos']` e `['manutencoes']`.
@@ -292,7 +292,7 @@ A tela do motorista, e a única que ele enxerga. O recorte é **do servidor** (`
 
 Layout pensado para uso rápido, não para auditoria:
 
-1. **Rota em andamento** em destaque no topo (contorno grosso): origem → destino, veículo, data de abertura, km de saída, e um botão único **Encerrar rota**.
+1. **Rota em andamento** em destaque no topo (contorno grosso): partida → chegada, veículo, data de abertura, km de saída, e um botão único **Encerrar rota**.
 2. **Abrir rota** no cabeçalho, desabilitado enquanto houver rota ativa (com o motivo no `title`) ou se não houver veículo cadastrado. O formulário **não tem seletor de motorista**: o `POST /rota` sai sem `codigoMotorista` (`AbrirMinhaRotaRequest`), porque a API grava o id do usuário logado e ignora o corpo. A sugestão de quilometragem pelo veículo escolhido é a mesma de `/rotas`; `dataInicio` já vem com hoje.
 3. **Histórico** — tabela das rotas encerradas, com km percorrido e o intervalo de odômetro.
 
@@ -330,7 +330,7 @@ São treze campos, o maior formulário do app — e por isso o modal os divide e
 - ⚠️ **Para a role Motorista a prévia pode sair inflada, e é por isso que a referência aparece nomeada.** A lista dele vem recortada pelo servidor: se o abastecimento anterior daquele caminhão foi de outra pessoa, a conta vai pegar um lançamento mais antigo dele mesmo — km maior, litros do tanque errado. Mostrar a data e o odômetro da referência deixa isso visível em vez de silencioso; corrigir exigiria afrouxar o recorte, o que não vale a troca.
 - **Combustível e posto vêm dos catálogos** (`/tipos-combustivel` e `/postos`), carregados com `apenasAtivos: true` e **sem `enabled`**, ao contrário de `['motoristas']`: a API abre a leitura dos dois a todos os papéis justamente para o motorista conseguir lançar. Sem catálogo cadastrado o botão de novo lançamento fica desabilitado, com o motivo no `title` — mesma mecânica de "sem veículos"/"sem motoristas".
 - **Veículo e motorista não são editáveis na correção** — trocar qualquer um reatribuiria o gasto. Para isso, exclua e lance de novo; na correção a seção inteira "Veículo e motorista" some, e a `descricao` do modal diz o motivo. Todo o resto do apontamento é corrigível.
-- A rota é **contexto derivado**: a API vincula sozinha quando há rota aberta do motorista naquele veículo, e a tabela mostra "Origem → Destino" no lugar do modelo. Ninguém escolhe rota na tela.
+- A rota é **contexto derivado**: a API vincula sozinha quando há rota aberta do motorista naquele veículo, e a tabela mostra "Partida → Chegada" no lugar do modelo. Ninguém escolhe rota na tela.
 - Litros e R$/litro dividem uma célula na tabela (`48,5 L` com `R$ 6,19/L · 152.340 km` embaixo), no mesmo formato de duas linhas da célula de veículo — a tabela já tem nove colunas.
 - Rodapé com o total **do que está filtrado** (quantidade e valor), não da frota inteira.
 
@@ -420,7 +420,7 @@ Trilha do que a equipe alterou. **Somente leitura** — não há botão "Novo" n
 
 - **Filtros no servidor**, como em `/manutencoes`: o quê (entidade), ação, quem (select alimentado por `['usuarios']` — a tela é Admin, a query já existe) e período de/até. Qualquer mudança de filtro **volta para a página 1**; sem isso a tela abriria vazia ao filtrar estando na página 4.
 - Colunas: **Quando** (`formatDateTime`), **Quem** (nome + o papel *do momento da ação*, que vem gravado na linha e não é o papel atual), **Ação** (`tag`), **Registro** (`Entidade #id`) e **O que aconteceu** (a `descricao` pronta que vem do servidor — nunca montada no cliente).
-- A cor da tag sinaliza **consequência, não entidade** (§8.1): `tag-danger` para Excluiu/Desativou, `tag-warning` para AlterouPermissao/Cancelou, `tag-accent` para Criou, `tag-success` para Concluiu/Encerrou/Ativou/Aceitou. `Atualizou` fica neutro **de propósito** — é a ação mais comum da trilha, e colori-la afogaria o resto. Numa tabela longa, colorir por entidade viraria arco-íris.
+- A cor da tag sinaliza **consequência, não entidade** (§8.1): `tag-danger` para Excluiu/Desativou, `tag-warning` para AlterouPermissao/Cancelou, `tag-accent` para Criou, `tag-success` para Concluiu/Encerrou/Ativou/Aceitou. `Atualizou` fica neutro **de propósito** — é a ação mais comum da trilha, e colori-la afogaria o resto. ⚠️ `Calculou` (chamada cobrada à Routes API, desde 08/09/2026) entrou na união `AcaoAuditoria` e recebeu o rótulo "Calculou rota" em `ROTULO_ACAO` — **obrigatório, não opcional**: o `Record<AcaoAuditoria, string>` é exaustivo, e uma união ampliada sem a chave correspondente quebra o `tsc -b`. Cor própria ela não tem: cai no `tag-neutral`, como `Atualizou`. Numa tabela longa, colorir por entidade viraria arco-íris.
 - **Linha expansível** quando há diff: clicar abre uma sublinha com `campo · de → para`, mais o IP de origem. Sem diff (criação, exclusão) a seta nem aparece — não há o que abrir.
 - Os valores do diff chegam em cultura invariante, de propósito: o histórico não depende de quem o escreveu. A tela converte datas ISO para pt-BR na leitura; o resto passa direto.
 - Rodapé com o componente `Paginacao` (25 por página, teto de 100 no servidor) e botão **Atualizar** no cabeçalho.
@@ -462,6 +462,10 @@ Formulário único, sem tabela: **nome, CPF e data de nascimento** do próprio u
 ### 6.4 Chaves do React Query
 
 `['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['usuarios']`, `['convites']`, `['perfil']`, `['manutencoes', filtro]`, `['abastecimentos', filtro]`, `['auditoria', filtro]`, `['custos', filtro]`, `['custos', 'resumo', recorte]`, `['despesas', filtro]`, `['tiposDespesa']`, `['tiposDespesa', 'ativos']`, `['tiposCombustivel']`, `['tiposCombustivel', 'ativos']`, `['postos']`, `['postos', 'ativos']`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`apps/web/src/lib/queryClient.ts`](apps/web/src/lib/queryClient.ts)).
+
+⚠️ **`['rota', 'calculo', latPartida, lngPartida, latChegada, lngChegada]` é a única chave que existe por causa de dinheiro.** Cada acerto de cache é uma chamada à Google que **não** foi cobrada. Por isso ela carrega as quatro coordenadas (par idêntico nunca recalcula), usa `staleTime: Infinity` em vez dos 30 s do padrão, e `retry: false` — repetir automaticamente uma chamada faturada que falhou seria pagar duas vezes pelo mesmo erro. Ninguém a invalida.
+
+⚠️ **Duas condições fazem essa economia funcionar de verdade, e as duas nasceram de uma cobrança dupla observada no navegador:** a query só é `enabled` quando **não há traçado salvo no formulário** (sem isso, abrir para editar uma rota já calculada paga outra vez pelo mesmo trajeto), e a chave **arredonda a coordenada em 6 casas**, que é a precisão da coluna `numeric(9,6)` — o Places devolve precisão cheia, e sem o arredondamento o ponto lido do banco e o mesmo ponto escolhido na tela geram chaves diferentes, fazendo o cache errar exatamente onde ele mais importa.
 
 ⚠️ `['rotas']` e `['rotas','minhas']` são **listas diferentes**, não pai e filho: a segunda vem de outro endpoint e traz só as rotas do motorista logado. Invalidar pelo prefixo `['rotas']` alcançaria as duas, o que é inofensivo apenas porque nenhuma sessão usa as duas telas. Ao mexer nisso, invalide a chave exata.
 
@@ -515,6 +519,8 @@ Cruzamentos que não são óbvios, conferidos no código:
 | | `GET /rota/minhas` (Motorista) | MinhasRotasPage — sem parâmetro: o motorista vem da claim |
 | | `POST /rota` sem `codigoMotorista` | MinhasRotasPage (`abrirMinha`) — a API grava o id do usuário logado |
 | | `POST /rota/{id}/encerrar` | encerramento — apura `kmPercorrido` e **pode avançar o odômetro do veículo**; para o motorista, rota alheia → 404 |
+| | ⚠️ `RotaRequest` perdeu `origem`/`destino` e ganhou `enderecoPartida`/`enderecoChegada` (08/09/2026), mais as quatro coordenadas **opcionais** — `RotaResponse`, `CriarRotaRequest` e `AbrirMinhaRotaRequest` herdam do mesmo tipo, então a troca alcançou as duas telas de rota e o aviso de rota ativa em `/abastecimentos` | |
+| | `POST /rota/calcular` | **consumido pelo `TrajetoRota`** desde 09/09/2026. Recebe `{latitudeOrigem, longitudeOrigem, latitudeDestino, longitudeDestino}`, devolve `{distanciaMetros, duracaoEstimadaSegundos, polylineCodificada}`. Não persiste nada, e **cada chamada é cobrada** — por isso a chave de cache carrega as quatro coordenadas e o `staleTime` é `Infinity` |
 | **tipomanutencao** | `GET /tipomanutencao?apenasAtivos=` | catálogo (sem filtro) / select de agendamento (`true`) |
 | | `POST`, `PUT /{id}`, `DELETE /{id}` | TiposManutencaoPage |
 | **manutencao** | `GET /manutencao?pagina=&tamanhoPagina=&veiculoId=&status=&de=&ate=` | ManutencoesPage — todos os filtros vão para o servidor, período incluído |
@@ -642,6 +648,75 @@ Componentes reutilizados pelas telas:
 | `lib/periodo.ts` | `/manutencoes`, `/abastecimentos` | `PERIODOS` e `intervaloDoPeriodo` — converte o período escolhido em `de`/`ate` (hora local, `ate` inclusivo) |
 
 ---
+
+### 8.3 `TrajetoRota` — endereço com autocomplete e mapa
+
+Bloco "Trajeto" compartilhado por `/rotas` e `/minhas-rotas`, que pediam exatamente os mesmos
+campos. Composto por `CampoEndereco` (×2), `MapaRota` e o resumo de distância/duração.
+
+- **`PlaceAutocompleteElement` (Places API New), não o `Autocomplete` legado.** A escolha é
+  imposta pelo `FormDialog`: o widget antigo injeta o dropdown `.pac-container` no `<body>`, que
+  fica **atrás do top layer** de um `<dialog>` modal. O elemento novo renderiza a lista dentro de
+  si, então funciona no diálogo.
+- **É Web Component, não React.** O `@vis.gl/react-google-maps` não traz wrapper para ele:
+  `CampoEndereco` o instancia, anexa num `ref` e escuta `gmp-select`, e mantém os callbacks em
+  refs atualizadas por efeito — sem isso o listener, registrado uma vez, congelaria o `form` da
+  primeira renderização.
+- ⚠️ **O evento entrega `placePrediction`, NÃO `place`.** A seleção é uma predição, e vira um
+  `Place` por `toPlace()`; só então o `fetchFields` traz `formattedAddress`/`location`. Ler
+  `event.place` devolve `undefined` e o endereço entra na tela **sem coordenada nenhuma**, com o
+  aviso de degradação ligado — falha silenciosa, porque a tela continua funcionando. O
+  `@types/google.maps` tem duas classes parecidas (`PlaceSelectEvent`, de outros elementos, e
+  `PlacePredictionSelectEvent`, deste), então **registre o listener pela sobrecarga tipada do
+  elemento e nunca por um `as`**: o `as` é justamente o que esconde a troca. Usar `toPlace()`
+  também é o que faz o `fetchFields` herdar o session token do autocomplete, mantendo a busca
+  cobrada como uma sessão só.
+- ⚠️ **O `autoFocus` do React não alcança o elemento** — ele vale para o `<input>` do fallback.
+  O foco é dado à mão, e **num `requestAnimationFrame`**: chamado logo após o `appendChild`, o
+  campo interno ainda não montou e o `focus()` é engolido em silêncio.
+- **O `APIProvider` mora no componente, não na raiz do app**, para o script do Maps só ser
+  baixado por quem abre o formulário de rota. Só um diálogo fica aberto por vez, então nunca há
+  duas instâncias montadas.
+- **A polyline é desenhada de forma imperativa** (`new google.maps.Polyline`) porque a biblioteca
+  só tem componentes para mapa e marcador. Decodificar usa `geometry.encoding.decodePath` do
+  próprio Maps — **nenhuma dependência a mais**.
+- ⚠️ **Trocar qualquer ponto zera o traçado** (`SEM_TRACADO`), inclusive ao digitar sem escolher
+  da lista, que também zera a coordenada. Sem isso o formulário salvaria um endereço com a
+  distância e o ponto do endereço anterior.
+- ⚠️ **Nada aqui bloqueia o salvamento.** Endereço é obrigatório na API; coordenada e traçado não
+  são. Três degraus de degradação: **sem chave** → campo de texto puro, sem aviso (em produção a
+  chave pode simplesmente não estar provisionada, e alarmar todo usuário seria ruído);
+  **chave que falha ao carregar** → texto puro **com** aviso, porque aí houve erro de verdade;
+  **cálculo que falha** → o 422 da API (que já cobre indisponibilidade, timeout e ausência de
+  trajeto) aparece como aviso. O aviso usa `--color-warning`, não `--color-danger`: é atenção,
+  não falha — a rota continua salvável (§8.1).
+- ⚠️ **A lista de sugestões é recortada pelo `.dialog-corpo`** (`overflow: auto`), porque é
+  desenhada dentro do próprio elemento e não no topo da página. Numa janela de 620px sobravam
+  290px abaixo do campo para uma lista de ~300px: a última sugestão e a atribuição do Google
+  nasciam cortadas. A correção é `scrollIntoView({ block: 'start' })` no `focus` do campo —
+  trazer o campo ao topo da área rolável leva o espaço a 347px e a lista passa a caber inteira.
+  Onde o corpo não rola, é no-op. ⚠️ **Não tente resolver com `position: fixed` no
+  `::part(prediction-list)`**: escapa do recorte, mas a lista perde a âncora e vai parar no
+  canto da viewport, cobrindo o cabeçalho.
+- ⚠️ **`color-scheme: light` no host, e não só no `:root`.** Com o sistema do usuário em modo
+  escuro o widget troca para o tema escuro do Google — a lista de sugestões fica preta, e o
+  `--gmp-mat-color-on-surface` que apontamos para `var(--color-text)` (quase preto) vira texto
+  preto sobre fundo preto. O painel é **só claro** (esta folha não tem nenhum bloco
+  `prefers-color-scheme`), então o `:root` declara `color-scheme: light` — o que também impede
+  o navegador de pintar calendário de `<input type="date">` e barras de rolagem com o esquema
+  do sistema. Mas **o `:root` sozinho não resolve o widget**: ele declara o próprio
+  `color-scheme` no `:host` dele, e declaração própria vence valor herdado, então a linha
+  precisa ser repetida em `.campo-endereco`. Foi um defeito relatado por um usuário com o
+  Windows em modo escuro, invisível para quem desenvolve em modo claro.
+- **O shadow root é FECHADO**: não dá para inspecionar nem estilizar por dentro, só pelos
+  `::part()` expostos e pelas variáveis `--gmp-mat-*`. ⚠️ Por dentro o campo é um trio
+  (lupa | input | limpar) em que **cada segmento desenha o próprio contorno**: quem faz a caixa é
+  o **host**, e os contornos internos são apagados por `--gmp-mat-color-outline: transparent`.
+  Estilizar só o `::part(input)` produz três caixas soltas lado a lado, com a lupa fora do campo.
+  A altura vai no host **e** no `::part(input)`, senão o campo fica com 50px contra os 36px dos
+  irmãos. E o contorno da lista de sugestões é `box-shadow`, **não `border`**: a lista tem
+  `width: 100%`, e 1px de borda a faz transbordar o `.dialog-corpo` e acender uma barra de
+  rolagem horizontal no diálogo inteiro.
 
 ## 9. O que ainda não existe
 

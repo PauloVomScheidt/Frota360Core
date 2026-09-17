@@ -160,8 +160,24 @@ export interface VeiculoResponse extends VeiculoRequest {
  * permitiria "encerrar" uma rota por edição, sem calcular km nem tocar no odômetro.
  */
 export interface RotaRequest {
-  origem: string
-  destino: string
+  enderecoPartida: string
+  enderecoChegada: string
+  /**
+   * Coordenadas do Places. Opcionais enquanto o autocomplete não existe na tela — sem elas
+   * a rota é gravada sem traçado, e `dataCalculoRota` permanece nula.
+   */
+  latitudePartida?: number | null
+  longitudePartida?: number | null
+  latitudeChegada?: number | null
+  longitudeChegada?: number | null
+  /**
+   * Traçado já calculado por `POST /rota/calcular`. Enviado pelo cliente em vez de
+   * recalculado no servidor porque a chamada à Routes API é cobrada — o front acabou de
+   * pagar por este mesmo trajeto. `dataCalculoRota` não entra: quem a carimba é a API.
+   */
+  distanciaMetros?: number | null
+  duracaoEstimadaSegundos?: number | null
+  polylineCodificada?: string | null
   codigoMotorista: number
   codigoVeiculo: number
   dataInicio: string
@@ -189,6 +205,25 @@ export interface CriarRotaRequest extends RotaRequest {
  */
 export type AbrirMinhaRotaRequest = Omit<CriarRotaRequest, 'codigoMotorista'>
 
+/**
+ * Corpo de `POST /rota/calcular`. Consulta avulsa: não carrega id de rota, porque o
+ * cálculo antecede o cadastro.
+ */
+export interface CalcularRotaRequest {
+  latitudeOrigem: number
+  longitudeOrigem: number
+  latitudeDestino: number
+  longitudeDestino: number
+}
+
+/** Trajeto devolvido pela Routes API. */
+export interface CalculoRotaResponse {
+  distanciaMetros: number
+  duracaoEstimadaSegundos: number
+  /** Nula quando a Google devolve o trajeto sem traçado — distância e duração seguem válidas. */
+  polylineCodificada?: string | null
+}
+
 /** `dataFim` opcional — a API assume "agora" quando omitida. */
 export interface EncerrarRotaRequest {
   kmFinal: number
@@ -213,6 +248,15 @@ export interface RotaResponse extends RotaRequest {
   /** Fato histórico persistido pela API (`kmFinal - kmInicial`), não recalcular aqui. */
   kmPercorrido?: number | null
   dataInclusao: string
+  /**
+   * Traçado calculado pela Routes API. ⚠️ `dataCalculoRota` é o discriminador: nula, os
+   * demais campos deste bloco estão nos seus zeros e não devem ser exibidos como se fossem
+   * medida real — distância 0 e "não calculado" são indistinguíveis sem ela.
+   */
+  distanciaMetros: number
+  duracaoEstimadaSegundos: number
+  polylineCodificada?: string | null
+  dataCalculoRota?: string | null
 }
 
 // ---------- Tipo de manutenção ----------
@@ -332,6 +376,7 @@ export type AcaoAuditoria =
   | 'Desativou'
   | 'Cancelou'
   | 'Aceitou'
+  | 'Calculou'
 
 /** Um campo que mudou. Valores já vêm como texto — o log é histórico legível. */
 export interface AlteracaoCampo {

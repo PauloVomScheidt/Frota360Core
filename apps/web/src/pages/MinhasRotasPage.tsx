@@ -18,13 +18,24 @@ import { CheckIcon } from '../components/icons'
 import { formatDate, formatKm, hojeInputDate, paraInputDate } from '../lib/format'
 import { estaVencendo } from '../lib/manutencao'
 import { statusDaRota } from '../lib/rota'
+import { TrajetoRota } from '../components/TrajetoRota'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
 // Sem `codigoMotorista`: quem decide o motorista é o servidor, pela claim do JWT.
 const FORM_VAZIO = {
-  origem: '',
-  destino: '',
+  enderecoPartida: '',
+  enderecoChegada: '',
+  // `null` explícito, e não 0: (0,0) é um ponto real no Atlântico. Ausência de
+  // coordenada é o estado de quem digitou o endereço sem escolher da lista.
+  latitudePartida: null as number | null,
+  longitudePartida: null as number | null,
+  latitudeChegada: null as number | null,
+  longitudeChegada: null as number | null,
+  // Preenchidos por POST /rota/calcular quando os dois pontos têm coordenada.
+  distanciaMetros: null as number | null,
+  duracaoEstimadaSegundos: null as number | null,
+  polylineCodificada: null as string | null,
   codigoVeiculo: '',
   dataInicio: '',
   kmInicial: '',
@@ -82,31 +93,11 @@ function MinhaRotaFormulario({
       onCancelar={onCancelar}
     >
       <SecaoCampos titulo="Trajeto">
-        <div className="field">
-          <label htmlFor="origem">Origem</label>
-          <input
-            id="origem"
-            className="input"
-            type="text"
-            placeholder="Cidade de origem"
-            required
-            autoFocus
-            value={form.origem}
-            onChange={(e) => onFormChange({ ...form, origem: e.target.value })}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="destino">Destino</label>
-          <input
-            id="destino"
-            className="input"
-            type="text"
-            placeholder="Cidade de destino"
-            required
-            value={form.destino}
-            onChange={(e) => onFormChange({ ...form, destino: e.target.value })}
-          />
-        </div>
+        <TrajetoRota
+          form={form}
+          onFormChange={(trajeto) => onFormChange({ ...form, ...trajeto })}
+          autoFocus
+        />
         <div className="field">
           <label htmlFor="dataInicio">Início</label>
           <input
@@ -236,7 +227,7 @@ function RotaAtivaCard({
           <div className="min-w-[240px]">
             <div className="mb-2 flex items-center gap-3">
               <span className="text-lg font-bold">
-                {rotaAtiva.origem} → {rotaAtiva.destino}
+                {rotaAtiva.enderecoPartida} → {rotaAtiva.enderecoChegada}
               </span>
               <span className={statusDaRota(rotaAtiva).classe}>{statusDaRota(rotaAtiva).rotulo}</span>
             </div>
@@ -287,7 +278,7 @@ function HistoricoRotasTabela({
         <table className="table">
           <thead>
             <tr>
-              <th>Origem → Destino</th>
+              <th>Partida → Chegada</th>
               <th>Veículo</th>
               <th>Início</th>
               <th>Fim</th>
@@ -310,7 +301,7 @@ function HistoricoRotasTabela({
               return (
                 <tr key={rota.id}>
                   <td className="font-semibold">
-                    {rota.origem} → {rota.destino}
+                    {rota.enderecoPartida} → {rota.enderecoChegada}
                   </td>
                   <td>{veiculoPorId.get(rota.codigoVeiculo)?.placa ?? `#${rota.codigoVeiculo}`}</td>
                   <td>{formatDate(rota.dataInicio)}</td>
@@ -360,7 +351,7 @@ function EncerramentoMinhaRotaFormulario({
   return (
     <FormDialog
       titulo="Encerrar rota"
-      descricao={`${paraEncerrar.origem} → ${paraEncerrar.destino} — ${descricaoVeiculo}, aberta em ${formatKm(paraEncerrar.kmInicial)}. Informe o odômetro na chegada: a quilometragem percorrida é a diferença, e o veículo é atualizado com esse número.`}
+      descricao={`${paraEncerrar.enderecoPartida} → ${paraEncerrar.enderecoChegada} — ${descricaoVeiculo}, aberta em ${formatKm(paraEncerrar.kmInicial)}. Informe o odômetro na chegada: a quilometragem percorrida é a diferença, e o veículo é atualizado com esse número.`}
       textoConfirmar="Encerrar"
       textoPendente="Encerrando…"
       pending={pending}
@@ -552,8 +543,15 @@ export function MinhasRotasPage() {
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
     abrirMutation.mutate({
-      origem: form.origem,
-      destino: form.destino,
+      enderecoPartida: form.enderecoPartida,
+      enderecoChegada: form.enderecoChegada,
+      latitudePartida: form.latitudePartida,
+      longitudePartida: form.longitudePartida,
+      latitudeChegada: form.latitudeChegada,
+      longitudeChegada: form.longitudeChegada,
+      distanciaMetros: form.distanciaMetros,
+      duracaoEstimadaSegundos: form.duracaoEstimadaSegundos,
+      polylineCodificada: form.polylineCodificada,
       codigoVeiculo: Number(form.codigoVeiculo),
       dataInicio: form.dataInicio,
       kmInicial: Number(form.kmInicial),

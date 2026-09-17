@@ -117,10 +117,25 @@ namespace Frota360.Infrastructure.Data
             {
                 entity.ToTable("Rota");
                 entity.HasKey(r => r.Id);
-                entity.Property(r => r.Origem).HasMaxLength(100).IsRequired();
-                entity.Property(r => r.Destino).HasMaxLength(150).IsRequired();
                 entity.Property(r => r.Ativo).HasDefaultValue(true);
                 entity.Property(r => r.DataInclusao).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
+
+                // Endereço formatado do Places é bem mais longo que o par Origem/Destino que
+                // estes campos substituíram (100/150), daí os 250.
+                entity.Property(r => r.EnderecoPartida).HasMaxLength(250).IsRequired();
+                entity.Property(r => r.EnderecoChegada).HasMaxLength(250).IsRequired();
+
+                // (9,6) cobre as duas faixas: 3 dígitos inteiros bastam para a longitude
+                // (-180..180) e sobram para a latitude, e 6 casas dão ~11 cm de resolução.
+                // Sem precisão explícita o Npgsql cria `numeric` sem limite.
+                entity.Property(r => r.LatitudePartida).HasPrecision(9, 6);
+                entity.Property(r => r.LongitudePartida).HasPrecision(9, 6);
+                entity.Property(r => r.LatitudeChegada).HasPrecision(9, 6);
+                entity.Property(r => r.LongitudeChegada).HasPrecision(9, 6);
+
+                // Sem HasMaxLength de propósito: a polyline cresce com o tamanho do trajeto
+                // e um teto arbitrário truncaria o traçado de uma viagem longa.
+                entity.Property(r => r.PolylineCodificada);
 
                 // "Quais veiculos estao rodando" roda em toda listagem de veiculo e no
                 // dashboard. Substitui o indice de FK (EmpresaId) que o EF criava sozinho:

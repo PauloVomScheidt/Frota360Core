@@ -24,7 +24,7 @@ namespace Frota360.Application.UseCases.Rotas.Commands.CreateRota
 
             try
             {
-                logger.LogInformation("Iniciando cadastro da rota {Origem} -> {Destino}", request.Origem, request.Destino);
+                logger.LogInformation("Iniciando cadastro da rota {Partida} -> {Chegada}", request.EnderecoPartida, request.EnderecoChegada);
 
                 // Motorista abre rota só para si: o id é o do próprio login e o do corpo
                 // é ignorado, então nem um cliente adulterado lança rota no nome de outro.
@@ -63,8 +63,18 @@ namespace Frota360.Application.UseCases.Rotas.Commands.CreateRota
                 var rota = new Rota
                 {
                     EmpresaId = currentUser.EmpresaId,
-                    Origem = request.Origem,
-                    Destino = request.Destino,
+                    EnderecoPartida = request.EnderecoPartida,
+                    EnderecoChegada = request.EnderecoChegada,
+                    LatitudePartida = request.LatitudePartida ?? 0,
+                    LongitudePartida = request.LongitudePartida ?? 0,
+                    LatitudeChegada = request.LatitudeChegada ?? 0,
+                    LongitudeChegada = request.LongitudeChegada ?? 0,
+                    DistanciaMetros = request.DistanciaMetros ?? 0,
+                    DuracaoEstimadaSegundos = request.DuracaoEstimadaSegundos ?? 0,
+                    PolylineCodificada = request.PolylineCodificada,
+                    // O carimbo é do servidor, e só existe quando a distância veio junto:
+                    // é ele que distingue "sem traçado" de "trajeto de 0 m".
+                    DataCalculoRota = request.DistanciaMetros is null ? null : DateTime.Now,
                     CodigoMotorista = motorista.Id,
                     CodigoVeiculo = veiculo.Id,
                     Ativo = true,
@@ -76,7 +86,7 @@ namespace Frota360.Application.UseCases.Rotas.Commands.CreateRota
 
                 var criado = await repository.AddAsync(rota);
 
-                logger.LogInformation("Rota cadastrada com sucesso. Id {Id} | Origem {Origem} | Destino {Destino}", criado.Id, criado.Origem, criado.Destino);
+                logger.LogInformation("Rota cadastrada com sucesso. Id {Id} | Partida {Partida} | Chegada {Chegada}", criado.Id, criado.EnderecoPartida, criado.EnderecoChegada);
 
                 // Criação não tem diff, mas o salto de odômetro tem — e é a informação
                 // mais consequente da abertura.
@@ -85,7 +95,7 @@ namespace Frota360.Application.UseCases.Rotas.Commands.CreateRota
                     .Construir();
 
                 await auditoria.RegistrarAsync(EntidadesAuditadas.Rota, AcoesAuditoria.Criou, criado.Id,
-                    $"Abriu a rota {criado.Origem} → {criado.Destino} para {motorista.Nome}, veículo {veiculo.Placa}",
+                    $"Abriu a rota {criado.EnderecoPartida} → {criado.EnderecoChegada} para {motorista.Nome}, veículo {veiculo.Placa}",
                     alteracoes);
 
                 var resposta = criado.ToResponse();
@@ -96,7 +106,7 @@ namespace Frota360.Application.UseCases.Rotas.Commands.CreateRota
             }
             catch (Exception ex) when (ex is not InvalidOperationException)
             {
-                logger.LogError(ex, "Erro ao cadastrar rota {Origem} -> {Destino}", request.Origem, request.Destino);
+                logger.LogError(ex, "Erro ao cadastrar rota {Partida} -> {Chegada}", request.EnderecoPartida, request.EnderecoChegada);
                 throw;
             }
         }

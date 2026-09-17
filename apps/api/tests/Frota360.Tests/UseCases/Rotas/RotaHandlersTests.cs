@@ -45,8 +45,8 @@ namespace Frota360.Tests.UseCases.Rotas
         {
             Id = id,
             EmpresaId = 1,
-            Origem = "Curitiba",
-            Destino = "São Paulo",
+            EnderecoPartida = "Curitiba",
+            EnderecoChegada = "São Paulo",
             CodigoMotorista = codigoMotorista,
             CodigoVeiculo = codigoVeiculo,
             Ativo = dataFim is null,
@@ -83,8 +83,8 @@ namespace Frota360.Tests.UseCases.Rotas
 
         private static CreateRotaRequest NovaCreateRequest(int kmInicial = 50_000) => new()
         {
-            Origem = "Joinville",
-            Destino = "Blumenau",
+            EnderecoPartida = "Joinville",
+            EnderecoChegada = "Blumenau",
             CodigoMotorista = 2,
             CodigoVeiculo = 3,
             DataInicio = new DateTime(2025, 6, 1),
@@ -93,8 +93,8 @@ namespace Frota360.Tests.UseCases.Rotas
 
         private static UpdateRotaRequest NovaUpdateRequest() => new()
         {
-            Origem = "Curitiba",
-            Destino = "Florianópolis",
+            EnderecoPartida = "Curitiba",
+            EnderecoChegada = "Florianópolis",
             CodigoMotorista = 1,
             CodigoVeiculo = 1,
             DataInicio = new DateTime(2024, 1, 1)
@@ -120,8 +120,8 @@ namespace Frota360.Tests.UseCases.Rotas
             var resposta = await handler.HandleAsync(new CreateRotaCommand(NovaCreateRequest()));
 
             Assert.Equal(8, resposta.Id);
-            Assert.Equal("Joinville", resposta.Origem);
-            Assert.Equal("Blumenau", resposta.Destino);
+            Assert.Equal("Joinville", resposta.EnderecoPartida);
+            Assert.Equal("Blumenau", resposta.EnderecoChegada);
             Assert.Equal(50_000, resposta.KmInicial);
             Assert.Null(resposta.KmFinal);
             Assert.Null(resposta.KmPercorrido);
@@ -236,7 +236,69 @@ namespace Frota360.Tests.UseCases.Rotas
         // ----------------------------------------------------------------- Update
 
         [Fact]
-        public async Task Update_QuandoExiste_DeveAtualizarERetornarResposta()
+        public async Task Create_SemTracado_NaoDeveCarimbarDataCalculoRota()
+        {
+            _usuarioRepository.GetMotoristaByIdAsync(2, 1).Returns(NovoMotorista(2));
+            _veiculoRepository.GetByIdAsync(3, 1).Returns(NovoVeiculo(3));
+            _repository.AddAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
+
+            await CriarCreateHandler().HandleAsync(new CreateRotaCommand(NovaCreateRequest()));
+
+            // Sem a data, distância 0 continua legível como "não calculado".
+            await _repository.Received(1).AddAsync(Arg.Is<Rota>(
+                r => r.DataCalculoRota == null && r.DistanciaMetros == 0 && r.PolylineCodificada == null));
+        }
+
+        [Fact]
+        public async Task Create_ComTracado_DevePersistirECarimbarDataCalculoRota()
+        {
+            _usuarioRepository.GetMotoristaByIdAsync(2, 1).Returns(NovoMotorista(2));
+            _veiculoRepository.GetByIdAsync(3, 1).Returns(NovoVeiculo(3));
+            _repository.AddAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
+
+            var request = NovaCreateRequest();
+            request.LatitudePartida = -26.3m;
+            request.LongitudePartida = -48.8m;
+            request.LatitudeChegada = -26.9m;
+            request.LongitudeChegada = -49.0m;
+            request.DistanciaMetros = 108_000;
+            request.DuracaoEstimadaSegundos = 5_400;
+            request.PolylineCodificada = "abc123";
+
+            await CriarCreateHandler().HandleAsync(new CreateRotaCommand(request));
+
+            await _repository.Received(1).AddAsync(Arg.Is<Rota>(
+                r => r.DistanciaMetros == 108_000
+                     && r.DuracaoEstimadaSegundos == 5_400
+                     && r.PolylineCodificada == "abc123"
+                     && r.LatitudePartida == -26.3m
+                     && r.DataCalculoRota != null));
+        }
+
+        [Fact]
+        public async Task Update_SemTracadoNoCorpo_NaoDeveApagarOTracadoJaCalculado()
+        {
+            var rota = NovaRota();
+            rota.DistanciaMetros = 108_000;
+            rota.DuracaoEstimadaSegundos = 5_400;
+            rota.PolylineCodificada = "abc123";
+            rota.DataCalculoRota = new DateTime(2026, 9, 8);
+
+            _repository.GetByIdAsync(7, 1).Returns(rota);
+            _usuarioRepository.GetMotoristaByIdAsync(1, 1).Returns(NovoMotorista(1));
+            _veiculoRepository.GetByIdAsync(1, 1).Returns(NovoVeiculo(1));
+            _repository.UpdateAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
+
+            // Edição que mexe só no texto: o corpo não carrega distância.
+            await CriarUpdateHandler().HandleAsync(new UpdateRotaCommand(7, NovaUpdateRequest()));
+
+            Assert.Equal(108_000, rota.DistanciaMetros);
+            Assert.Equal("abc123", rota.PolylineCodificada);
+            Assert.Equal(new DateTime(2026, 9, 8), rota.DataCalculoRota);
+        }
+
+        [Fact]
+                public async Task Update_QuandoExiste_DeveAtualizarERetornarResposta()
         {
             _repository.GetByIdAsync(7, 1).Returns(NovaRota(7));
             _usuarioRepository.GetMotoristaByIdAsync(1, 1).Returns(NovoMotorista(1));
@@ -248,7 +310,7 @@ namespace Frota360.Tests.UseCases.Rotas
             var resposta = await handler.HandleAsync(new UpdateRotaCommand(7, NovaUpdateRequest()));
 
             Assert.NotNull(resposta);
-            Assert.Equal("Florianópolis", resposta!.Destino);
+            Assert.Equal("Florianópolis", resposta!.EnderecoChegada);
             await _repository.Received(1).UpdateAsync(Arg.Any<Rota>());
         }
 

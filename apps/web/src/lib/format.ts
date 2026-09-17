@@ -45,6 +45,22 @@ export function formatMoeda(valor: number | null | undefined): string {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+/** Metros → "412 km" / "8,4 km" — abaixo de 10 km uma casa evita "8 km" para 8,4. */
+export function formatDistancia(metros: number): string {
+  const km = metros / 1000
+  const casas = km < 10 ? 1 : 0
+  return `${km.toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas })} km`
+}
+
+/** Segundos → "5 h 12 min" / "48 min". Estimativa de viagem não mostra segundos. */
+export function formatDuracao(segundos: number): string {
+  const totalMinutos = Math.round(segundos / 60)
+  const horas = Math.floor(totalMinutos / 60)
+  const minutos = totalMinutos % 60
+  if (horas === 0) return `${minutos} min`
+  return minutos === 0 ? `${horas} h` : `${horas} h ${minutos} min`
+}
+
 /** Hoje em aaaa-mm-dd, para pré-preencher `<input type="date">`. */
 export function hojeInputDate(): string {
   return paraInputDate(new Date().toISOString())

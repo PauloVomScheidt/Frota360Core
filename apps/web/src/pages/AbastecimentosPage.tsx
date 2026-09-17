@@ -201,7 +201,7 @@ function AbastecimentoFormulario({
                 {veiculos.find((v) => v.id === rotaAtiva.codigoVeiculo)?.placa ??
                   'o veículo da rota'}
               </strong>{' '}
-              ({rotaAtiva.origem} → {rotaAtiva.destino}) — o lançamento vai para esse veículo e
+              ({rotaAtiva.enderecoPartida} → {rotaAtiva.enderecoChegada}) — o lançamento vai para esse veículo e
               fica vinculado à viagem.
             </p>
           )}

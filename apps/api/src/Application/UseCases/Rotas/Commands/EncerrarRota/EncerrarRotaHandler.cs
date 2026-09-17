@@ -75,7 +75,7 @@ namespace Frota360.Application.UseCases.Rotas.Commands.EncerrarRota
                     .Construir();
 
                 await auditoria.RegistrarAsync(EntidadesAuditadas.Rota, AcoesAuditoria.Encerrou, encerrada.Id,
-                    $"Encerrou a rota #{encerrada.Id} ({encerrada.Origem} → {encerrada.Destino}) com {encerrada.KmPercorrido} km rodados",
+                    $"Encerrou a rota #{encerrada.Id} ({encerrada.EnderecoPartida} → {encerrada.EnderecoChegada}) com {encerrada.KmPercorrido} km rodados",
                     alteracoes);
 
                 return encerrada.ToResponse();

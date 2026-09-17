@@ -17,12 +17,20 @@ namespace Frota360.Application.UseCases.Rotas
             VeiculoNome = r.Veiculo?.NomeVeiculo,
             DataFim = r.DataFim,
             DataInicio = r.DataInicio,
-            Destino = r.Destino,
-            Origem = r.Origem,
+            EnderecoPartida = r.EnderecoPartida,
+            EnderecoChegada = r.EnderecoChegada,
             DataInclusao = r.DataInclusao,
             KmInicial = r.KmInicial,
             KmFinal = r.KmFinal,
-            KmPercorrido = r.KmPercorrido
+            KmPercorrido = r.KmPercorrido,
+            LatitudePartida = r.LatitudePartida,
+            LongitudePartida = r.LongitudePartida,
+            LatitudeChegada = r.LatitudeChegada,
+            LongitudeChegada = r.LongitudeChegada,
+            DistanciaMetros = r.DistanciaMetros,
+            DuracaoEstimadaSegundos = r.DuracaoEstimadaSegundos,
+            PolylineCodificada = r.PolylineCodificada,
+            DataCalculoRota = r.DataCalculoRota
         };
     }
 }
