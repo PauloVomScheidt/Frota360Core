@@ -22,11 +22,17 @@ namespace Frota360.Domain.Common
         public const string Cancelou = "Cancelou";
         public const string Aceitou = "Aceitou";
 
+        /// <summary>
+        /// Consulta cobrada a um serviço externo. Diferente dos demais verbos, não descreve
+        /// mudança de estado nosso: existe para haver de onde apurar custo por empresa.
+        /// </summary>
+        public const string Calculou = "Calculou";
+
         /// <summary>Vocabulário fechado — o validator do filtro recusa o que estiver fora daqui.</summary>
         public static readonly IReadOnlyList<string> Todas =
         [
             Criou, Atualizou, Excluiu, Encerrou, Concluiu,
-            AlterouPermissao, Ativou, Desativou, Cancelou, Aceitou
+            AlterouPermissao, Ativou, Desativou, Cancelou, Aceitou, Calculou
         ];
     }
 }

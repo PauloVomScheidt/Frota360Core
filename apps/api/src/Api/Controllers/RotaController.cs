@@ -3,6 +3,7 @@ using FluentValidation;
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Rota.Request;
 using Frota360.Application.DTOs.Rota.Response;
+using Frota360.Application.UseCases.Rotas.Commands.CalcularRota;
 using Frota360.Application.UseCases.Rotas.Commands.CreateRota;
 using Frota360.Application.UseCases.Rotas.Commands.DeleteRota;
 using Frota360.Application.UseCases.Rotas.Commands.EncerrarRota;
@@ -25,7 +26,8 @@ namespace Frota360.Api.Controllers
                                 IValidator<CreateRotaRequest> createValidator,
                                 IValidator<UpdateRotaRequest> updateValidator,
                                 IValidator<EncerrarRotaRequest> encerrarValidator,
-                                IValidator<ConsultarRotasRequest> consultarValidator) : ControllerBase
+                                IValidator<ConsultarRotasRequest> consultarValidator,
+                                IValidator<CalcularRotaRequest> calcularValidator) : ControllerBase
     {
         /// <summary>Retorna todas as rotas da empresa. (Admin, Supervisor, Operador)</summary>
         /// <response code="200">Lista retornada com sucesso</response>
@@ -130,6 +132,35 @@ namespace Frota360.Api.Controllers
             var criado = await dispatcher.SendAsync(new CreateRotaCommand(request));
             return CreatedAtAction(nameof(GetById), new { id = criado.Id },
                 ApiResponse<RotaResponse>.Ok(criado, "Rota cadastrada com sucesso."));
+        }
+
+        /// <summary>
+        /// Calcula distância, duração estimada e traçado entre duas coordenadas pela Google
+        /// Routes API. Não persiste nada: é a consulta que precede o cadastro da rota.
+        ///
+        /// Aberto a qualquer autenticado, em simetria com o POST de rota — quem pode abrir
+        /// rota precisa da estimativa para preenchê-la. O escopo de empresa vem da claim,
+        /// como em todo o resto: o corpo carrega só coordenadas.
+        /// </summary>
+        /// <response code="200">Trajeto calculado com sucesso</response>
+        /// <response code="400">Coordenadas inválidas</response>
+        /// <response code="422">Serviço de rotas indisponível ou sem trajeto entre os pontos</response>
+        [HttpPost("calcular")]
+        [ProducesResponseType<ApiResponse<CalculoRotaResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status422UnprocessableEntity)]
+        public async Task<IActionResult> Calcular([FromBody] CalcularRotaRequest request)
+        {
+            var validation = await calcularValidator.ValidateAsync(request);
+
+            if (!validation.IsValid)
+            {
+                var erros = validation.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}");
+                return BadRequest(ApiResponse<object>.Fail("Dados inválidos.", erros));
+            }
+
+            var calculo = await dispatcher.SendAsync(new CalcularRotaCommand(request));
+            return Ok(ApiResponse<CalculoRotaResponse>.Ok(calculo, "Trajeto calculado com sucesso."));
         }
 
         /// <summary>Atualiza os dados de uma rota. (Admin, Supervisor, Operador)</summary>

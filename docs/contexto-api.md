@@ -144,6 +144,98 @@ A rota tem `KmInicial` (obrigatório na abertura), `KmFinal` e `KmPercorrido` (n
 - **Encerrar é a única transição de estado.** `Ativo` e `DataFim` saíram de `CreateRotaRequest` e `UpdateRotaRequest`: sem isso dava para "encerrar" uma rota pelo PUT sem calcular km nem tocar no odômetro. A `RotaResponse` continua expondo os dois.
 - **Por que isso importa:** era o elo que faltava. Rodar rota é diário, concluir manutenção é eventual — sem o encerramento alimentando o odômetro, `atrasada` e `kmRestantes` das manutenções nunca acendiam.
 
+### 6.1 Rota — traçado pela Google Routes API (08/09/2026)
+
+`POST /rota/calcular` recebe `{latitudeOrigem, longitudeOrigem, latitudeDestino, longitudeDestino}`
+e devolve `{distanciaMetros, duracaoEstimadaSegundos, polylineCodificada}`. **Não persiste nada**:
+é a consulta que antecede o cadastro da rota. Aberto a **qualquer autenticado**, em simetria com
+`POST /rota` — quem abre rota precisa da estimativa para preenchê-la. O corpo carrega só
+coordenadas; a empresa vem da claim, como em todo o resto.
+
+**Seis coisas que decidem o comportamento:**
+
+**1. O cliente não lança — devolve resultado.** `GoogleRoutesClient` (Infrastructure) captura
+timeout, falha de rede, status não-2xx e JSON inesperado, e converte cada um em
+`ResultadoCalculoRota.Falha(motivo)`. Quem traduz isso para o usuário é o handler, com um
+`InvalidOperationException` de texto genérico → **422**. O motivo técnico (status HTTP da Google,
+timeout) fica **só no log**: `CalcularRotaHandlerTests` tem um teste que prova que ele não vaza
+na mensagem. Um terceiro fora do ar não pode virar 500 nosso.
+
+**2. A máscara de campos é decisão de custo, não de payload.** O header `X-Goog-FieldMask` pede
+exatamente `routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline`, e o corpo
+manda `routingPreference: TRAFFIC_UNAWARE`. Os dois juntos mantêm a chamada na faixa de SKU mais
+barata da Google — **campo a mais ou trânsito ao vivo mudam o preço**. Não amplie sem conferir.
+
+**3. Timeout de 10 s, contra os 100 s padrão do `HttpClient`.** Registrado em
+`AddHttpClient<IGoogleRoutesClient, GoogleRoutesClient>` no `InfrastructureExtensions`.
+
+**4. `200` com `routes` vazio é resposta normal**, não erro: é o que a Google devolve quando não
+há trajeto entre os pontos. Vira falha tratável com mensagem própria.
+
+**5. `duration` vem como Duration do protobuf em texto** (`"1234s"`, com fração possível), não
+como número — é parseada e arredondada para segundo inteiro.
+
+**6. A chamada é auditada** (`Rota` + `Calculou`) — ver §9.
+
+**Os campos na entidade** (migration `TracadoDeRotaGoogleRoutes`) ficam prontos para persistir o
+traçado escolhido: `EnderecoPartida`/`LatitudePartida`/`LongitudePartida`, o trio equivalente de
+chegada, `DistanciaMetros`, `DuracaoEstimadaSegundos`, `PolylineCodificada` e `DataCalculoRota`.
+
+⚠️ **`DataCalculoRota` é o discriminador do bloco.** Distância, duração e coordenadas são
+não-anuláveis, então as rotas anteriores à migration ficaram com `0` — indistinguível de uma
+distância real de zero. Nenhuma leitura pode olhar esses campos sem antes checar se a data está
+preenchida.
+
+**`EnderecoPartida`/`EnderecoChegada` SUBSTITUÍRAM `Origem`/`Destino` (08/09/2026).** A dívida dos
+dois pares de endereço convivendo durou um dia: a migration `EnderecoDeRotaSubstituiOrigemDestino`
+derruba as colunas antigas, e o par novo é a única fonte de verdade — em toda a API, nas duas telas
+de rota e no `RotaDescricao` do abastecimento. `POST /rota/calcular` continua não gravando em
+nenhum dos dois: ele é consulta.
+
+⚠️ **A migration copia antes de derrubar.** `Up` roda
+`UPDATE "Rota" SET "EnderecoPartida" = "Origem" WHERE "EnderecoPartida" = ''` (e o par de chegada)
+antes dos dois `DROP COLUMN`. Sem isso o drop apagaria o endereço de toda rota anterior à
+integração — a `TracadoDeRotaGoogleRoutes` criou as colunas novas com default `''`, então **toda**
+linha existente chega vazia. O `WHERE` deixa a operação idempotente e preserva o endereço que já
+tiver vindo do Places. O `Down` recria as colunas e devolve os valores truncados em 100/150, que é
+o tamanho que elas tinham.
+
+**O traçado entra pelo request, e não é recalculado no servidor (09/09/2026).**
+`CreateRotaRequest`/`UpdateRotaRequest` carregam `DistanciaMetros`, `DuracaoEstimadaSegundos` e
+`PolylineCodificada` (todos opcionais). O front já pagou por `POST /rota/calcular` ao montar o
+formulário; recalcular no salvamento seria **uma segunda chamada cobrada pelo mesmo trajeto**.
+Aceitar o número do cliente é seguro aqui porque **não é dado financeiro**: o R$/km sai de
+`KmPercorrido`, apurado do odômetro no encerramento, nunca daqui.
+
+⚠️ **A contrapartida de confiar no cliente é uma trava de plausibilidade (14/09/2026).**
+`RegrasDeTrajeto` (`Application/Common`) calcula a velocidade média implícita
+(`metros × 3,6 ÷ segundos`) quando distância **e** duração vêm juntas, e recusa fora de
+**5–180 km/h** — o piso pega duração absurda para a distância, o teto pega distância inflada.
+Limites folgados de propósito: a checagem existe para barrar valor forjado ou corrompido, não
+para auditar o Google. A regra **não dispara** com o par incompleto nem com distância zerada
+(zero é o valor de "sem traçado"), e distância com duração zero é recusada como velocidade
+infinita. É um `IRequestComTrajeto` + `AplicarRegrasDeTrajeto`, no mesmo arranjo de
+`IRequestPaginado`/`AplicarRegrasDePaginacao` — as regras do bloco viviam duplicadas no create
+e no update. ⚠️ Os campos usam **`OverridePropertyName`**, e não `WithName`: o controller monta
+o erro a partir de `ValidationFailure.PropertyName`, e sem isso o usuário lê
+"DuracaoEstimadaSegundos: ..." na tela.
+
+⚠️ **`DataCalculoRota` não entra no request — quem a carimba é o handler**, e só quando
+`DistanciaMetros` de fato chega. É o que mantém o discriminador sob controle do servidor.
+⚠️ **No update, traçado só é sobrescrito quando `DistanciaMetros` vem no corpo**: uma edição que
+mexe só no motorista não pode apagar o trajeto já calculado. `RotaHandlersTests` cobre os três
+casos (sem traçado, com traçado, e a edição que não apaga).
+
+**As coordenadas são opcionais no request, os endereços não.** `CreateRotaRequest` e
+`UpdateRotaRequest` carregam `decimal?` para as quatro coordenadas: exigi-las obrigaria a digitar
+latitude e longitude à mão enquanto o autocomplete do Places não existe na tela. Ausentes, a rota
+grava `0` e `DataCalculoRota` fica nula. ⚠️ **No update, coordenada só é sobrescrita quando os dois
+valores do par vêm no corpo** — senão uma edição de texto apagaria o traçado já calculado.
+
+As faixas de latitude/longitude vivem em `RegrasDeCoordenada` (`Application/Common`), no molde do
+`AplicarRegrasDePaginacao`: três validators as aplicam (create, update e o cálculo), e repetir os
+limites em cada um os faria divergir na próxima mudança.
+
 ### 7. Rota vista pelo motorista
 
 `GET /rota/minhas` é endpoint dedicado, e não um filtro no `GET /rota`, justamente para não haver um mesmo endpoint com dois comportamentos por role — é impossível vazar a lista da frota por engano. Ele não recebe parâmetro nenhum: o motorista é o usuário do token.
@@ -364,6 +456,19 @@ Tabela `LogAuditoria`, **append-only**: só insert e select. Não existe endpoin
 
 **Escopo.** Administração (usuário, convite) **e** domínio (veículo, rota, manutenção, tipo de manutenção). **Login/logout ficam de fora** de propósito: seria o maior volume da tabela e o menor valor — continuam só no Serilog.
 
+**A exceção do vocabulário: `Rota` + `Calculou` (08/09/2026).** É a única linha da trilha que não
+descreve mudança de estado nosso — registra uma **chamada cobrada** à Google Routes API, para que
+exista de onde apurar custo por empresa. `EntidadeId` é nulo (a rota ainda não existe: o cálculo a
+precede) e a descrição carrega as coordenadas e a distância. `EmpresaId`, autor e data/hora saem do
+`AuditoriaService`, como em todo o resto.
+
+⚠️ **Tensão conhecida, deixada em aberto de propósito.** Pelo mesmo argumento que mantém
+login/logout fora da tabela — muito volume, pouco valor —, um cálculo por interação de mapa pode
+inundar a trilha que o Admin lê em `/auditoria`. Se o volume incomodar, o caminho é mover a
+apuração de custo para uma contagem própria (ou só para o Serilog) em vez de afinar o filtro da
+tela. **Só o sucesso é registrado**: falha de rede não é chamada faturada — mas um `200` sem
+trajeto **é** cobrado e hoje não entra, que é a lacuna conhecida da apuração.
+
 **Como é capturado.** Explicitamente, no handler/serviço, via `IAuditoriaService.RegistrarAsync` chamado ao final do caminho feliz — 20 pontos, listados abaixo. Não é um interceptor do EF: o objetivo é registrar a **intenção de negócio** ("Encerrou a rota"), que um `UPDATE Rota` não expressa, e evitar o ruído de `RefreshTokenHash` mudando a cada login.
 
 **Modelo.** `Entidade` + `Acao` (`EntidadesAuditadas` / `AcoesAuditoria`, em `Domain/Common`) são dois eixos de filtro com poucos valores distintos, no lugar de uma constante por evento. `Descricao` é uma frase pronta em português, montada no servidor. `Alteracoes` é o diff em JSON (`[{campo, de, para}]`), nulo em criação e exclusão.
@@ -466,6 +571,7 @@ Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou 
 | POST/PUT | `/veiculo`, `/tipomanutencao`, `/manutencao`, `/manutencao/{id}/concluir` | Admin, Supervisor |
 | PUT | `/rota/{id}` | Admin, Supervisor, Operador |
 | POST | `/rota`, `/rota/{id}/encerrar` | qualquer autenticado — o Motorista só alcança as próprias rotas |
+| POST | `/rota/calcular` — distância/duração/polyline pela Google Routes API; **não persiste**, e a chamada é cobrada | qualquer autenticado |
 | DELETE | `/{qualquer}/{id}` (não há DELETE de motorista) — `/veiculo/{id}` responde 422 se houver rota associada (RN08) | **Admin, Supervisor** — exceto `/convite/{id}`, que é Admin |
 | GET | `/health`, `/health/detail`, `/scalar/v1` | aberto |
 
@@ -508,6 +614,31 @@ proxy reverso e termina o TLS com certificado automático do Let's Encrypt, subs
 
 O roteiro de subida e as variáveis obrigatórias estão em [deploy.md](deploy.md); o modelo de
 configuração, em `.env.example` na raiz.
+
+**Como um segredo chega ao código.** Não há `IOptions<T>` no projeto: o valor sai do
+`IConfiguration` — user-secrets em desenvolvimento, variável de ambiente `Secao__Chave` em
+produção — e é lido de duas formas, conforme o caso. A integração com o Resend lê
+`configuration["Resend:ApiKey"]` direto no serviço; quando o valor é usado em mais de um lugar
+ou merece nome, vira um `sealed record` registrado como singleton no `Program.cs` — é o padrão
+de `FrontendSettings` e de `GoogleRoutesSettings` (`GoogleRoutes:ApiKey`, chave de servidor da
+Routes API, em `src/Domain/Common` porque quem a consumirá é a Infrastructure, que não enxerga
+a Application). A chave do front é outra e não se confunde com esta — ver
+`VITE_GOOGLE_MAPS_KEY` em [contexto-web.md](contexto-web.md).
+
+**`GoogleRoutes:ApiKey` fica FORA de `ValidarConfiguracaoDeProducao` — decisão revisada e
+mantida (08/09/2026).** Quando o `GoogleRoutesClient` ainda não existia, a ausência da chave era
+uma pendência a reavaliar. Com o cliente no ar, a pergunta foi reaberta e **respondida em
+definitivo: ela não entra**. A regra geral da seção acima — "configuração obrigatória em produção
+derruba o boot" — não se aplica porque o cálculo de trajeto **não é obrigatório para a aplicação
+funcionar**: é um recurso em desenvolvimento, e todo o resto do sistema (rota, abastecimento,
+manutenção, custo, auditoria) opera sem ele.
+
+O comportamento correto na falta da chave é o que já está implementado: `GoogleRoutesClient`
+devolve `ResultadoCalculoRota.Falha`, o handler converte em `InvalidOperationException` e o
+usuário recebe **422 naquela requisição** — o recurso indisponível, o sistema de pé. Derrubar o
+boot faria uma feature inacabada bloquear o deploy de tudo o mais, que é exatamente o contrário
+do que a validação de produção existe para proteger. **Não reabra sem que o cálculo de trajeto
+tenha virado caminho obrigatório de alguma tela.**
 
 **Quatro decisões que não são óbvias e têm motivo:**
 

@@ -1,4 +1,4 @@
-using Frota360.Domain.Common;
+﻿using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Enums;
 using Frota360.Infrastructure.Data;
@@ -792,8 +792,8 @@ namespace Frota360.IntegrationTests
         private static Rota NovaRotaEncerrada(Cenario c, DateTime dataFim, int kmPercorrido) => new()
         {
             EmpresaId = c.EmpresaId,
-            Origem = "Curitiba",
-            Destino = "Sao Paulo",
+            EnderecoPartida = "Curitiba",
+            EnderecoChegada = "Sao Paulo",
             CodigoMotorista = c.MotoristaId,
             CodigoVeiculo = c.VeiculoId,
             Ativo = false,

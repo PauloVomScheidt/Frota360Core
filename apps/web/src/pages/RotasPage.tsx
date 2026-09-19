@@ -26,12 +26,23 @@ import { usePaginacaoServidor } from '../lib/paginacao'
 import { CheckIcon } from '../components/icons'
 import { formatDate, formatKm, hojeInputDate, paraInputDate } from '../lib/format'
 import { statusDaRota } from '../lib/rota'
+import { TrajetoRota } from '../components/TrajetoRota'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
 const FORM_VAZIO = {
-  origem: '',
-  destino: '',
+  enderecoPartida: '',
+  enderecoChegada: '',
+  // `null` explícito, e não 0: (0,0) é um ponto real no Atlântico. Ausência de
+  // coordenada é o estado de quem digitou o endereço sem escolher da lista.
+  latitudePartida: null as number | null,
+  longitudePartida: null as number | null,
+  latitudeChegada: null as number | null,
+  longitudeChegada: null as number | null,
+  // Preenchidos por POST /rota/calcular quando os dois pontos têm coordenada.
+  distanciaMetros: null as number | null,
+  duracaoEstimadaSegundos: null as number | null,
+  polylineCodificada: null as string | null,
   codigoMotorista: '',
   codigoVeiculo: '',
   dataInicio: '',
@@ -74,7 +85,7 @@ function RotaFormulario({
     <FormDialog
       titulo={editando ? 'Editar rota' : 'Nova rota'}
       descricao={
-        editando ? `Editando a rota ${editando.origem} → ${editando.destino}.` : undefined
+        editando ? `Editando a rota ${editando.enderecoPartida} → ${editando.enderecoChegada}.` : undefined
       }
       textoConfirmar={editando ? 'Salvar alterações' : 'Cadastrar'}
       textoPendente="Salvando…"
@@ -85,30 +96,10 @@ function RotaFormulario({
       onCancelar={onCancelar}
     >
       <SecaoCampos titulo="Trajeto">
-        <div className="field">
-          <label htmlFor="origem">Origem</label>
-          <input
-            id="origem"
-            className="input"
-            type="text"
-            placeholder="Cidade de origem"
-            required
-            value={form.origem}
-            onChange={(e) => onFormChange({ ...form, origem: e.target.value })}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="destino">Destino</label>
-          <input
-            id="destino"
-            className="input"
-            type="text"
-            placeholder="Cidade de destino"
-            required
-            value={form.destino}
-            onChange={(e) => onFormChange({ ...form, destino: e.target.value })}
-          />
-        </div>
+        <TrajetoRota
+          form={form}
+          onFormChange={(trajeto) => onFormChange({ ...form, ...trajeto })}
+        />
         <div className="field">
           <label htmlFor="dataInicio">Início</label>
           <input
@@ -217,7 +208,7 @@ function TabelaRotas({
       <table className="table">
         <thead>
           <tr>
-            <th>Origem → Destino</th>
+            <th>Partida → Chegada</th>
             <th>Motorista</th>
             <th>Veículo</th>
             <th>Início</th>
@@ -242,7 +233,7 @@ function TabelaRotas({
             return (
               <tr key={rota.id}>
                 <td className="font-semibold">
-                  {rota.origem} → {rota.destino}
+                  {rota.enderecoPartida} → {rota.enderecoChegada}
                 </td>
                 {/* Desnormalizado: um motorista rebaixado sai da lista, mas a rota
                     dele continua identificada. */}
@@ -278,7 +269,7 @@ function TabelaRotas({
                         </button>
                       )}
                       <RowActions
-                        descricao={`a rota ${rota.origem} → ${rota.destino}`}
+                        descricao={`a rota ${rota.enderecoPartida} → ${rota.enderecoChegada}`}
                         onEditar={podeCadastrar ? () => onEditar(rota) : undefined}
                         onExcluir={podeExcluir ? () => onExcluir(rota) : undefined}
                       />
@@ -317,7 +308,7 @@ function EncerramentoRotaFormulario({
   return (
     <FormDialog
       titulo="Encerrar rota"
-      descricao={`${paraEncerrar.origem} → ${paraEncerrar.destino} — ${placa}, aberta em ${formatKm(paraEncerrar.kmInicial)}. A quilometragem percorrida é calculada pela diferença, e o odômetro do veículo é atualizado quando o km final for maior que o atual.`}
+      descricao={`${paraEncerrar.enderecoPartida} → ${paraEncerrar.enderecoChegada} — ${placa}, aberta em ${formatKm(paraEncerrar.kmInicial)}. A quilometragem percorrida é calculada pela diferença, e o odômetro do veículo é atualizado quando o km final for maior que o atual.`}
       textoConfirmar="Encerrar"
       textoPendente="Encerrando…"
       pending={pending}
@@ -430,8 +421,15 @@ export function RotasPage() {
       id === null
         ? rotasApi.create(body)
         : rotasApi.update(id, {
-            origem: body.origem,
-            destino: body.destino,
+            enderecoPartida: body.enderecoPartida,
+            enderecoChegada: body.enderecoChegada,
+            latitudePartida: body.latitudePartida,
+            longitudePartida: body.longitudePartida,
+            latitudeChegada: body.latitudeChegada,
+            longitudeChegada: body.longitudeChegada,
+            distanciaMetros: body.distanciaMetros,
+            duracaoEstimadaSegundos: body.duracaoEstimadaSegundos,
+            polylineCodificada: body.polylineCodificada,
             codigoMotorista: body.codigoMotorista,
             codigoVeiculo: body.codigoVeiculo,
             dataInicio: body.dataInicio,
@@ -493,8 +491,15 @@ export function RotasPage() {
     salvarMutation.mutate({
       id: editando?.id ?? null,
       body: {
-        origem: form.origem,
-        destino: form.destino,
+        enderecoPartida: form.enderecoPartida,
+        enderecoChegada: form.enderecoChegada,
+        latitudePartida: form.latitudePartida,
+        longitudePartida: form.longitudePartida,
+        latitudeChegada: form.latitudeChegada,
+        longitudeChegada: form.longitudeChegada,
+        distanciaMetros: form.distanciaMetros,
+        duracaoEstimadaSegundos: form.duracaoEstimadaSegundos,
+        polylineCodificada: form.polylineCodificada,
         codigoMotorista: Number(form.codigoMotorista),
         codigoVeiculo: Number(form.codigoVeiculo),
         dataInicio: form.dataInicio,
@@ -526,9 +531,20 @@ export function RotasPage() {
 
   function abrirEdicao(rota: RotaResponse) {
     setEditando(rota)
+    // `dataCalculoRota` é o discriminador do bloco de traçado: nula, os campos de
+    // coordenada da resposta estão nos seus zeros — e (0,0) não é um ponto que a rota
+    // tenha de fato.
+    const temTracado = rota.dataCalculoRota != null
     setForm({
-      origem: rota.origem,
-      destino: rota.destino,
+      enderecoPartida: rota.enderecoPartida,
+      enderecoChegada: rota.enderecoChegada,
+      latitudePartida: temTracado ? (rota.latitudePartida ?? null) : null,
+      longitudePartida: temTracado ? (rota.longitudePartida ?? null) : null,
+      latitudeChegada: temTracado ? (rota.latitudeChegada ?? null) : null,
+      longitudeChegada: temTracado ? (rota.longitudeChegada ?? null) : null,
+      distanciaMetros: temTracado ? rota.distanciaMetros : null,
+      duracaoEstimadaSegundos: temTracado ? rota.duracaoEstimadaSegundos : null,
+      polylineCodificada: temTracado ? (rota.polylineCodificada ?? null) : null,
       codigoMotorista: String(rota.codigoMotorista),
       codigoVeiculo: String(rota.codigoVeiculo),
       dataInicio: paraInputDate(rota.dataInicio),
@@ -642,7 +658,7 @@ export function RotasPage() {
       {paraExcluir && (
         <ConfirmDialog
           titulo="Excluir rota"
-          mensagem={`A rota ${paraExcluir.origem} → ${paraExcluir.destino} será removida junto com o histórico dela. Esta ação não pode ser desfeita.`}
+          mensagem={`A rota ${paraExcluir.enderecoPartida} → ${paraExcluir.enderecoChegada} será removida junto com o histórico dela. Esta ação não pode ser desfeita.`}
           pending={excluirMutation.isPending}
           erros={errosExclusao}
           onConfirmar={() => excluirMutation.mutate(paraExcluir.id)}

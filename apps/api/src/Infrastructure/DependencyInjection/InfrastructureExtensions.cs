@@ -60,6 +60,12 @@ namespace Frota360.Infrastructure.DependencyInjection
             else
                 services.AddSingleton<IEmailService, LogEmailService>();
 
+            // Google Routes API. O timeout curto é a parte que importa: o padrão do HttpClient
+            // é 100 s, e um cálculo de trajeto que demora isso já não serve a ninguém —
+            // melhor a tela dizer que a estimativa não veio do que prender a requisição.
+            services.AddHttpClient<IGoogleRoutesClient, GoogleRoutesClient>(client =>
+                client.Timeout = TimeSpan.FromSeconds(10));
+
             // JWT
             services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>

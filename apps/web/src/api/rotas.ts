@@ -2,6 +2,8 @@ import { http, unwrap } from './http'
 import type {
   AbrirMinhaRotaRequest,
   ApiResponse,
+  CalcularRotaRequest,
+  CalculoRotaResponse,
   CriarRotaRequest,
   EncerrarRotaRequest,
   ResultadoPaginado,
@@ -75,6 +77,15 @@ export const rotasApi = {
    */
   async encerrar(id: number, body: EncerrarRotaRequest): Promise<RotaResponse> {
     const { data } = await http.post<ApiResponse<RotaResponse>>(`/rota/${id}/encerrar`, body)
+    return unwrap(data)
+  },
+  /**
+   * Distância, duração e traçado entre duas coordenadas. **Não persiste nada** e
+   * **cada chamada é cobrada pela Google** — dispare só quando os dois pontos mudarem,
+   * nunca a cada tecla.
+   */
+  async calcular(body: CalcularRotaRequest): Promise<CalculoRotaResponse> {
+    const { data } = await http.post<ApiResponse<CalculoRotaResponse>>('/rota/calcular', body)
     return unwrap(data)
   },
   async remove(id: number): Promise<void> {

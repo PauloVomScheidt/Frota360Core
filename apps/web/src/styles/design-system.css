@@ -1,6 +1,15 @@
 
 
 :root {
+  /* O painel e SO CLARO: nao ha nenhum bloco prefers-color-scheme nesta folha, e os
+     tokens abaixo sao valores fixos. Declarar isso e o que impede que um usuario com o
+     sistema em modo escuro veja controles pintados pelo navegador com o esquema dele —
+     calendario do <input type="date">, barras de rolagem, e principalmente o
+     gmp-place-autocomplete, que trocava para o tema escuro do Google e virava texto
+     preto sobre fundo preto no meio do formulario de rota.
+     Ao adicionar modo escuro de verdade um dia, esta linha e a primeira a sair. */
+  color-scheme: light;
+
   --color-bg: #fdfaf6;
   --color-surface: #f2ede4;
   --color-text: #201e1d;
@@ -131,6 +140,70 @@ img { display: block; max-width: 100%; }
 .input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
 .input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
 .input::placeholder { color: color-mix(in srgb, var(--color-text) 40%, transparent); }
+
+/* — autocomplete de endereço (Places API New) —
+   O gmp-place-autocomplete tem shadow root FECHADO: nao da para inspecionar nem estilizar
+   por dentro, so pelos ::part() que ele expoe e pelas variaveis --gmp-mat-*.
+
+   Por dentro ele e um trio (lupa | input | limpar), e cada segmento desenha o proprio
+   contorno. Por isso quem faz a CAIXA aqui e o host, e os contornos internos sao apagados
+   por --gmp-mat-color-outline: transparent — estilizar so o ::part(input) produz tres
+   caixas soltas lado a lado, com a lupa fora do campo.
+
+   A altura vai no host E no ::part(input): sem a segunda o campo fica com 50px contra os
+   36px de todo .input do painel. */
+.campo-endereco {
+  /* ⚠️ O color-scheme PRECISA ser repetido aqui, no host — o `light` do :root nao basta.
+     O elemento declara o proprio color-scheme no :host dele, e declaracao propria vence
+     valor herdado. Sem esta linha, com o sistema em modo escuro o widget troca para o
+     tema escuro do Google: a lista de sugestoes fica preta e o --gmp-mat-color-on-surface
+     abaixo (o quase-preto do painel) vira texto preto sobre fundo preto. */
+  color-scheme: light;
+  display: block; width: 100%; height: 36px; padding: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider); border-radius: 0;
+  --gmp-mat-color-surface: transparent;
+  --gmp-mat-color-outline: transparent;
+  --gmp-mat-color-on-surface: var(--color-text);
+  --gmp-mat-color-primary: var(--color-accent);
+}
+.campo-endereco::part(input) {
+  width: 100%; height: 34px; min-height: 0; box-sizing: border-box;
+  padding: 0 8px; font: inherit; font-size: 14px; color: var(--color-text);
+  border: 0; background: transparent; box-shadow: none; border-radius: 0;
+}
+/* ⚠️ O contorno da lista de sugestoes e box-shadow, NAO border: a lista tem width 100%, e
+   1px de borda a faz transbordar o .dialog-corpo e acender uma barra de rolagem
+   horizontal no diálogo inteiro. box-shadow nao ocupa layout. */
+.campo-endereco::part(prediction-list) {
+  border: 0; border-radius: 0;
+  box-shadow: inset 0 0 0 1px var(--color-divider);
+}
+
+/* — mapa do trajeto —
+   Altura fixa porque o contêiner do Google precisa de um valor resolvido: dentro do
+   .dialog-corpo, que e o trecho rolavel, uma altura percentual colapsaria para zero. */
+.mapa-rota {
+  /* Altura fixa, mas proporcional: num notebook de 620px o mapa de 260px ocupava quase
+     todo o diálogo (que para em 85vh), empurrando motorista e veículo para fora da vista. */
+  width: 100%; height: clamp(170px, 30vh, 260px);
+  border: 1px solid var(--color-divider);
+  background: var(--color-surface);
+}
+
+/* resumo do trajeto, logo abaixo do mapa */
+.trajeto-resumo {
+  margin: 6px 0 0; font-size: 14px; color: var(--color-text);
+}
+.trajeto-nota { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+
+/* Aviso do trajeto: o calculo e opcional, entao a falha e ATENCAO (ambar), nao erro
+   (vermelho) — a rota continua podendo ser salva. Ver docs/contexto-web.md §8.1. */
+.trajeto-aviso {
+  margin: 0; padding: 8px 10px; font-size: 13px;
+  color: var(--color-warning); background: var(--color-warning-bg);
+  border-left: 3px solid currentColor;
+}
 
 /* variante usada no login: só a linha de baixo */
 .input-underline {

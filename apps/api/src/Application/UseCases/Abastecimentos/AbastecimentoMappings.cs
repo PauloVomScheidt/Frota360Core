@@ -1,4 +1,4 @@
-using Frota360.Application.DTOs.Abastecimento.Response;
+﻿using Frota360.Application.DTOs.Abastecimento.Response;
 using Frota360.Domain.Entities;
 
 namespace Frota360.Application.UseCases.Abastecimentos
@@ -13,7 +13,7 @@ namespace Frota360.Application.UseCases.Abastecimentos
             VeiculoNome = a.Veiculo?.NomeVeiculo ?? string.Empty,
             VeiculoPlaca = a.Veiculo?.Placa ?? string.Empty,
             RotaId = a.RotaId,
-            RotaDescricao = a.Rota is null ? null : $"{a.Rota.Origem} → {a.Rota.Destino}",
+            RotaDescricao = a.Rota is null ? null : $"{a.Rota.EnderecoPartida} → {a.Rota.EnderecoChegada}",
             MotoristaId = a.MotoristaId,
             MotoristaNome = a.Motorista?.Nome ?? string.Empty,
             UsuarioId = a.UsuarioId,

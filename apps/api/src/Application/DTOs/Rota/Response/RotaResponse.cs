@@ -3,8 +3,8 @@
     public class RotaResponse
     {
         public int Id { get; set; }
-        public string Origem { get; set; } = string.Empty;
-        public string Destino { get; set; } = string.Empty;
+        public string EnderecoPartida { get; set; } = string.Empty;
+        public string EnderecoChegada { get; set; } = string.Empty;
         public int CodigoMotorista { get; set; }
 
         /// <summary>
@@ -33,5 +33,18 @@
         public int KmInicial { get; set; }
         public int? KmFinal { get; set; }
         public int? KmPercorrido { get; set; }
+
+        /// <summary>
+        /// Traçado calculado pela Routes API. <c>DataCalculoRota</c> é o discriminador:
+        /// nula, os demais campos deste bloco estão nos seus zeros e não devem ser lidos.
+        /// </summary>
+        public decimal LatitudePartida { get; set; }
+        public decimal LongitudePartida { get; set; }
+        public decimal LatitudeChegada { get; set; }
+        public decimal LongitudeChegada { get; set; }
+        public int DistanciaMetros { get; set; }
+        public int DuracaoEstimadaSegundos { get; set; }
+        public string? PolylineCodificada { get; set; }
+        public DateTime? DataCalculoRota { get; set; }
     }
 }
