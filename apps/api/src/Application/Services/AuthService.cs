@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 namespace Frota360.Application.Services
 {
     public class AuthService(IUsuarioRepository repository,
+                             IEmpresaRepository empresaRepository,
                              ITokenService tokenService,
                              IEmailService emailService,
                              FrontendSettings frontendSettings,
@@ -49,14 +50,7 @@ namespace Frota360.Application.Services
 
                 logger.LogInformation("Login realizado com sucesso. Id {Id} | Email {Email}", usuario.Id, usuario.Email);
 
-                return new AuthResponse
-                {
-                    Token = tokenService.GerarToken(usuario),
-                    RefreshToken = refreshToken,
-                    Nome = usuario.Nome,
-                    Email = usuario.Email,
-                    Role = usuario.Role
-                };
+                return await MontarRespostaAsync(usuario, refreshToken);
             }
             catch (Exception ex)
             {
@@ -93,14 +87,7 @@ namespace Frota360.Application.Services
 
                 logger.LogInformation("Token renovado com sucesso. Id {Id}", usuario.Id);
 
-                return new AuthResponse
-                {
-                    Token = tokenService.GerarToken(usuario),
-                    RefreshToken = refreshToken,
-                    Nome = usuario.Nome,
-                    Email = usuario.Email,
-                    Role = usuario.Role
-                };
+                return await MontarRespostaAsync(usuario, refreshToken);
             }
             catch (Exception ex)
             {
@@ -181,6 +168,16 @@ namespace Frota360.Application.Services
 
             return true;
         }
+
+        private async Task<AuthResponse> MontarRespostaAsync(Usuario usuario, string refreshToken) => new()
+        {
+            Token = tokenService.GerarToken(usuario),
+            RefreshToken = refreshToken,
+            Nome = usuario.Nome,
+            Email = usuario.Email,
+            Role = usuario.Role,
+            NomeEmpresa = (await empresaRepository.GetByIdAsync(usuario.EmpresaId))?.Nome ?? string.Empty
+        };
 
         /// <summary>Gera um novo refresh token, persiste apenas o hash e devolve o valor em claro.</summary>
         private async Task<string> RotacionarRefreshTokenAsync(Usuario usuario)

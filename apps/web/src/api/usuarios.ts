@@ -1,5 +1,5 @@
 import { http, unwrap } from './http'
-import type { ApiResponse, AtualizarPerfilRequest, Role, UsuarioResponse } from './types'
+import type { ApiResponse, AtualizarPerfilRequest, PerfilResponse, Role, UsuarioResponse } from './types'
 
 // A gestão de usuários exige role Admin (403 com envelope caso contrário). As duas
 // últimas entradas são a exceção: perfil é autoatendimento, aberto a qualquer autenticado.
@@ -18,14 +18,14 @@ export const usuariosApi = {
   },
 
   /** Cadastro do próprio usuário logado — `getAll` é Admin-only e não serve ao Motorista. */
-  async getPerfil(): Promise<UsuarioResponse> {
-    const { data } = await http.get<ApiResponse<UsuarioResponse>>('/usuario/perfil')
+  async getPerfil(): Promise<PerfilResponse> {
+    const { data } = await http.get<ApiResponse<PerfilResponse>>('/usuario/perfil')
     return unwrap(data)
   },
 
   /** CPF já usado por outro usuário da mesma empresa → 422. */
-  async atualizarPerfil(payload: AtualizarPerfilRequest): Promise<UsuarioResponse> {
-    const { data } = await http.put<ApiResponse<UsuarioResponse>>('/usuario/perfil', payload)
+  async atualizarPerfil(payload: AtualizarPerfilRequest): Promise<PerfilResponse> {
+    const { data } = await http.put<ApiResponse<PerfilResponse>>('/usuario/perfil', payload)
     return unwrap(data)
   },
 }

@@ -18,7 +18,8 @@ namespace Frota360.Api.Controllers
     [Route("api/v{version:apiVersion}/[controller]")]
     public class ConviteController(IConviteService conviteService,
                                    IValidator<CriarConviteRequest> criarValidator,
-                                   IValidator<AceitarConviteRequest> aceitarValidator) : ControllerBase
+                                   IValidator<AceitarConviteRequest> aceitarValidator,
+                                   IValidator<ConsultarConviteRequest> consultarValidator) : ControllerBase
     {
         /// <summary>Lista os convites da empresa. (Admin)</summary>
         /// <response code="200">Lista retornada com sucesso</response>
@@ -70,6 +71,38 @@ namespace Frota360.Api.Controllers
                 return NotFound(ApiResponse<object>.Fail($"Convite {id} não encontrado."));
 
             return Ok(ApiResponse<object>.Ok(null!, "Convite cancelado com sucesso."));
+        }
+
+        /// <summary>
+        /// Lê o convite sem consumi-lo: de que empresa ele é, para qual e-mail e com qual papel.
+        /// Alimenta a tela de aceite antes da criação da conta. POST para o token não ir para a
+        /// URL — e, com ela, para os logs.
+        /// </summary>
+        /// <response code="200">Convite válido</response>
+        /// <response code="400">Token ausente</response>
+        /// <response code="404">Convite inválido, já utilizado ou expirado</response>
+        [AllowAnonymous]
+        [HttpPost("consultar")]
+        [EnableRateLimiting("auth")]
+        [ProducesResponseType<ApiResponse<ConviteConsultadoResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> Consultar([FromBody] ConsultarConviteRequest request)
+        {
+            var validation = await consultarValidator.ValidateAsync(request);
+
+            if (!validation.IsValid)
+            {
+                var erros = validation.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}");
+                return BadRequest(ApiResponse<object>.Fail("Dados inválidos.", erros));
+            }
+
+            var convite = await conviteService.ConsultarAsync(request);
+
+            if (convite is null)
+                return NotFound(ApiResponse<object>.Fail("Este convite é inválido, já foi utilizado ou expirou."));
+
+            return Ok(ApiResponse<ConviteConsultadoResponse>.Ok(convite));
         }
 
         /// <summary>Aceita um convite: cria a conta na empresa/perfil do convite e já autentica.</summary>

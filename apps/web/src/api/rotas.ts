@@ -32,8 +32,8 @@ export const rotasApi = {
     return unwrap(data)
   },
   /**
-   * Quantidade e km somado das rotas **encerradas** no período. É o KPI "Km da frota" do
-   * dashboard: com a listagem paginada, somar `kmPercorrido` no cliente deixou de ser possível.
+   * Quantidade e km somado das rotas **encerradas** no período. Aberto a todos os papéis: a
+   * gestão recebe a frota inteira, o motorista só as rotas dele (recorte do servidor).
    */
   async resumo(de: string, ate: string): Promise<ResumoRotas> {
     const { data } = await http.get<ApiResponse<ResumoRotas>>('/rota/resumo', {

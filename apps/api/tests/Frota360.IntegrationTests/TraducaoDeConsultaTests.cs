@@ -263,6 +263,63 @@ namespace Frota360.IntegrationTests
         }
 
         [Fact]
+        public async Task ListarPendentes_DeveTrazerSoPendentesDaEmpresaComVeiculoCarregado()
+        {
+            await using var contexto = fixture.CriarContexto();
+            var minha = await MontarAsync(contexto);
+            var outra = await MontarAsync(contexto);
+
+            contexto.Manutencoes.AddRange(
+                NovaManutencao(minha, StatusManutencao.Pendente, 110_000),
+                NovaManutencao(minha, StatusManutencao.Realizada, 105_000),
+                NovaManutencao(outra, StatusManutencao.Pendente, 120_000));
+            await contexto.SaveChangesAsync();
+            contexto.ChangeTracker.Clear();
+
+            var pendentes = await new ManutencaoRepository(contexto).ListarPendentesAsync(minha.EmpresaId);
+
+            var unica = Assert.Single(pendentes);
+            Assert.Equal(110_000, unica.QuilometragemPrevista);
+            Assert.Equal(100_000, unica.Veiculo?.Quilometragem);
+            Assert.NotNull(unica.Tipo);
+        }
+
+        [Fact]
+        public async Task ResumirRotas_ComMotorista_DeveSomarSoAsRotasDele()
+        {
+            await using var contexto = fixture.CriarContexto();
+            var c = await MontarAsync(contexto);
+            var colega = new Usuario
+            {
+                EmpresaId = c.EmpresaId,
+                Nome = "Colega",
+                Email = Unicos.Email("colega"),
+                SenhaHash = "$2a$11$abcdefghijklmnopqrstuv",
+                Role = Domain.Common.Roles.Motorista,
+                DataInclusao = DateTime.Now
+            };
+            contexto.Usuarios.Add(colega);
+            await contexto.SaveChangesAsync();
+
+            var dia = new DateTime(2026, 9, 15, 10, 0, 0);
+            var daColega = NovaRotaEncerrada(c, dia, 500);
+            daColega.CodigoMotorista = colega.Id;
+            contexto.Rotas.AddRange(NovaRotaEncerrada(c, dia, 120), daColega);
+            await contexto.SaveChangesAsync();
+
+            var repositorio = new RotaRepository(contexto);
+            var de = new DateTime(2026, 9, 1);
+            var ate = new DateTime(2026, 9, 30);
+
+            var daEmpresa = await repositorio.ResumirEncerradasAsync(c.EmpresaId, de, ate);
+            var doMotorista = await repositorio.ResumirEncerradasAsync(c.EmpresaId, de, ate, c.MotoristaId);
+
+            Assert.Equal(620, daEmpresa.KmTotal);
+            Assert.Equal(1, doMotorista.Quantidade);
+            Assert.Equal(120, doMotorista.KmTotal);
+        }
+
+        [Fact]
         public async Task GetAll_DeveRecortarPelaEmpresa()
         {
             // A regra mais importante do sistema, provada no banco e não no mock.

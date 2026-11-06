@@ -6,6 +6,7 @@ import type {
   ManutencaoRequest,
   ManutencaoResponse,
   ResultadoPaginado,
+  ResumoManutencoes,
 } from './types'
 
 export const manutencoesApi = {
@@ -24,6 +25,11 @@ export const manutencoesApi = {
         tamanhoPagina: filtro.tamanhoPagina,
       },
     })
+    return unwrap(data)
+  },
+  /** Só gestão (403 para o motorista). Alimenta o bloco "Precisa de atenção" do dashboard. */
+  async resumo(): Promise<ResumoManutencoes> {
+    const { data } = await http.get<ApiResponse<ResumoManutencoes>>('/manutencao/resumo')
     return unwrap(data)
   },
   async getById(id: number): Promise<ManutencaoResponse> {

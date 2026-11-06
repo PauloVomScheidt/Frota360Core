@@ -1,3 +1,4 @@
+using Frota360.Application.Common;
 using Frota360.Application.DTOs.Rota.Request;
 using Frota360.Application.Interfaces;
 using Frota360.Application.UseCases.Rotas.Validator;
@@ -294,6 +295,28 @@ namespace Frota360.Tests.UseCases.Rotas
             request.DuracaoEstimadaSegundos = 0;
 
             Assert.True(_createValidator.Validate(request).IsValid);
+        }
+
+        /// <summary>Joinville → Brasília (1.504 km) gera ~52 mil caracteres e era recusado pelo teto antigo.</summary>
+        [Fact]
+        public void Create_TracadoDeViagemLonga_DevePassar()
+        {
+            var request = CreateValido();
+            request.PolylineCodificada = new string('a', 52_000);
+
+            Assert.True(_createValidator.Validate(request).IsValid);
+        }
+
+        [Fact]
+        public void Create_TracadoAcimaDoTeto_DeveFalharComNomeDeCampoLegivel()
+        {
+            var request = CreateValido();
+            request.PolylineCodificada = new string('a', RegrasDeTrajeto.TamanhoMaximoPolyline + 1);
+
+            var erro = Assert.Single(_createValidator.Validate(request).Errors);
+
+            Assert.Equal("Trajeto", erro.PropertyName);
+            Assert.Equal("Traçado da rota excede o tamanho aceito.", erro.ErrorMessage);
         }
 
         /// <summary>A mesma regra vale no update — as duas telas salvam pelo mesmo caminho.</summary>

@@ -20,7 +20,14 @@ export const http = axios.create({ baseURL, withCredentials: true })
 
 // Rotas anônimas: um 401 aqui é credencial/token inválido, não sessão expirada,
 // então não faz sentido tentar refresh nem derrubar o usuário para o login.
-const ANONYMOUS_ROUTES = ['/auth/login', '/auth/refresh', '/auth/esqueci-senha', '/auth/redefinir-senha', '/convite/aceitar']
+const ANONYMOUS_ROUTES = [
+  '/auth/login',
+  '/auth/refresh',
+  '/auth/esqueci-senha',
+  '/auth/redefinir-senha',
+  '/convite/consultar',
+  '/convite/aceitar',
+]
 
 // A rotação de refresh token invalida o token anterior a cada uso, então
 // dois refreshes simultâneos fariam o segundo falhar. O lock abaixo garante

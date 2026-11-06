@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Frota360.Application.Services
 {
     public class UsuarioService(IUsuarioRepository repository,
+                                IEmpresaRepository empresaRepository,
                                 ICurrentUserService currentUser,
                                 IAuditoriaService auditoria,
                                 ILogger<UsuarioService> logger) : IUsuarioService
@@ -20,13 +21,13 @@ namespace Frota360.Application.Services
             return usuarios.Select(ToResponse);
         }
 
-        public async Task<UsuarioResponse?> ObterPerfilAsync()
+        public async Task<PerfilResponse?> ObterPerfilAsync()
         {
             var usuario = await repository.GetByIdAsync(currentUser.UsuarioId);
-            return usuario is null ? null : ToResponse(usuario);
+            return usuario is null ? null : await ToPerfilResponseAsync(usuario);
         }
 
-        public async Task<UsuarioResponse?> AtualizarPerfilAsync(AtualizarPerfilRequest request)
+        public async Task<PerfilResponse?> AtualizarPerfilAsync(AtualizarPerfilRequest request)
         {
             // O alvo é sempre o dono do token: um id vindo no corpo não teria efeito nenhum.
             var usuario = await repository.GetByIdAsync(currentUser.UsuarioId);
@@ -65,7 +66,7 @@ namespace Frota360.Application.Services
             await auditoria.RegistrarAsync(EntidadesAuditadas.Usuario, AcoesAuditoria.Atualizou, usuario.Id,
                 "Atualizou os próprios dados de perfil", alteracoes);
 
-            return ToResponse(usuario);
+            return await ToPerfilResponseAsync(usuario);
         }
 
         public async Task<UsuarioResponse?> AlterarRoleAsync(int usuarioId, string novaRole)
@@ -141,6 +142,25 @@ namespace Frota360.Application.Services
         {
             usuario.RefreshTokenHash = null;
             usuario.RefreshTokenExpiraEm = null;
+        }
+
+        private async Task<PerfilResponse> ToPerfilResponseAsync(Usuario u)
+        {
+            var empresa = await empresaRepository.GetByIdAsync(u.EmpresaId);
+
+            return new PerfilResponse
+            {
+                Id = u.Id,
+                Nome = u.Nome,
+                Email = u.Email,
+                Role = u.Role,
+                CPF = u.CPF,
+                DataNascimento = u.DataNascimento,
+                Ativo = u.Ativo,
+                DataInclusao = u.DataInclusao,
+                NomeEmpresa = empresa?.Nome ?? string.Empty,
+                CnpjEmpresa = empresa?.CNPJ
+            };
         }
 
         private static UsuarioResponse ToResponse(Usuario u) => new()

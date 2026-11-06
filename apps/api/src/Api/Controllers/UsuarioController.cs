@@ -85,7 +85,7 @@ namespace Frota360.Api.Controllers
         /// <response code="200">Perfil retornado com sucesso</response>
         /// <response code="404">Usuário do token não existe mais</response>
         [HttpGet("perfil")]
-        [ProducesResponseType<ApiResponse<UsuarioResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<PerfilResponse>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> ObterPerfil()
         {
@@ -94,7 +94,7 @@ namespace Frota360.Api.Controllers
             if (usuario is null)
                 return NotFound(ApiResponse<object>.Fail("Usuário não encontrado."));
 
-            return Ok(ApiResponse<UsuarioResponse>.Ok(usuario));
+            return Ok(ApiResponse<PerfilResponse>.Ok(usuario));
         }
 
         /// <summary>
@@ -107,7 +107,7 @@ namespace Frota360.Api.Controllers
         /// <response code="404">Usuário do token não existe mais</response>
         /// <response code="422">CPF já usado por outro usuário da empresa</response>
         [HttpPut("perfil")]
-        [ProducesResponseType<ApiResponse<UsuarioResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<PerfilResponse>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status422UnprocessableEntity)]
@@ -126,7 +126,7 @@ namespace Frota360.Api.Controllers
             if (usuario is null)
                 return NotFound(ApiResponse<object>.Fail("Usuário não encontrado."));
 
-            return Ok(ApiResponse<UsuarioResponse>.Ok(usuario, "Perfil atualizado com sucesso."));
+            return Ok(ApiResponse<PerfilResponse>.Ok(usuario, "Perfil atualizado com sucesso."));
         }
     }
 }

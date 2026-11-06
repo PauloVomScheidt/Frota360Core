@@ -15,6 +15,14 @@ namespace Frota360.Domain.Interfaces.Repositories
         /// inclusivo (o repositório estende até o fim do dia).
         /// </summary>
         Task<(IEnumerable<Manutencao> Itens, int Total)> ConsultarAsync(int empresaId, FiltroManutencao filtro);
+
+        /// <summary>
+        /// Todas as pendentes da empresa, com veículo e tipo carregados — sem paginação, porque o
+        /// conjunto é limitado pela frota e o resumo precisa do odômetro de cada veículo para saber
+        /// o que está atrasado.
+        /// </summary>
+        Task<IEnumerable<Manutencao>> ListarPendentesAsync(int empresaId);
+
         Task<Manutencao?> GetByIdAsync(int id, int empresaId);
 
         /// <summary>Já existe manutenção pendente do mesmo tipo para o veículo na mesma quilometragem.</summary>

@@ -45,6 +45,16 @@ export function formatMoeda(valor: number | null | undefined): string {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+/** Número → "R$ 48,2 mil". Para KPI, onde o valor cheio não cabe; o cheio vai no `title`. */
+export function formatMoedaCompacta(valor: number): string {
+  return valor.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  })
+}
+
 /** Metros → "412 km" / "8,4 km" — abaixo de 10 km uma casa evita "8 km" para 8,4. */
 export function formatDistancia(metros: number): string {
   const km = metros / 1000
@@ -75,6 +85,13 @@ export function formatCpf(cpf: string): string {
 
 export function somenteDigitos(valor: string): string {
   return valor.replace(/\D/g, '')
+}
+
+/** 12345678000190 → 12.345.678/0001-90; o que não tiver 14 dígitos volta como veio. */
+export function formatCnpj(cnpj: string): string {
+  const d = somenteDigitos(cnpj)
+  if (d.length !== 14) return cnpj
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`
 }
 
 /** Máscara progressiva enquanto o usuário digita o CPF. */

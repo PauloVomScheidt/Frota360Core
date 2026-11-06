@@ -25,8 +25,13 @@ namespace Frota360.Application.Common
         public const int VelocidadeMinimaKmH = 5;
         public const int VelocidadeMaximaKmH = 180;
 
-        /// <summary>A coluna é <c>text</c>, sem teto no banco; o limite aqui é contra payload abusivo.</summary>
-        public const int TamanhoMaximoPolyline = 20_000;
+        /// <summary>
+        /// A coluna é <c>text</c>, sem teto no banco; o limite aqui é contra payload abusivo, não
+        /// contra viagem longa. Os traçados reais medem 32–35 caracteres por km: o teto cobre
+        /// 5.000 km a 50/km, com folga para trecho de serra. O antigo, de 20.000, barrava já a
+        /// partir de ~570 km.
+        /// </summary>
+        public const int TamanhoMaximoPolyline = 250_000;
 
         /// <summary>
         /// Distância e duração chegam do cliente, e não do servidor: o front já pagou pela
