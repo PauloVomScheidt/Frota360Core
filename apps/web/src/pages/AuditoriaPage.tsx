@@ -9,10 +9,11 @@ import type {
   LogAuditoriaResponse,
 } from '../api/types'
 import { AppLayout, PageHeader } from '../components/AppLayout'
-import { Paginacao, TableStates } from '../components/Table'
+import { FiltroPeriodo, Paginacao, TableStates } from '../components/Table'
 import { usePaginacaoServidor } from '../lib/paginacao'
 import { ChevronDownIcon, ChevronRightIcon } from '../components/icons'
 import { formatDateTime } from '../lib/format'
+import { filtroDePeriodo, intervaloDoFiltro, type FiltroDePeriodo } from '../lib/periodo'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
@@ -161,8 +162,8 @@ export function AuditoriaPage() {
   const [filtroEntidade, setFiltroEntidade] = useState('')
   const [filtroAcao, setFiltroAcao] = useState('')
   const [filtroUsuario, setFiltroUsuario] = useState('')
-  const [de, setDe] = useState('')
-  const [ate, setAte] = useState('')
+  const [periodo, setPeriodo] = useState<FiltroDePeriodo>(filtroDePeriodo('todos'))
+  const { de, ate } = intervaloDoFiltro(periodo)
 
   // Linhas com diff abrem sob demanda: a descrição resolve a maioria das consultas,
   // e o campo-a-campo é o detalhe de quem está investigando um caso específico.
@@ -178,8 +179,8 @@ export function AuditoriaPage() {
     entidade: filtroEntidade === '' ? undefined : (filtroEntidade as EntidadeAuditada),
     acao: filtroAcao === '' ? undefined : (filtroAcao as AcaoAuditoria),
     usuarioId: filtroUsuario === '' ? undefined : Number(filtroUsuario),
-    de: de === '' ? undefined : de,
-    ate: ate === '' ? undefined : ate,
+    de,
+    ate,
   }
 
   const auditoriaQuery = useQuery({
@@ -194,7 +195,7 @@ export function AuditoriaPage() {
   const logs = dados?.itens ?? []
   const usuarios = usuariosQuery.data ?? []
 
-  const temFiltro = filtroEntidade !== '' || filtroAcao !== '' || filtroUsuario !== '' || de !== '' || ate !== ''
+  const temFiltro = filtroEntidade !== '' || filtroAcao !== '' || filtroUsuario !== '' || periodo.periodo !== 'todos'
 
   /** Qualquer mudança de filtro volta para a primeira página — senão a tela abre vazia. */
   function resetarPaginacao() {
@@ -206,8 +207,7 @@ export function AuditoriaPage() {
     setFiltroEntidade('')
     setFiltroAcao('')
     setFiltroUsuario('')
-    setDe('')
-    setAte('')
+    setPeriodo(filtroDePeriodo('todos'))
     resetarPaginacao()
   }
 
@@ -298,35 +298,14 @@ export function AuditoriaPage() {
           </select>
         </div>
 
-        <div className="field w-[160px]">
-          <label htmlFor="de">De</label>
-          <input
-            id="de"
-            type="date"
-            className="input"
-            style={{ borderRadius: 0 }}
-            value={de}
-            onChange={(e) => {
-              setDe(e.target.value)
-              resetarPaginacao()
-            }}
-          />
-        </div>
-
-        <div className="field w-[160px]">
-          <label htmlFor="ate">Até</label>
-          <input
-            id="ate"
-            type="date"
-            className="input"
-            style={{ borderRadius: 0 }}
-            value={ate}
-            onChange={(e) => {
-              setAte(e.target.value)
-              resetarPaginacao()
-            }}
-          />
-        </div>
+        <FiltroPeriodo
+          valor={periodo}
+          id="filtroPeriodoAuditoria"
+          onMudar={(valor) => {
+            setPeriodo(valor)
+            resetarPaginacao()
+          }}
+        />
 
         {temFiltro && (
           <button

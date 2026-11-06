@@ -30,7 +30,7 @@ import { usePaginacaoServidor } from '../lib/paginacao'
 import { CheckIcon } from '../components/icons'
 import { formatDate, formatKm, formatMoeda, hojeInputDate, paraInputDate } from '../lib/format'
 import { badgeDaManutencao, estaVencendo, textoKmRestantes } from '../lib/manutencao'
-import { intervaloDoPeriodo, type Periodo } from '../lib/periodo'
+import { filtroDePeriodo, intervaloDoFiltro, type FiltroDePeriodo } from '../lib/periodo'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
@@ -197,11 +197,11 @@ function FiltrosManutencao({
   veiculos: VeiculoResponse[]
   filtroVeiculo: string
   filtroStatus: string
-  periodo: Periodo
+  periodo: FiltroDePeriodo
   temFiltro: boolean
   onFiltroVeiculoChange: (v: string) => void
   onFiltroStatusChange: (v: string) => void
-  onPeriodoChange: (p: Periodo) => void
+  onPeriodoChange: (p: FiltroDePeriodo) => void
   onLimpar: () => void
 }) {
   return (
@@ -254,7 +254,7 @@ function FiltrosManutencao({
         execução quando concluída. Dizer isso na tela evita a leitura errada de que o
         filtro olha uma data só.
       */}
-      {periodo !== 'todos' && (
+      {periodo.periodo !== 'todos' && (
         <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
           O período considera a <strong>data prevista</strong> das pendentes e a{' '}
           <strong>data de realização</strong> das concluídas. Manutenção agendada só por
@@ -516,7 +516,7 @@ function useManutencoesController() {
 
   const [filtroVeiculo, setFiltroVeiculo] = useState('')
   const [filtroStatus, setFiltroStatus] = useState('')
-  const [periodo, setPeriodo] = useState<Periodo>('todos')
+  const [periodo, setPeriodo] = useState<FiltroDePeriodo>(filtroDePeriodo('todos'))
 
   const [aberto, setAberto] = useState(false)
   const [editando, setEditando] = useState<ManutencaoResponse | null>(null)
@@ -533,7 +533,7 @@ function useManutencoesController() {
   const [errosExclusao, setErrosExclusao] = useState<string[]>([])
 
   // O período vira `de`/`ate` aqui: a API não conhece "últimos 7 dias".
-  const { de, ate } = intervaloDoPeriodo(periodo)
+  const { de, ate } = intervaloDoFiltro(periodo)
 
   const paginacao = usePaginacaoServidor()
 
@@ -546,7 +546,7 @@ function useManutencoesController() {
     tamanhoPagina: paginacao.tamanhoPagina,
   }
 
-  const temFiltro = filtroVeiculo !== '' || filtroStatus !== '' || periodo !== 'todos'
+  const temFiltro = filtroVeiculo !== '' || filtroStatus !== '' || periodo.periodo !== 'todos'
 
   const manutencoesQuery = useQuery({
     queryKey: ['manutencoes', filtro],
@@ -867,7 +867,7 @@ export function ManutencoesPage() {
         onLimpar={() => {
           c.setFiltroVeiculo('')
           c.setFiltroStatus('')
-          c.setPeriodo('todos')
+          c.setPeriodo(filtroDePeriodo('todos'))
           c.paginacao.resetar()
         }}
       />

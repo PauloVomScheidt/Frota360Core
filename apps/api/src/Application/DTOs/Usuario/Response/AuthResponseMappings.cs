@@ -8,6 +8,7 @@ namespace Frota360.Application.DTOs.Usuario.Response
             Nome = auth.Nome,
             Email = auth.Email,
             Role = auth.Role,
+            NomeEmpresa = auth.NomeEmpresa,
         };
     }
 }

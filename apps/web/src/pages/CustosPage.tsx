@@ -5,7 +5,6 @@ import { motoristasApi } from '../api/motoristas'
 import { veiculosApi } from '../api/veiculos'
 import type {
   CustoFiltro,
-  CustoPorMesResponse,
   CustoPorVeiculoResponse,
   LancamentoCustoResponse,
   MotoristaResponse,
@@ -18,15 +17,10 @@ import { FiltroPeriodo, PainelDialog, Paginacao, TableStates } from '../componen
 import { usePaginacaoServidor } from '../lib/paginacao'
 import { DinheiroIcon, FuelIcon, ReciboIcon, RouteIcon, WrenchIcon } from '../components/icons'
 import { formatDate, formatKm, formatMoeda } from '../lib/format'
-import { formatConsumo, formatCustoPorKm, rotuloDoMes, ROTULO_ORIGEM } from '../lib/custo'
-import { intervaloDoPeriodo, type Periodo } from '../lib/periodo'
+import { formatConsumo, formatCustoPorKm, ROTULO_ORIGEM } from '../lib/custo'
+import { filtroDePeriodo, intervaloDoFiltro, type FiltroDePeriodo } from '../lib/periodo'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
-
-/** As três séries do gráfico saem da rampa do acento: são categorias, não situações. */
-const COR_ABASTECIMENTO = 'var(--color-accent-700)'
-const COR_MANUTENCAO = 'var(--color-accent-400)'
-const COR_DESPESA = 'var(--color-accent-200)'
 
 function FiltrosCustos({
   veiculos,
@@ -47,12 +41,12 @@ function FiltrosCustos({
   filtroVeiculo: string
   filtroMotorista: string
   filtroOrigem: string
-  periodo: Periodo
+  periodo: FiltroDePeriodo
   temFiltro: boolean
   onFiltroVeiculoChange: (valor: string) => void
   onFiltroMotoristaChange: (valor: string) => void
   onFiltroOrigemChange: (valor: string) => void
-  onPeriodoChange: (valor: Periodo) => void
+  onPeriodoChange: (valor: FiltroDePeriodo) => void
   onLimpar: () => void
 }) {
   return (
@@ -204,68 +198,6 @@ function FaixaDeKpis({ resumo, carregado }: { resumo?: ResumoCustosResponse; car
 function participacao(parte: number, total: number): string {
   if (total <= 0) return 'sem gasto no período'
   return `${Math.round((parte / total) * 100)}% do total`
-}
-
-/**
- * Barras em CSS puro. Uma biblioteca de gráfico seria a primeira dependência de front do
- * projeto para desenhar três retângulos empilhados — não se paga.
- */
-function GraficoPorMes({ meses }: { meses: CustoPorMesResponse[] }) {
-  if (meses.length < 2) return null
-
-  const maximo = Math.max(...meses.map((m) => m.total))
-  if (maximo <= 0) return null
-
-  return (
-    <section className="mb-8">
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-        <h3 style={{ margin: 0 }}>Evolução mensal</h3>
-        <div className="flex items-center gap-4 text-xs" style={{ color: mutedText }}>
-          <span className="flex items-center gap-1.5">
-            <span style={{ width: 10, height: 10, background: COR_ABASTECIMENTO }} />
-            Combustível
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span style={{ width: 10, height: 10, background: COR_MANUTENCAO }} />
-            Manutenção
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span style={{ width: 10, height: 10, background: COR_DESPESA }} />
-            Despesas
-          </span>
-        </div>
-      </div>
-
-      <div
-        className="flex items-end gap-3 overflow-x-auto p-4"
-        style={{ border: '1px solid var(--color-divider)', background: 'var(--color-surface)' }}
-      >
-        {meses.map((mes) => (
-          <div key={`${mes.ano}-${mes.mes}`} className="flex min-w-[52px] flex-1 flex-col items-center gap-2">
-            <span className="text-[11px] font-semibold">{formatMoeda(mes.total)}</span>
-            <div
-              className="flex w-full flex-col justify-end"
-              style={{ height: 140 }}
-              title={`${rotuloDoMes(mes.ano, mes.mes)}: ${formatMoeda(mes.total)}`}
-            >
-              <div
-                style={{ height: `${(mes.totalDespesa / maximo) * 100}%`, background: COR_DESPESA }}
-              />
-              <div
-                style={{ height: `${(mes.totalManutencao / maximo) * 100}%`, background: COR_MANUTENCAO }}
-              />
-              <div
-                style={{ height: `${(mes.totalAbastecimento / maximo) * 100}%`, background: COR_ABASTECIMENTO }}
-              />
-            </div>
-            <span className="text-[11px]" style={{ color: mutedText }}>
-              {rotuloDoMes(mes.ano, mes.mes)}
-            </span>
-          </div>
-        ))}
-      </div>
-    </section>
-  )
 }
 
 function TabelaPorVeiculo({
@@ -470,9 +402,9 @@ export function CustosPage() {
   const [filtroOrigem, setFiltroOrigem] = useState('')
   // Começa no mês corrente, não em "todo o período": um total de todos os tempos não
   // responde pergunta nenhuma e ainda faz a primeira carga ser a mais cara possível.
-  const [periodo, setPeriodo] = useState<Periodo>('esteMes')
+  const [periodo, setPeriodo] = useState<FiltroDePeriodo>(filtroDePeriodo('esteMes'))
 
-  const intervalo = intervaloDoPeriodo(periodo)
+  const intervalo = intervaloDoFiltro(periodo)
 
   /**
    * O recorte da tela. Alimenta o resumo e é repassado ao modal de lançamentos, que só
@@ -497,7 +429,7 @@ export function CustosPage() {
 
   const resumo = resumoQuery.data
 
-  const temFiltro = filtroVeiculo !== '' || filtroMotorista !== '' || filtroOrigem !== '' || periodo !== 'todos'
+  const temFiltro = filtroVeiculo !== '' || filtroMotorista !== '' || filtroOrigem !== '' || periodo.periodo !== 'todos'
   const atualizando = resumoQuery.isFetching
 
   /**
@@ -512,7 +444,7 @@ export function CustosPage() {
     setFiltroVeiculo('')
     setFiltroMotorista('')
     setFiltroOrigem('')
-    setPeriodo('todos')
+    setPeriodo(filtroDePeriodo('todos'))
     fecharDetalhe()
   }
 
@@ -590,7 +522,6 @@ export function CustosPage() {
         </p>
       )}
 
-      <GraficoPorMes meses={resumo?.porMes ?? []} />
 
       <TabelaPorVeiculo
         veiculos={resumo?.porVeiculo ?? []}

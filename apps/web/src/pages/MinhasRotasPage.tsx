@@ -1,5 +1,7 @@
-import { useMemo, useRef, useState, type FormEvent } from 'react'
+import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
+import { abastecimentosApi } from '../api/abastecimentos'
 import { rotasApi } from '../api/rotas'
 import { veiculosApi } from '../api/veiculos'
 import { manutencoesApi } from '../api/manutencoes'
@@ -8,15 +10,26 @@ import type {
   AbrirMinhaRotaRequest,
   EncerrarRotaRequest,
   ManutencaoResponse,
+  ResumoLancamentos,
+  ResumoRotas,
   RotaResponse,
   VeiculoResponse,
 } from '../api/types'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
 import { FormDialog, Paginacao, SecaoCampos, TableStates } from '../components/Table'
 import { usePaginacaoServidor } from '../lib/paginacao'
-import { CheckIcon } from '../components/icons'
-import { formatDate, formatKm, hojeInputDate, paraInputDate } from '../lib/format'
-import { estaVencendo } from '../lib/manutencao'
+import { CheckIcon, FuelIcon } from '../components/icons'
+import {
+  formatDate,
+  formatDistancia,
+  formatDuracao,
+  formatKm,
+  formatMoeda,
+  hojeInputDate,
+  paraInputDate,
+} from '../lib/format'
+import { badgeDaManutencao, estaVencendo, textoKmRestantes } from '../lib/manutencao'
+import { mesAteHoje } from '../lib/periodo'
 import { statusDaRota } from '../lib/rota'
 import { TrajetoRota } from '../components/TrajetoRota'
 
@@ -234,19 +247,142 @@ function RotaAtivaCard({
             <div className="text-[13px]" style={{ color: mutedText }}>
               {descreverVeiculo(rotaAtiva.codigoVeiculo)} · aberta em {formatDate(rotaAtiva.dataInicio)} ·
               saiu com {formatKm(rotaAtiva.kmInicial)}
+              {rotaAtiva.dataCalculoRota &&
+                ` · estimativa de ${formatDistancia(rotaAtiva.distanciaMetros)} em ${formatDuracao(rotaAtiva.duracaoEstimadaSegundos)}`}
             </div>
           </div>
-          <button
-            type="button"
-            className="btn btn-primary"
-            style={{ borderRadius: 0, padding: '12px 24px' }}
-            onClick={() => onEncerrar(rotaAtiva)}
-          >
-            <CheckIcon size={16} />
-            Encerrar rota
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <Link to="/abastecimentos" className="btn btn-secondary" style={{ padding: '12px 20px' }}>
+              <FuelIcon size={16} />
+              Lançar abastecimento
+            </Link>
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ padding: '12px 24px' }}
+              onClick={() => onEncerrar(rotaAtiva)}
+            >
+              <CheckIcon size={16} />
+              Encerrar rota
+            </button>
+          </div>
         </div>
       )}
+    </section>
+  )
+}
+
+function CartaoDoMes({ rotulo, children }: { rotulo: string; children: ReactNode }) {
+  return (
+    <div
+      className="flex flex-col gap-2 p-5"
+      style={{ borderRight: '1px solid var(--color-divider)', background: 'var(--color-surface)' }}
+    >
+      <span
+        className="text-[11px] uppercase"
+        style={{ letterSpacing: '0.08em', color: 'color-mix(in srgb, var(--color-text) 60%, transparent)' }}
+      >
+        {rotulo}
+      </span>
+      {children}
+    </div>
+  )
+}
+
+function ValorDoMes({ valor, detalhe }: { valor: string; detalhe: string }) {
+  return (
+    <>
+      <span className="text-[26px] leading-none font-extrabold" style={{ fontFamily: 'var(--font-heading)' }}>
+        {valor}
+      </span>
+      <span className="text-xs" style={{ color: 'var(--color-accent-700)' }}>
+        {detalhe}
+      </span>
+    </>
+  )
+}
+
+/** O mês do motorista: o km e os abastecimentos já vêm recortados por ele no servidor. */
+function MeuMes({
+  kmDoMes,
+  abastecimentosDoMes,
+  placaDaRota,
+  manutencaoDaRota,
+  manutencaoCarregada,
+}: {
+  kmDoMes?: ResumoRotas
+  abastecimentosDoMes?: ResumoLancamentos
+  placaDaRota: string | null
+  manutencaoDaRota: ManutencaoResponse | null
+  manutencaoCarregada: boolean
+}) {
+  const badge = manutencaoDaRota ? badgeDaManutencao(manutencaoDaRota) : null
+  const andamento = manutencaoDaRota ? textoKmRestantes(manutencaoDaRota.kmRestantes) : null
+
+  return (
+    <section
+      className="mb-8 grid grid-cols-1 md:grid-cols-3"
+      style={{ border: '1px solid var(--color-divider)' }}
+      aria-label="Meu mês"
+    >
+      <CartaoDoMes rotulo="Km rodado no mês">
+        <ValorDoMes
+          valor={kmDoMes ? kmDoMes.kmTotal.toLocaleString('pt-BR') : '—'}
+          detalhe={
+            kmDoMes ? `${kmDoMes.quantidade} ${kmDoMes.quantidade === 1 ? 'rota encerrada' : 'rotas encerradas'}` : ''
+          }
+        />
+      </CartaoDoMes>
+
+      <CartaoDoMes rotulo="Meus abastecimentos">
+        <ValorDoMes
+          valor={abastecimentosDoMes ? String(abastecimentosDoMes.quantidade) : '—'}
+          detalhe={abastecimentosDoMes ? `no mês · ${formatMoeda(abastecimentosDoMes.valorTotal)}` : ''}
+        />
+      </CartaoDoMes>
+
+      <CartaoDoMes rotulo={placaDaRota ? `Manutenção do ${placaDaRota}` : 'Manutenção do veículo'}>
+        {!placaDaRota && (
+          <span className="text-[13px]" style={{ color: mutedText }}>
+            Abra uma rota para ver a situação do veículo.
+          </span>
+        )}
+        {placaDaRota && manutencaoCarregada && !manutencaoDaRota && (
+          <>
+            <span>
+              <span className="tag tag-success">Em dia</span>
+            </span>
+            <span className="text-sm" style={{ color: mutedText }}>
+              Nenhuma manutenção pendente.
+            </span>
+          </>
+        )}
+        {manutencaoDaRota && badge && (
+          <>
+            <span>
+              <span className={badge.classe}>{badge.rotulo}</span>
+            </span>
+            <span className="text-sm">
+              <strong className="font-semibold">{manutencaoDaRota.tipoManutencaoNome}</strong>
+              {andamento && (
+                <span
+                  className="font-semibold"
+                  style={{
+                    color: manutencaoDaRota.atrasada
+                      ? 'var(--color-danger)'
+                      : estaVencendo(manutencaoDaRota)
+                        ? 'var(--color-warning)'
+                        : mutedText,
+                  }}
+                >
+                  {' '}
+                  · {andamento}
+                </span>
+              )}
+            </span>
+          </>
+        )}
+      </CartaoDoMes>
     </section>
   )
 }
@@ -439,6 +575,16 @@ export function MinhasRotasPage() {
 
   const veiculosQuery = useQuery({ queryKey: ['veiculos'], queryFn: veiculosApi.getAll })
 
+  const mes = mesAteHoje()
+  const kmDoMesQuery = useQuery({
+    queryKey: ['rotas', 'minhas', 'resumo', mes],
+    queryFn: () => rotasApi.resumo(mes.de, mes.ate),
+  })
+  const abastecimentosDoMesQuery = useQuery({
+    queryKey: ['abastecimentos', 'resumo', mes],
+    queryFn: () => abastecimentosApi.resumo(mes),
+  })
+
   /**
    * Pendências **do veículo escolhido**, não da frota inteira: antes a tela baixava todas as
    * manutenções pendentes e agrupava por veículo no cliente, o que a paginação inviabilizou.
@@ -482,6 +628,21 @@ export function MinhasRotasPage() {
   // Só existe uma rota ativa por vez na prática: ela vira o destaque do topo, e o
   // resto é histórico — agora cada um na sua consulta.
   const rotaAtiva = (rotaAtivaQuery.data?.itens ?? [])[0] ?? null
+
+  const veiculoDaRota = rotaAtiva?.codigoVeiculo ?? null
+  const manutencaoDaRotaQuery = useQuery({
+    queryKey: ['manutencoes', { ...FILTRO_PENDENTES, veiculoId: veiculoDaRota }],
+    queryFn: () =>
+      manutencoesApi.getAll({ ...FILTRO_PENDENTES, veiculoId: veiculoDaRota ?? undefined, tamanhoPagina: 50 }),
+    enabled: veiculoDaRota !== null,
+  })
+  const manutencaoDaRota =
+    [...(manutencaoDaRotaQuery.data?.itens ?? [])].sort(
+      (a, b) => Number(b.atrasada) - Number(a.atrasada) || (a.kmRestantes ?? 0) - (b.kmRestantes ?? 0),
+    )[0] ?? null
+  const placaDaRota = rotaAtiva
+    ? (rotaAtiva.veiculoPlaca ?? veiculoPorId.get(rotaAtiva.codigoVeiculo)?.placa ?? null)
+    : null
   const dadosHistorico = historicoQuery.data
   const historico = dadosHistorico?.itens ?? []
 
@@ -652,6 +813,14 @@ export function MinhasRotasPage() {
         rotaAtiva={rotaAtiva}
         descreverVeiculo={descreverVeiculo}
         onEncerrar={abrirEncerramento}
+      />
+
+      <MeuMes
+        kmDoMes={kmDoMesQuery.data}
+        abastecimentosDoMes={abastecimentosDoMesQuery.data}
+        placaDaRota={placaDaRota}
+        manutencaoDaRota={manutencaoDaRota}
+        manutencaoCarregada={manutencaoDaRotaQuery.isSuccess}
       />
 
       <HistoricoRotasTabela

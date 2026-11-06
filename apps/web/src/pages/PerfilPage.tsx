@@ -5,7 +5,7 @@ import { mensagensDeErro } from '../api/errors'
 import { tokenStorage } from '../api/tokenStorage'
 import { notificarMudancaDeSessao, useSession } from '../auth/useSession'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { mascaraCpf, paraInputDate, somenteDigitos } from '../lib/format'
+import { formatCnpj, mascaraCpf, paraInputDate, somenteDigitos } from '../lib/format'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
@@ -153,6 +153,12 @@ export function PerfilPage() {
           <span>
             Permissão: <strong style={{ color: 'var(--color-text)' }}>{perfil?.role ?? sessao?.role ?? '—'}</strong> —
             concedida pelo administrador da empresa.
+          </span>
+          <span>
+            Empresa:{' '}
+            <strong style={{ color: 'var(--color-text)' }}>{perfil?.nomeEmpresa || sessao?.nomeEmpresa || '—'}</strong>
+            {perfil?.cnpjEmpresa && <> · CNPJ {formatCnpj(perfil.cnpjEmpresa)}</>} — a conta à qual seu acesso
+            pertence.
           </span>
         </div>
 

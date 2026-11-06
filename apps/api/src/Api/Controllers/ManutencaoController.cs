@@ -9,6 +9,7 @@ using Frota360.Application.UseCases.Manutencoes.Commands.DeleteManutencao;
 using Frota360.Application.UseCases.Manutencoes.Commands.UpdateManutencao;
 using Frota360.Application.UseCases.Manutencoes.Queries.GetAllManutencoes;
 using Frota360.Application.UseCases.Manutencoes.Queries.GetManutencaoById;
+using Frota360.Application.UseCases.Manutencoes.Queries.GetResumoManutencoes;
 using Frota360.Domain.Common;
 using Frota360.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
@@ -49,6 +50,22 @@ namespace Frota360.Api.Controllers
 
             var pagina = await dispatcher.SendAsync(new GetAllManutencoesQuery(request));
             return Ok(ApiResponse<ResultadoPaginado<ManutencaoResponse>>.Ok(pagina));
+        }
+
+        /// <summary>
+        /// Contagem de pendentes atrasadas e vencendo, mais as mais urgentes. Alimenta o bloco
+        /// "Precisa de atenção" do dashboard. (Admin, Supervisor, Operador)
+        /// </summary>
+        /// <response code="200">Resumo retornado com sucesso</response>
+        /// <response code="403">Sem permissão</response>
+        [HttpGet("resumo")]
+        [Authorize(Roles = Roles.Gestao)]
+        [ProducesResponseType<ApiResponse<ResumoManutencoesResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> GetResumo()
+        {
+            var resumo = await dispatcher.SendAsync(new GetResumoManutencoesQuery());
+            return Ok(ApiResponse<ResumoManutencoesResponse>.Ok(resumo));
         }
 
         /// <summary>Retorna uma manutenção pelo id.</summary>

@@ -39,9 +39,9 @@ namespace Frota360.Domain.Interfaces.Repositories
         /// `kmPercorrido` da lista inteira no cliente.
         ///
         /// <c>KmPercorrido</c> é persistido pela API no encerramento — nunca recalculado a
-        /// partir de kmInicial/kmFinal.
+        /// partir de kmInicial/kmFinal. Com <paramref name="motoristaId"/>, só as rotas dele.
         /// </summary>
-        Task<ResumoRotas> ResumirEncerradasAsync(int empresaId, DateTime de, DateTime ate);
+        Task<ResumoRotas> ResumirEncerradasAsync(int empresaId, DateTime de, DateTime ate, int? motoristaId = null);
 
         /// <summary>
         /// Usado antes de excluir um veículo (RN08), que não pode sumir deixando rotas

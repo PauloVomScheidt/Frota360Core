@@ -6,6 +6,7 @@ using Frota360.Application.UseCases.Manutencoes.Commands.CreateManutencao;
 using Frota360.Application.UseCases.Manutencoes.Commands.DeleteManutencao;
 using Frota360.Application.UseCases.Manutencoes.Commands.UpdateManutencao;
 using Frota360.Application.UseCases.Manutencoes.Queries.GetAllManutencoes;
+using Frota360.Application.UseCases.Manutencoes.Queries.GetResumoManutencoes;
 using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Enums;
@@ -407,5 +408,70 @@ namespace Frota360.Tests.UseCases.Manutencoes
             await _auditoria.DidNotReceive().RegistrarAsync(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int?>(), Arg.Any<string>(), Arg.Any<IEnumerable<AlteracaoCampo>>());
         }
-    }
+
+        private GetResumoManutencoesHandler ResumoHandler() =>
+            new(_repository, _currentUser, NullLogger<GetResumoManutencoesHandler>.Instance);
+
+        [Fact]
+        public async Task Resumo_DeveContarAtrasadasEVencendoEscopadoNaEmpresa()
+        {
+            _repository.ListarPendentesAsync(1).Returns(
+            [
+                NovaManutencao(id: 1, quilometragemPrevista: 60_000, quilometragemVeiculo: 50_000),
+                NovaManutencao(id: 2, quilometragemPrevista: 50_400, quilometragemVeiculo: 50_000),
+                NovaManutencao(id: 3, quilometragemPrevista: 50_500, quilometragemVeiculo: 50_000),
+                NovaManutencao(id: 4, quilometragemPrevista: 49_000, quilometragemVeiculo: 50_000),
+                NovaManutencao(id: 5, quilometragemPrevista: 50_501, quilometragemVeiculo: 50_000)
+            ]);
+
+            var resumo = await ResumoHandler().HandleAsync(new GetResumoManutencoesQuery());
+
+            Assert.Equal(1, resumo.Atrasadas);
+            Assert.Equal(2, resumo.Vencendo);
+            await _repository.Received(1).ListarPendentesAsync(1);
+        }
+
+        [Fact]
+        public async Task Resumo_DeveListarAtrasadasAntesEDentroDeCadaGrupoOMaisUrgente()
+        {
+            _repository.ListarPendentesAsync(1).Returns(
+            [
+                NovaManutencao(id: 1, quilometragemPrevista: 50_300, quilometragemVeiculo: 50_000),
+                NovaManutencao(id: 2, quilometragemPrevista: 49_800, quilometragemVeiculo: 50_000),
+                NovaManutencao(id: 3, quilometragemPrevista: 50_100, quilometragemVeiculo: 50_000),
+                NovaManutencao(id: 4, quilometragemPrevista: 47_000, quilometragemVeiculo: 50_000)
+            ]);
+
+            var resumo = await ResumoHandler().HandleAsync(new GetResumoManutencoesQuery());
+
+            Assert.Equal([4, 2, 3, 1], resumo.Urgentes.Select(m => m.Id));
+        }
+
+        [Fact]
+        public async Task Resumo_DeveVencerPelaDataPrevistaMesmoComKmSobrando()
+        {
+            var vencidaPorData = NovaManutencao(id: 1, quilometragemPrevista: 90_000, quilometragemVeiculo: 50_000);
+            vencidaPorData.DataPrevista = DateTime.Now.Date.AddDays(-1);
+            _repository.ListarPendentesAsync(1).Returns([vencidaPorData]);
+
+            var resumo = await ResumoHandler().HandleAsync(new GetResumoManutencoesQuery());
+
+            Assert.Equal(1, resumo.Atrasadas);
+            Assert.Equal(0, resumo.Vencendo);
+        }
+
+        [Fact]
+        public async Task Resumo_DeveLimitarUrgentesSemLimitarAsContagens()
+        {
+            var atrasadas = Enumerable.Range(1, RegrasDeManutencao.LimiteUrgentes + 3)
+                .Select(id => NovaManutencao(id: id, quilometragemPrevista: 40_000, quilometragemVeiculo: 50_000))
+                .ToList();
+            _repository.ListarPendentesAsync(1).Returns(atrasadas);
+
+            var resumo = await ResumoHandler().HandleAsync(new GetResumoManutencoesQuery());
+
+            Assert.Equal(RegrasDeManutencao.LimiteUrgentes + 3, resumo.Atrasadas);
+            Assert.Equal(RegrasDeManutencao.LimiteUrgentes, resumo.Urgentes.Count());
+        }
+}
 }

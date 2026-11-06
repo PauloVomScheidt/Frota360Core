@@ -7,6 +7,7 @@ using Frota360.Application.UseCases.Rotas.Commands.EncerrarRota;
 using Frota360.Application.UseCases.Rotas.Commands.UpdateRota;
 using Frota360.Application.UseCases.Rotas.Queries.GetAllRotas;
 using Frota360.Application.UseCases.Rotas.Queries.GetMinhasRotas;
+using Frota360.Application.UseCases.Rotas.Queries.GetResumoRotas;
 using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
@@ -787,5 +788,44 @@ namespace Frota360.Tests.UseCases.Rotas
             Assert.Equal(7, resposta.Total);
         }
 
-    }
+        private GetResumoRotasHandler CriarResumoHandler() =>
+            new(_repository, _currentUser, NullLogger<GetResumoRotasHandler>.Instance);
+
+        [Fact]
+        public async Task Resumo_ParaGestao_DeveSomarAEmpresaInteira()
+        {
+            var de = new DateTime(2026, 9, 1);
+            var ate = new DateTime(2026, 9, 28);
+            _currentUser.Role.Returns(Roles.Supervisor);
+            _repository.ResumirEncerradasAsync(1, de, ate, null).Returns(new ResumoRotas(4, 820));
+
+            var resumo = await CriarResumoHandler().HandleAsync(new GetResumoRotasQuery(de, ate));
+
+            Assert.Equal(4, resumo.Quantidade);
+            Assert.Equal(820, resumo.KmTotal);
+            await _repository.Received(1).ResumirEncerradasAsync(1, de, ate, null);
+        }
+
+        [Fact]
+        public async Task Resumo_ParaMotorista_DeveRecortarPeloUsuarioDoToken()
+        {
+            var de = new DateTime(2026, 9, 1);
+            var ate = new DateTime(2026, 9, 28);
+            _currentUser.Role.Returns(Roles.Motorista);
+            _currentUser.UsuarioId.Returns(7);
+            _repository.ResumirEncerradasAsync(1, de, ate, 7).Returns(new ResumoRotas(2, 230));
+
+            var resumo = await CriarResumoHandler().HandleAsync(new GetResumoRotasQuery(de, ate));
+
+            Assert.Equal(230, resumo.KmTotal);
+            await _repository.Received(1).ResumirEncerradasAsync(1, de, ate, 7);
+        }
+
+        [Fact]
+        public async Task Resumo_ComDataFinalAnteriorAInicial_DeveRecusar()
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                CriarResumoHandler().HandleAsync(new GetResumoRotasQuery(new DateTime(2026, 9, 10), new DateTime(2026, 9, 1))));
+        }
+}
 }

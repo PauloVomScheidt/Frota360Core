@@ -41,6 +41,16 @@ export interface SessaoResponse {
   nome: string
   email: string
   role: Role
+  /** Exibido no cabeçalho do painel. */
+  nomeEmpresa: string
+}
+
+/** `POST /convite/consultar` (anônimo): o que a tela de aceite mostra antes de a conta existir. */
+export interface ConviteConsultadoResponse {
+  nomeEmpresa: string
+  email: string
+  role: Role
+  expiraEm: string
 }
 
 export interface EsqueciSenhaRequest {
@@ -91,6 +101,12 @@ export interface UsuarioResponse {
   dataNascimento?: string | null
   ativo: boolean
   dataInclusao: string
+}
+
+/** `GET/PUT /usuario/perfil`: o próprio cadastro mais a empresa, só leitura. */
+export interface PerfilResponse extends UsuarioResponse {
+  nomeEmpresa: string
+  cnpjEmpresa?: string | null
 }
 
 export interface AlterarRoleRequest {
@@ -347,6 +363,15 @@ export interface ManutencaoResponse {
   /** Sempre `null` para a role `Motorista` — a API omite o financeiro para ele. */
   custo?: number | null
   dataInclusao: string
+}
+
+/** `GET /manutencao/resumo` (gestão): as contagens não têm teto; `urgentes` traz no máximo 10. */
+export interface ResumoManutencoes {
+  atrasadas: number
+  /** Pendentes ainda não vencidas dentro de `FAIXA_AVISO` km do previsto. */
+  vencendo: number
+  /** Atrasadas primeiro, depois vencendo; em cada grupo, o menor `kmRestantes` antes. */
+  urgentes: ManutencaoResponse[]
 }
 
 // ---------- Auditoria (Admin) ----------

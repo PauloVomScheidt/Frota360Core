@@ -78,12 +78,14 @@ Rota agora resolve motorista e veículo por `GetByIdAsync(id, currentUser.Empres
 ### 2. Convite → conta
 Admin cria convite (token aleatório de 64 bytes, **só o hash SHA vai ao banco**, validade 7 dias, convites pendentes anteriores do mesmo e-mail são apagados) → e-mail com link `{Frontend}/convite?token=` → `POST /convite/aceitar` (anônimo) cria o `Usuario` já com role do convite e devolve sessão autenticada — token e refresh token via cookie (ver §3), sem exigir login.
 
+**`POST /convite/consultar`** (anônimo, 28/09/2026) lê o convite pelo token **sem consumi-lo** e devolve `ConviteConsultadoResponse` — `NomeEmpresa`, `Email`, `Role`, `ExpiraEm` — para a tela de aceite dizer de que empresa é o convite antes de a conta existir. A validade é a mesma do aceite (`BuscarConviteValidoAsync`: existe, não utilizado, não expirado); fora disso, **404** "Este convite é inválido, já foi utilizado ou expirou.". É POST, e não GET com query string, para o token — a credencial de quem ainda não tem senha — ficar fora da URL e, com ela, dos logs. Está na mesma política de rate limit `auth` (5/min) das outras rotas anônimas. A resposta não carrega id de empresa, quem convidou nem hash: só o que o dono do link precisa ver.
+
 **Convite de motorista não tem nada de especial:** é e-mail + `Role = Motorista`, como qualquer outra role. O aceite (`POST /convite/aceitar`) aceita ainda `CPF` e `DataNascimento` **opcionais**, que a própria pessoa informa. Em branco viram nulo, e não string vazia: o índice único filtrado `(EmpresaId, CPF)` depende disso para não colidir entre quem não informou. Depois do aceite, esses mesmos campos se corrigem em `PUT /usuario/perfil` (§4.2).
 
 ### 3. Auth
 Login BCrypt → JWT de 1h (claims `sub`, `email`, `name`, `jti`, `empresaId`, `role`) + refresh token de 7 dias rotacionado a cada uso (hash no banco). `esqueci-senha` responde neutro sempre (não revela se o e-mail existe), token de 30 min; redefinir senha **derruba o refresh token**. Todos esses endpoints têm rate limit de 5/min por IP.
 
-**Token e refresh token nunca chegam ao corpo da resposta nem a `localStorage`/`sessionStorage` do front** (mitiga exfiltração por XSS — era o achado do React Doctor `auth-token-in-web-storage`). `Login`, `Refresh` e `Convite.Aceitar` devolvem só `SessaoResponse` (nome/e-mail/role) no JSON; os dois segredos saem em cookie `HttpOnly; Secure; SameSite=None` (`Frota360.Api.Services.SessaoCookies`, nomes em `Domain.Common.CookiesDeSessao`), com validade espelhando a do próprio token (1h) e do refresh (7 dias). `SameSite=None` porque front e API vivem em origens diferentes (portas em dev, domínios em produção) — exige `Secure`, e as duas bindings de dev (7271/5062) e a de produção já falam HTTPS. `JwtBearerEvents.OnMessageReceived` lê o JWT do cookie quando não há header `Authorization` (que continua funcionando para Scalar/curl/clientes externos). `POST /auth/refresh` não recebe mais corpo: o refresh token vem só do cookie, que o navegador anexa sozinho — JavaScript nunca o vê. `Logout` limpa os dois cookies além de revogar o refresh token no banco.
+**Token e refresh token nunca chegam ao corpo da resposta nem a `localStorage`/`sessionStorage` do front** (mitiga exfiltração por XSS — era o achado do React Doctor `auth-token-in-web-storage`). `Login`, `Refresh` e `Convite.Aceitar` devolvem só `SessaoResponse` (nome/e-mail/role e, desde 28/09/2026, `NomeEmpresa` — o front o exibe no cabeçalho) no JSON; os dois segredos saem em cookie `HttpOnly; Secure; SameSite=None` (`Frota360.Api.Services.SessaoCookies`, nomes em `Domain.Common.CookiesDeSessao`), com validade espelhando a do próprio token (1h) e do refresh (7 dias). `SameSite=None` porque front e API vivem em origens diferentes (portas em dev, domínios em produção) — exige `Secure`, e as duas bindings de dev (7271/5062) e a de produção já falam HTTPS. `JwtBearerEvents.OnMessageReceived` lê o JWT do cookie quando não há header `Authorization` (que continua funcionando para Scalar/curl/clientes externos). `POST /auth/refresh` não recebe mais corpo: o refresh token vem só do cookie, que o navegador anexa sozinho — JavaScript nunca o vê. `Logout` limpa os dois cookies além de revogar o refresh token no banco.
 
 Internamente, `AuthService`/`ConviteService` continuam devolvendo o DTO `AuthResponse` (com `Token`/`RefreshToken`) como sempre — só o `AuthController`/`ConviteController` o convertem para `SessaoResponse` (`AuthResponseMappings.ToSessaoResponse()`) depois de mover os dois segredos para o cookie. Layers e testes de `AuthService`/`ConviteService` não mudaram.
 
@@ -97,11 +99,13 @@ Alterar role ou desativar. Ambos revogam a sessão (forçam novo login para o to
 | `Admin` | Tudo. Único que administra usuários, convites e auditoria. |
 | `Supervisor` | Cadastro completo — cria, edita **e exclui** veículos, rotas, manutenções, lançamentos e catálogos. Não administra usuários nem vê a auditoria. |
 | `Operador` | Visualiza a frota e opera rotas (abre, edita, encerra). |
-| `Motorista` | Opera **só as próprias rotas** (`GET /rota/minhas`, `POST /rota`, `POST /rota/{id}/encerrar`) e **lê** veículos e manutenções (`GET /veiculo`, `GET /manutencao`) — precisa saber o estado do caminhão que vai pegar. O `Custo` da manutenção é omitido para ele. Convite, promoção e rebaixamento são iguais aos das demais roles. |
+| `Motorista` | Opera **só as próprias rotas** (`GET /rota/minhas`, `POST /rota`, `POST /rota/{id}/encerrar`, e o km do mês em `GET /rota/resumo`, recortado por ele) e **lê** veículos e manutenções (`GET /veiculo`, `GET /manutencao`) — precisa saber o estado do caminhão que vai pegar. O `Custo` da manutenção é omitido para ele. Convite, promoção e rebaixamento são iguais aos das demais roles. |
 
 `Roles.Gestao` (`Admin,Supervisor,Operador`) é a constante usada nos `[Authorize]` que barram o motorista: controllers de motorista, manutenção e tipo de manutenção inteiros, e os endpoints de gestão de rota. `VeiculoController` fica de fora de propósito — leitura aberta, escrita restrita como antes.
 
 ### 4.2 Perfil — o próprio cadastro (qualquer autenticado)
+
+As duas devolvem `PerfilResponse` — o `UsuarioResponse` mais `NomeEmpresa` e `CnpjEmpresa`, só leitura, lidos por `IEmpresaRepository.GetByIdAsync` (a entidade `Usuario` não tem navegação para `Empresa`). A listagem de `/usuario` continua em `UsuarioResponse`: repetir a empresa em cada linha não diria nada.
 
 `GET /usuario/perfil` e `PUT /usuario/perfil` são as **duas únicas ações do `UsuarioController` que não são Admin** — por isso o `[Authorize(Roles = Admin)]` saiu da classe e foi para cada ação administrativa: atributos de classe e de ação combinam por **E**, e na classe ele barraria o motorista aqui também.
 
@@ -220,6 +224,13 @@ e no update. ⚠️ Os campos usam **`OverridePropertyName`**, e não `WithName`
 o erro a partir de `ValidationFailure.PropertyName`, e sem isso o usuário lê
 "DuracaoEstimadaSegundos: ..." na tela.
 
+A mesma classe limita a **polyline** a `TamanhoMaximoPolyline` = **250.000** caracteres
+(28/09/2026). O teto original, de 20.000, contradizia a coluna `text` sem `HasMaxLength`
+e recusava viagem legítima: os traçados reais medem 32–35 caracteres por km, então ele
+barrava a partir de ~570 km (Joinville → Brasília, 1.504 km, gera ~52 mil). O número atual
+cobre 5.000 km a 50 caracteres/km. Continua sendo trava contra payload abusivo, não contra
+viagem longa: ao revê-lo, meça o traçado de uma rota real antes de mexer.
+
 ⚠️ **`DataCalculoRota` não entra no request — quem a carimba é o handler**, e só quando
 `DistanciaMetros` de fato chega. É o que mantém o discriminador sob controle do servidor.
 ⚠️ **No update, traçado só é sobrescrito quando `DistanciaMetros` vem no corpo**: uma edição que
@@ -247,6 +258,8 @@ Editar (`PUT`) e excluir continuam fora do alcance dele: correção de rota é d
 **Motorista rebaixado:** as rotas dele continuam apontando para o usuário (a FK é `Restrict`), mas ele some de `GET /motorista`, que lista só quem tem a role. Para que a rota continue identificável, `RotaResponse` traz **`NomeMotorista` desnormalizado** — mesma técnica de `veiculoNome`/`veiculoPlaca` em `ManutencaoResponse`. O repositório carrega por `Include(r => r.Motorista)`; nos handlers de create/update a navegação não vem preenchida (ou aponta para o dono anterior), então eles atribuem o nome à mão.
 
 ### 7.1 Filtro de período na manutenção
+
+**`GET /manutencao/resumo`** (gestão) conta as pendentes **atrasadas** e **vencendo** e devolve as mais urgentes (`Urgentes`, no máximo `RegrasDeManutencao.LimiteUrgentes` = 10: atrasadas primeiro, depois vencendo, cada grupo pelo menor `KmRestantes`). Como `Atrasada` e `KmRestantes` só existem depois do `ToResponse()` — que compara com o odômetro atual —, não há coluna para filtrar no banco: `ListarPendentesAsync` traz todas as pendentes da empresa (conjunto limitado pela frota, sem paginação) e a contagem é feita em memória. "Vencendo" é `!Atrasada && KmRestantes <= RegrasDeManutencao.FaixaAvisoKm` (500) — o mesmo corte do `FAIXA_AVISO` do front, que continua decidindo a tag na listagem. ⚠️ Mexeu numa, mexa na outra.
 
 `GET /manutencao?de=&ate=` recorta pela **data relevante do status**, não por um campo fixo: uma pendência é situada pela `DataPrevista`, uma manutenção feita pela `DataRealizacao`. Escolher uma só das duas deixaria metade da tela fora do filtro — só pendências ou só concluídas.
 
@@ -381,7 +394,7 @@ sumiria e deixaria de fechar com o total da frota.
 
 **A ordenação desempata por origem antes do id.** Ids de tabelas diferentes colidem; sem isso a ordem é instável e a paginação repete linhas entre páginas.
 
-**Esta é a primeira agregação servida pela API.** Até aqui não havia um `Sum`/`GroupBy` em `apps/api/src` — todo KPI do dashboard é `reduce` sobre listas inteiras baixadas do servidor. As telas de relatório futuras saem daqui.
+**Esta foi a primeira agregação servida pela API.** Até ela não havia um `Sum`/`GroupBy` em `apps/api/src` — todo KPI do dashboard era `reduce` sobre listas inteiras baixadas do servidor. Desde 28/09/2026 o dashboard consome este resumo três vezes (mês até hoje, o mesmo período do mês passado e os últimos 6 meses) e não soma nada no cliente.
 
 **`Roles.Gestao` no controller** barra o Motorista na porta, e é por isso que os handlers **não** replicam a regra de `ManutencaoVisibilidade.SemCustoParaMotorista`. Se um dia a tela abrir para a role Motorista, o recorte tem que voltar para dentro dos handlers — um total de frota vazaria sem ele.
 
@@ -534,7 +547,7 @@ Com uma página só na mão, o front não consegue mais somar o que exibe. Três
 |---|---|---|
 | `GET /abastecimento/resumo` | `{quantidade, valorTotal}` | o rodapé "N lançamentos · Total: R$ X" — ⚠️ **obedece ao mesmo recorte de motorista** da listagem |
 | `GET /despesa/resumo` | `{quantidade, valorTotal}` | idem, em `/despesas` |
-| `GET /rota/resumo?de=&ate=` | `{quantidade, kmTotal}` | o KPI "Km da frota" do dashboard (rotas **encerradas** no período, recorte por `DataFim`) |
+| `GET /rota/resumo?de=&ate=` | `{quantidade, kmTotal}` | o KPI "Km rodado" do dashboard e o "Km rodado no mês" de `/minhas-rotas` (rotas **encerradas** no período, recorte por `DataFim`). ⚠️ Desde 28/09/2026 é **aberto a todos os papéis** e, para o Motorista, o handler passa o `UsuarioId` do token ao repositório — ele soma só as próprias rotas |
 
 Há ainda um quarto, que não é agregado mas nasceu do mesmo problema: **`GET /abastecimento/anterior?veiculoId=&odometro=&ignorarId=`** devolve o abastecimento de maior odômetro **abaixo** do informado — a referência da estimativa de km/l, que antes o front achava baixando o histórico inteiro do veículo. Ele enxerga o histórico **do veículo**, sem recorte por motorista (o consumo é do caminhão, não de quem dirigiu), e por isso a resposta carrega **só data e odômetro**: devolver valor ou nome transformaria a correção num vazamento de gasto alheio. É o que consertou o km/l inflado que o motorista via quando o abastecimento anterior daquele caminhão tinha sido lançado por outra pessoa.
 
@@ -548,6 +561,7 @@ Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou 
 | POST | `/auth/logout` | autenticado |
 | POST | `/backoffice/empresa` | `X-Backoffice-Key` |
 | GET/POST/DELETE | `/convite`, `/convite/{id}` | Admin |
+| POST | `/convite/consultar` — empresa, e-mail e papel do convite, sem consumi-lo | anônimo |
 | POST | `/convite/aceitar` | anônimo |
 | GET | `/usuario` · PUT `/usuario/{id}/role` · `/{id}/ativo` | Admin |
 | GET/PUT | `/usuario/perfil` — o próprio cadastro (nome, CPF, nascimento); alvo pelo `sub` do token | **qualquer autenticado** (inclui Motorista) |
@@ -555,7 +569,9 @@ Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou 
 | GET | `/abastecimento?pagina=&tamanhoPagina=&…` · `/abastecimento/resumo` · `/abastecimento/anterior` — paginado | autenticado (recorte por motorista) |
 | GET | `/despesa?pagina=&tamanhoPagina=&…` · `/despesa/resumo` — paginado | Admin, Supervisor, Operador |
 | GET | `/manutencao?pagina=&tamanhoPagina=&…` — paginado | autenticado |
-| GET | `/rota?pagina=&tamanhoPagina=&ativo=` · `/rota/minhas` · `/rota/resumo?de=&ate=` — paginado | gestão / Motorista em `minhas` |
+| GET | `/manutencao/resumo` — `{atrasadas, vencendo, urgentes}` para o bloco "Precisa de atenção" do dashboard | Admin, Supervisor, Operador |
+| GET | `/rota?pagina=&tamanhoPagina=&ativo=` · `/rota/minhas` — paginado | gestão / Motorista em `minhas` |
+| GET | `/rota/resumo?de=&ate=` | qualquer autenticado — o Motorista recebe só o km das rotas dele |
 | GET | `/custo?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&origem=&de=&ate=` — paginado; read model das duas origens, sem tabela própria | Admin, Supervisor, Operador |
 | GET | `/custo/resumo?veiculoId=&motoristaId=&origem=&de=&ate=` — **a única agregação da API**: totais por origem, por veículo (com R$/km **e km/l**) e por mês | Admin, Supervisor, Operador |
 | GET | `/veiculo` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**) — a resposta traz `emRota` derivado |

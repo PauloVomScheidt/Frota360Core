@@ -49,16 +49,13 @@ namespace Frota360.Api.Controllers
 
         /// <summary>
         /// Quantidade e km somado das rotas <b>encerradas</b> no período (recorte por data de
-        /// fim). Alimenta o KPI "Km da frota" do dashboard — com a listagem paginada, somar
-        /// `kmPercorrido` no cliente deixou de ser possível. (Admin, Supervisor, Operador)
+        /// fim). Alimenta o KPI "Km rodado" do dashboard e o de "Minhas rotas". Aberto a
+        /// todos os papéis: para o motorista o handler recorta pelas rotas dele.
         /// </summary>
         /// <response code="200">Resumo retornado com sucesso</response>
-        /// <response code="403">Sem permissão</response>
         /// <response code="422">Data final anterior à inicial</response>
         [HttpGet("resumo")]
-        [Authorize(Roles = Roles.Gestao)]
         [ProducesResponseType<ApiResponse<ResumoRotasResponse>>(StatusCodes.Status200OK)]
-        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status422UnprocessableEntity)]
         public async Task<IActionResult> GetResumo([FromQuery] DateTime de, [FromQuery] DateTime ate)
         {

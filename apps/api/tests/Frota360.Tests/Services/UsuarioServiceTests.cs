@@ -13,6 +13,7 @@ namespace Frota360.Tests.Services
     public class UsuarioServiceTests
     {
         private readonly IUsuarioRepository _repository = Substitute.For<IUsuarioRepository>();
+        private readonly IEmpresaRepository _empresaRepository = Substitute.For<IEmpresaRepository>();
         private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
         private readonly IAuditoriaService _auditoria = Substitute.For<IAuditoriaService>();
 
@@ -22,7 +23,7 @@ namespace Frota360.Tests.Services
         }
 
         private UsuarioService CriarServico() =>
-            new(_repository, _currentUser, _auditoria, NullLogger<UsuarioService>.Instance);
+            new(_repository, _empresaRepository, _currentUser, _auditoria, NullLogger<UsuarioService>.Instance);
 
         private static Usuario NovoAdmin(int id = 1) => new()
         {
@@ -35,6 +36,20 @@ namespace Frota360.Tests.Services
             RefreshTokenHash = "hash",
             RefreshTokenExpiraEm = DateTime.Now.AddDays(1)
         };
+
+        [Fact]
+        public async Task ObterPerfil_DeveTrazerNomeECnpjDaEmpresaDoUsuario()
+        {
+            _currentUser.UsuarioId.Returns(1);
+            _repository.GetByIdAsync(1).Returns(NovoAdmin());
+            _empresaRepository.GetByIdAsync(1).Returns(new Empresa { Id = 1, Nome = "Transportadora Sul", CNPJ = "12345678000190" });
+
+            var perfil = await CriarServico().ObterPerfilAsync();
+
+            Assert.Equal("Transportadora Sul", perfil!.NomeEmpresa);
+            Assert.Equal("12345678000190", perfil.CnpjEmpresa);
+            await _empresaRepository.Received(1).GetByIdAsync(1);
+        }
 
         [Fact]
         public async Task AlterarRole_UltimoAdminAtivo_DeveLancar()

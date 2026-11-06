@@ -1,8 +1,15 @@
-import { useEffect, useRef, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { mensagensDeErro } from '../api/errors'
 import { ErrorList } from './AppLayout'
 import { PencilIcon, TrashIcon } from './icons'
-import { PERIODOS, type Periodo } from '../lib/periodo'
+import {
+  erroDoIntervalo,
+  filtroDePeriodo,
+  intervaloDoFiltro,
+  PERIODOS,
+  type FiltroDePeriodo,
+  type Periodo,
+} from '../lib/periodo'
 import { TAMANHOS_PAGINA, type TamanhoPagina } from '../lib/paginacao'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
@@ -450,9 +457,12 @@ export function Paginacao({
 }
 
 /**
- * Filtro de período com opções prontas, no lugar de dois campos de data soltos.
- * Compartilhado por `/manutencoes` e `/abastecimentos` — dois filtros de data diferentes
- * no mesmo sistema seria a inconsistência que incomoda depois.
+ * O filtro de data do sistema inteiro: opções prontas primeiro e, em "Personalizado…", os
+ * campos De e Até. Um só componente para as telas de lançamento, `/custos` e `/auditoria` —
+ * dois filtros de data diferentes no mesmo sistema seria a inconsistência que incomoda depois.
+ *
+ * As datas digitadas ficam num rascunho local e só sobem quando o intervalo é válido: um
+ * "até" antes do "de" não chega a virar consulta (a API responderia 422).
  */
 export function FiltroPeriodo({
   valor,
@@ -460,27 +470,91 @@ export function FiltroPeriodo({
   rotulo = 'Período',
   id = 'filtroPeriodo',
 }: {
-  valor: Periodo
-  onMudar: (periodo: Periodo) => void
+  valor: FiltroDePeriodo
+  onMudar: (filtro: FiltroDePeriodo) => void
   rotulo?: string
   id?: string
 }) {
+  const [rascunho, setRascunho] = useState({ de: valor.de, ate: valor.ate })
+  const personalizado = valor.periodo === 'personalizado'
+  const erro = personalizado ? erroDoIntervalo(rascunho.de, rascunho.ate) : null
+
+  function escolher(periodo: Periodo) {
+    if (periodo !== 'personalizado') {
+      onMudar(filtroDePeriodo(periodo))
+      return
+    }
+    // Parte do intervalo que estava na tela: quem sai de "Este mês" ajusta a partir dele.
+    const atual = intervaloDoFiltro(valor)
+    const inicial = { de: atual.de ?? '', ate: atual.ate ?? '' }
+    setRascunho(inicial)
+    onMudar({ periodo, ...inicial })
+  }
+
+  function mudarData(campo: 'de' | 'ate', data: string) {
+    const novo = { ...rascunho, [campo]: data }
+    setRascunho(novo)
+    if (!erroDoIntervalo(novo.de, novo.ate)) onMudar({ periodo: 'personalizado', ...novo })
+  }
+
   return (
-    <div className="field w-[190px]">
-      <label htmlFor={id}>{rotulo}</label>
-      <select
-        id={id}
-        className="input"
-        style={{ borderRadius: 0 }}
-        value={valor}
-        onChange={(e) => onMudar(e.target.value as Periodo)}
-      >
-        {PERIODOS.map((p) => (
-          <option key={p.valor} value={p.valor}>
-            {p.rotulo}
-          </option>
-        ))}
-      </select>
+    <div className="flex flex-wrap items-end gap-3">
+      <div className="field w-[190px]">
+        <label htmlFor={id}>{rotulo}</label>
+        <select
+          id={id}
+          className="input"
+          style={{ borderRadius: 0 }}
+          value={valor.periodo}
+          onChange={(e) => escolher(e.target.value as Periodo)}
+        >
+          {PERIODOS.map((p) => (
+            <option key={p.valor} value={p.valor}>
+              {p.rotulo}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {personalizado && (
+        <div className="relative flex items-end gap-3">
+          <div className="field w-[160px]">
+            <label htmlFor={`${id}De`}>De</label>
+            <input
+              id={`${id}De`}
+              className="input"
+              type="date"
+              max={rascunho.ate || undefined}
+              value={rascunho.de}
+              aria-invalid={erro !== null}
+              onChange={(e) => mudarData('de', e.target.value)}
+            />
+          </div>
+          <div className="field w-[160px]">
+            <label htmlFor={`${id}Ate`}>Até</label>
+            <input
+              id={`${id}Ate`}
+              className="input"
+              type="date"
+              min={rascunho.de || undefined}
+              value={rascunho.ate}
+              aria-invalid={erro !== null}
+              aria-describedby={erro ? `${id}Erro` : undefined}
+              onChange={(e) => mudarData('ate', e.target.value)}
+            />
+          </div>
+          {erro && (
+            <span
+              id={`${id}Erro`}
+              role="alert"
+              className="absolute top-full left-0 mt-1 text-xs whitespace-nowrap"
+              style={{ color: 'var(--color-danger)' }}
+            >
+              {erro}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

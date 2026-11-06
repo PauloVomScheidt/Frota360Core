@@ -15,6 +15,12 @@ namespace Frota360.Application.Interfaces
         /// <summary>Aceita um convite: cria o usuário na empresa/role do convite e já autentica. Null se inválido/expirado.</summary>
         Task<AuthResponse?> AceitarAsync(AceitarConviteRequest request);
 
+        /// <summary>
+        /// Lê um convite pelo token, sem consumi-lo, para a tela de aceite dizer de que empresa
+        /// ele é. Null se inválido, utilizado ou expirado — a mesma regra do aceite.
+        /// </summary>
+        Task<ConviteConsultadoResponse?> ConsultarAsync(ConsultarConviteRequest request);
+
         Task<IEnumerable<ConviteResponse>> ListarAsync();
 
         /// <summary>Cancela um convite pendente. False se não encontrado na empresa.</summary>

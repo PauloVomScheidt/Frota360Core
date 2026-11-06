@@ -13,6 +13,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   DinheiroIcon,
+  EmpresaIcon,
   FuelIcon,
   ReciboIcon,
   GridIcon,
@@ -265,6 +266,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
           className="flex items-center justify-end gap-4 px-10 py-3"
           style={{ borderBottom: '2px solid var(--color-divider)' }}
         >
+          {user?.nomeEmpresa && (
+            <div className="mr-auto flex min-w-0 items-center gap-2" title={user.nomeEmpresa}>
+              <span className="flex-none" style={{ color: mutedText }}>
+                <EmpresaIcon size={16} />
+              </span>
+              <span className="truncate text-sm font-semibold" style={{ fontFamily: 'var(--font-heading)' }}>
+                {user.nomeEmpresa}
+              </span>
+            </div>
+          )}
           <button type="button" className="btn btn-icon" aria-label="Notificações">
             <BellIcon />
           </button>
@@ -286,7 +297,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             >
               {iniciais(user?.nome ?? '')}
             </div>
-            <div className="leading-tight">
+            <div className="hidden leading-tight sm:block">
               <div className="text-[13px]">{user?.nome ?? 'Usuário'}</div>
               <div className="text-[11px] uppercase" style={{ letterSpacing: '0.06em', color: mutedText }}>
                 {user?.role ?? '—'}

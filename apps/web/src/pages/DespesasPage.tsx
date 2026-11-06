@@ -27,7 +27,7 @@ import {
 } from '../components/Table'
 import { usePaginacaoServidor } from '../lib/paginacao'
 import { formatDate, formatMoeda, hojeInputDate, paraInputDate } from '../lib/format'
-import { intervaloDoPeriodo, type Periodo } from '../lib/periodo'
+import { filtroDePeriodo, intervaloDoFiltro, type FiltroDePeriodo } from '../lib/periodo'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
@@ -210,12 +210,12 @@ function FiltrosDespesa({
   filtroVeiculo: string
   filtroTipo: string
   filtroMotorista: string
-  periodo: Periodo
+  periodo: FiltroDePeriodo
   temFiltro: boolean
   onFiltroVeiculoChange: (valor: string) => void
   onFiltroTipoChange: (valor: string) => void
   onFiltroMotoristaChange: (valor: string) => void
-  onPeriodoChange: (valor: Periodo) => void
+  onPeriodoChange: (valor: FiltroDePeriodo) => void
   onLimpar: () => void
 }) {
   return (
@@ -306,9 +306,9 @@ export function DespesasPage() {
   const [filtroVeiculo, setFiltroVeiculo] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroMotorista, setFiltroMotorista] = useState('')
-  const [periodo, setPeriodo] = useState<Periodo>('30dias')
+  const [periodo, setPeriodo] = useState<FiltroDePeriodo>(filtroDePeriodo('30dias'))
 
-  const intervalo = intervaloDoPeriodo(periodo)
+  const intervalo = intervaloDoFiltro(periodo)
   const paginacao = usePaginacaoServidor()
 
   /** O recorte da tela, sem paginação — é ele que o resumo do rodapé também usa. */
@@ -429,14 +429,14 @@ export function DespesasPage() {
     setFiltroVeiculo('')
     setFiltroTipo('')
     setFiltroMotorista('')
-    setPeriodo('todos')
+    setPeriodo(filtroDePeriodo('todos'))
     paginacao.resetar()
   }
 
   const dados = despesasQuery.data
   const despesas = dados?.itens ?? []
   const tipos = tiposQuery.data ?? []
-  const temFiltro = filtroVeiculo !== '' || filtroTipo !== '' || filtroMotorista !== '' || periodo !== 'todos'
+  const temFiltro = filtroVeiculo !== '' || filtroTipo !== '' || filtroMotorista !== '' || periodo.periodo !== 'todos'
   const mostrarAcoes = podeLancar || podeExcluir
   const colunas = mostrarAcoes ? 7 : 6
 

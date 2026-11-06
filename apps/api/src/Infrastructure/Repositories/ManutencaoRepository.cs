@@ -68,6 +68,13 @@ namespace Frota360.Infrastructure.Repositories
             return (itens, total);
         }
 
+        public async Task<IEnumerable<Manutencao>> ListarPendentesAsync(int empresaId)
+            => await context.Manutencoes.AsNoTracking()
+                .Include(m => m.Veiculo)
+                .Include(m => m.Tipo)
+                .Where(m => m.EmpresaId == empresaId && m.Status == StatusManutencao.Pendente)
+                .ToListAsync();
+
         // Rastreado (sem AsNoTracking): serve tanto para leitura quanto para update/conclusão.
         public async Task<Manutencao?> GetByIdAsync(int id, int empresaId)
             => await context.Manutencoes

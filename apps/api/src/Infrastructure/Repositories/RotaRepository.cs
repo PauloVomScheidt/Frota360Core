@@ -17,15 +17,20 @@ namespace Frota360.Infrastructure.Repositories
                 ComIncludes().Where(r => r.EmpresaId == empresaId && r.CodigoMotorista == motoristaId),
                 filtro);
 
-        public async Task<ResumoRotas> ResumirEncerradasAsync(int empresaId, DateTime de, DateTime ate)
+        public async Task<ResumoRotas> ResumirEncerradasAsync(int empresaId, DateTime de, DateTime ate, int? motoristaId = null)
         {
             // "Até" inclusivo, como nos demais filtros de período do sistema.
             var fim = ate.Date.AddDays(1);
             var inicio = de.Date;
 
-            var resumo = await context.Rotas.AsNoTracking()
+            var consulta = context.Rotas.AsNoTracking()
                 .Where(r => r.EmpresaId == empresaId && r.KmPercorrido != null
-                            && r.DataFim >= inicio && r.DataFim < fim)
+                            && r.DataFim >= inicio && r.DataFim < fim);
+
+            if (motoristaId is not null)
+                consulta = consulta.Where(r => r.CodigoMotorista == motoristaId);
+
+            var resumo = await consulta
                 .GroupBy(_ => 1)
                 .Select(g => new { Quantidade = g.Count(), KmTotal = g.Sum(r => r.KmPercorrido!.Value) })
                 .FirstOrDefaultAsync();

@@ -39,7 +39,7 @@ import {
   hojeInputDate,
   paraInputDate,
 } from '../lib/format'
-import { intervaloDoPeriodo, type Periodo } from '../lib/periodo'
+import { filtroDePeriodo, intervaloDoFiltro, type FiltroDePeriodo } from '../lib/periodo'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
@@ -403,11 +403,11 @@ function FiltrosAbastecimento({
   motorista: boolean
   filtroVeiculo: string
   filtroMotorista: string
-  periodo: Periodo
+  periodo: FiltroDePeriodo
   temFiltro: boolean
   onFiltroVeiculoChange: (v: string) => void
   onFiltroMotoristaChange: (v: string) => void
-  onPeriodoChange: (p: Periodo) => void
+  onPeriodoChange: (p: FiltroDePeriodo) => void
   onLimpar: () => void
 }) {
   return (
@@ -603,7 +603,7 @@ export function AbastecimentosPage() {
 
   const [filtroVeiculo, setFiltroVeiculo] = useState('')
   const [filtroMotorista, setFiltroMotorista] = useState('')
-  const [periodo, setPeriodo] = useState<Periodo>('todos')
+  const [periodo, setPeriodo] = useState<FiltroDePeriodo>(filtroDePeriodo('todos'))
 
   const [aberto, setAberto] = useState(false)
   const [editando, setEditando] = useState<AbastecimentoResponse | null>(null)
@@ -614,7 +614,7 @@ export function AbastecimentosPage() {
   const [errosExclusao, setErrosExclusao] = useState<string[]>([])
 
   // O período vira `de`/`ate` aqui: a API não conhece "últimos 7 dias".
-  const { de, ate } = intervaloDoPeriodo(periodo)
+  const { de, ate } = intervaloDoFiltro(periodo)
 
   const paginacao = usePaginacaoServidor()
 
@@ -632,7 +632,7 @@ export function AbastecimentosPage() {
     tamanhoPagina: paginacao.tamanhoPagina,
   }
 
-  const temFiltro = filtroVeiculo !== '' || filtroMotorista !== '' || periodo !== 'todos'
+  const temFiltro = filtroVeiculo !== '' || filtroMotorista !== '' || periodo.periodo !== 'todos'
 
   const abastecimentosQuery = useQuery({
     queryKey: ['abastecimentos', filtro],
@@ -939,7 +939,7 @@ export function AbastecimentosPage() {
         onLimpar={() => {
           setFiltroVeiculo('')
           setFiltroMotorista('')
-          setPeriodo('todos')
+          setPeriodo(filtroDePeriodo('todos'))
           paginacao.resetar()
         }}
       />

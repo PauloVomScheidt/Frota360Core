@@ -3,6 +3,7 @@ import { tokenStorage } from './tokenStorage'
 import type {
   AceitarConviteRequest,
   ApiResponse,
+  ConviteConsultadoResponse,
   ConviteResponse,
   CriarConviteRequest,
   SessaoResponse,
@@ -23,6 +24,15 @@ export const convitesApi = {
   async cancelar(id: number): Promise<void> {
     await http.delete(`/convite/${id}`)
   },
+}
+
+/**
+ * Anônimo: lê o convite sem consumi-lo. Inválido, utilizado ou expirado → 404. POST para o
+ * token ir no corpo, e não na URL.
+ */
+export async function consultarConvite(token: string): Promise<ConviteConsultadoResponse> {
+  const { data } = await http.post<ApiResponse<ConviteConsultadoResponse>>('/convite/consultar', { token })
+  return unwrap(data)
 }
 
 /** Anônimo: cria a conta na empresa/role do convite e já devolve a sessão autenticada. */

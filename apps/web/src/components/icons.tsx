@@ -71,6 +71,15 @@ export const SearchIcon = (p: IconProps) => (
   </Icon>
 )
 
+export const EmpresaIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 21h18" />
+    <path d="M5 21V4h9v17" />
+    <path d="M14 9h5v12" />
+    <path d="M8 8h3M8 12h3M8 16h3" />
+  </Icon>
+)
+
 export const TruckIcon = (p: IconProps) => (
   <Icon {...p}>
     <rect x={1} y={9} width={15} height={8} rx={0} />

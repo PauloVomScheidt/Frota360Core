@@ -1,4 +1,5 @@
 using Frota360.Application.Abstractions.Messaging;
+using Frota360.Application.Common;
 using Frota360.Application.DTOs.Rota.Response;
 using Frota360.Application.Interfaces;
 using Frota360.Domain.Interfaces.Repositories;
@@ -19,7 +20,10 @@ namespace Frota360.Application.UseCases.Rotas.Queries.GetResumoRotas
             if (query.Ate < query.De)
                 throw new InvalidOperationException("A data final do período não pode ser anterior à inicial.");
 
-            var resumo = await repository.ResumirEncerradasAsync(currentUser.EmpresaId, query.De, query.Ate);
+            // O motorista vê só o próprio km: o recorte sai do token, nunca da query string.
+            var motoristaId = currentUser.EhMotorista() ? currentUser.UsuarioId : (int?)null;
+
+            var resumo = await repository.ResumirEncerradasAsync(currentUser.EmpresaId, query.De, query.Ate, motoristaId);
 
             logger.LogInformation("Resumo: {Quantidade} rotas encerradas somando {KmTotal} km",
                 resumo.Quantidade, resumo.KmTotal);

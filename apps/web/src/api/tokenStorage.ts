@@ -9,6 +9,8 @@ export interface StoredUser {
   nome: string
   email: string
   role: Role
+  /** Ausente em sessão gravada antes de o campo existir — aparece no próximo refresh. */
+  nomeEmpresa?: string
 }
 
 // Token e refresh token não passam por aqui: o servidor os entrega em cookie HttpOnly, fora
@@ -18,7 +20,12 @@ export const tokenStorage = {
   setSession(sessao: SessaoResponse) {
     localStorage.setItem(
       USER_KEY,
-      JSON.stringify({ nome: sessao.nome, email: sessao.email, role: sessao.role } satisfies StoredUser),
+      JSON.stringify({
+        nome: sessao.nome,
+        email: sessao.email,
+        role: sessao.role,
+        nomeEmpresa: sessao.nomeEmpresa,
+      } satisfies StoredUser),
     )
   },
 

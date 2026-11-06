@@ -13,6 +13,7 @@ namespace Frota360.Application.Services
 {
     public class ConviteService(IConviteRepository conviteRepository,
                                 IUsuarioRepository usuarioRepository,
+                                IEmpresaRepository empresaRepository,
                                 ITokenService tokenService,
                                 IEmailService emailService,
                                 ICurrentUserService currentUser,
@@ -76,11 +77,30 @@ namespace Frota360.Application.Services
         }
 
 
+        public async Task<ConviteConsultadoResponse?> ConsultarAsync(ConsultarConviteRequest request)
+        {
+            var convite = await BuscarConviteValidoAsync(request.Token);
+
+            if (convite is null)
+            {
+                logger.LogWarning("Consulta de convite inválido, utilizado ou expirado");
+                return null;
+            }
+
+            return new ConviteConsultadoResponse
+            {
+                NomeEmpresa = (await empresaRepository.GetByIdAsync(convite.EmpresaId))?.Nome ?? string.Empty,
+                Email = convite.Email,
+                Role = convite.Role,
+                ExpiraEm = convite.ExpiraEm
+            };
+        }
+
         public async Task<AuthResponse?> AceitarAsync(AceitarConviteRequest request)
         {
-            var convite = await conviteRepository.GetByTokenHashAsync(TokenHelper.Hash(request.Token));
+            var convite = await BuscarConviteValidoAsync(request.Token);
 
-            if (convite is null || convite.UtilizadoEm is not null || convite.ExpiraEm < DateTime.Now)
+            if (convite is null)
             {
                 logger.LogWarning("Tentativa de aceite de convite inválido, utilizado ou expirado");
                 return null;
@@ -125,8 +145,15 @@ namespace Frota360.Application.Services
                 RefreshToken = refreshToken,
                 Nome = usuario.Nome,
                 Email = usuario.Email,
-                Role = usuario.Role
+                Role = usuario.Role,
+                NomeEmpresa = (await empresaRepository.GetByIdAsync(usuario.EmpresaId))?.Nome ?? string.Empty
             };
+        }
+
+        private async Task<Convite?> BuscarConviteValidoAsync(string token)
+        {
+            var convite = await conviteRepository.GetByTokenHashAsync(TokenHelper.Hash(token));
+            return convite is null || convite.UtilizadoEm is not null || convite.ExpiraEm < DateTime.Now ? null : convite;
         }
 
         public async Task<IEnumerable<ConviteResponse>> ListarAsync()
