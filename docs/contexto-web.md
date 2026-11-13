@@ -801,7 +801,7 @@ npm run test:cov   # vitest run --coverage → coverage/ (text no terminal, html
 
 O CI roda `npm run test:cov` no job `web`, depois do lint e também com `if: always()` — o PR mostra build, lint e testes no mesmo run.
 
-**Gerar o relatório**: `npm run test:cov` em `apps/web/`. Saem três formatos — a tabela por arquivo no terminal, **`coverage/index.html`** (abrir no navegador: navega por pasta e marca linha a linha o que não foi executado) e `coverage/lcov.info` (para ferramenta externa, como o SonarCloud). `coverage/` é gitignored. Para olhar um arquivo só: `npx vitest run src/pages/X.test.tsx --coverage --coverage.include=src/pages/X.tsx`.
+**Gerar o relatório**: `npm run test:cov` em `apps/web/`. Saem três formatos — a tabela por arquivo no terminal, **`coverage/index.html`** (abrir no navegador: navega por pasta e marca linha a linha o que não foi executado) e `coverage/lcov.info` (lido pelo SonarCloud — o job `web` do CI o publica como artefato e o job `sonar` o envia). `coverage/` é gitignored. Para olhar um arquivo só: `npx vitest run src/pages/X.test.tsx --coverage --coverage.include=src/pages/X.tsx`.
 
 ### 11.1 Configuração — bloco `test` do `vite.config.ts`
 
@@ -815,6 +815,7 @@ Não há `vitest.config.ts` separado: o Vitest reaproveita a config do Vite (plu
 | `environmentOptions.jsdom.url` | `http://localhost:3000` | ⚠️ a página e a API mockada ficam na **mesma origem** de propósito. O jsdom aplica CORS ao XHR, e com o `withCredentials` do `http.ts` uma resposta do MSW sem `Access-Control-Allow-Origin`/`-Credentials` é barrada e chega ao axios como "Network Error" — todo teste HTTP falharia. Apontar a URL para outro host traz o problema de volta |
 | `env.TZ` | `America/Sao_Paulo` | o fuso da API (§10). Sem ele, testes de data dariam um resultado na máquina de dev e outro no CI, que roda em UTC — e a borda que importa ("23h30 ainda é hoje") só existe num fuso negativo |
 | `coverage.include` | `src/**` | sem isso só entram no cálculo os arquivos que algum teste importa, e o percentual sai inflado |
+| `coverage.reporter` | `text`, `html` e `lcov` com `projectRoot: '../..'` | o SonarCloud analisa a partir da raiz do monorepo, então o `lcov.info` precisa de caminhos `apps/web/src/...`. Sem o `projectRoot` eles saem como `src/...`, o Sonar não os acha e a cobertura do front some do painel sem erro nenhum |
 | `coverage.exclude` | `main.tsx`, `schema.d.ts`, `vite-env.d.ts`, `src/test/**` | o que não é código da aplicação a cobrir. `src/test/` sai porque os helpers seriam ~100% cobertos por qualquer teste e inflariam o número |
 
 **`coverage.thresholds: { lines: 50 }`** — abaixo de 50% de linhas o `npm run test:cov` sai com código 1 (`ERROR: Coverage for lines (x%) does not meet global threshold (50%)`), e o job `web` reprova. Conferido nos dois sentidos: a suíte inteira passa; rodar só `src/lib` (7,59%) reprova. O piso é o do plano, não o número atual — deixa folga para refatorar sem o CI travar por um ponto.

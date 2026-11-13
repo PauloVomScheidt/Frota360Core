@@ -13,7 +13,7 @@ obrigatórios da linha cumpridos e prova de autoria aprovada. Segunda tentativa 
 |---|---|---|---|
 | 1 | [Testes do frontend](#1-testes-do-frontend) | ✅ resolvido | **93,19%** de linhas (769 testes) — exigência 25%, meta 50%, piso de 50% no CI |
 | 2 | [Cobertura do backend](#2-cobertura-do-backend) | 🔴 reprova na prova de autoria | 77,9% (só unitários, só Application + Domain) — meta é 75% |
-| 3 | [Análise estática (SonarCloud)](#3-análise-estática-sonarcloud) | 🟠 obrigatório do núcleo comum | inexistente |
+| 3 | [Análise estática (SonarCloud)](#3-análise-estática-sonarcloud) | 🟠 obrigatório do núcleo comum | job `sonar` no CI, cobertura importada (83,5% no PR #22); falta o gate verde no PR e marcar os falsos positivos |
 | 4 | [Wiki](#4-wiki) | 🟠 obrigatório do núcleo comum | Wiki do GitHub vazia |
 | 5 | [Monitoramento](#5-monitoramento-e-observabilidade) | 🟠 obrigatório do núcleo comum | Serilog + `/health`, sem ferramenta de monitoramento |
 | 6 | [Deploy em produção](#6-deploy-em-produção) | 🔴 reprovação direta | domínios não resolvem; nada no ar |
@@ -106,7 +106,8 @@ de cada tipo (função pura, tela com MSW).
 
 ### O problema
 A meta é **75%** e o número medido é **77,9%** de linhas (349 testes unitários; Application
-77,1%, Domain 85,7%). Está acima, mas com folga pequena, e o número tem dois pontos cegos:
+77,1%, Domain 85,7%). Desde 13/11/2026 há uma terceira suíte, `Frota360.Api.Tests`, para a camada
+HTTP, e o SonarCloud soma as três. Está acima, mas com folga pequena, e o número tem dois pontos cegos:
 
 - O projeto `Frota360.Tests` só referencia **Application** e **Domain** — Infrastructure e Api
   não aparecem no relatório dos unitários.
@@ -147,17 +148,46 @@ lint, não análise de segurança; o backend não tem nada.
 Gratuito para repositório público, integra com o GitHub e mostra o quality gate como check no PR.
 Além de bugs, code smells e vulnerabilidades, ele exibe a cobertura — o mesmo número da prova.
 
-### Passos
-1. Entrar no sonarcloud.io com o GitHub e importar o repositório. Criar **dois projetos**
-   (`frota360-api` e `frota360-web`) — é o jeito mais simples de lidar com o monorepo.
-2. **Desligar a "Automatic Analysis"**: ela não importa cobertura de C#. A análise roda no CI.
-3. Gerar o `SONAR_TOKEN` e cadastrar como secret do repositório.
-4. **API**: no job `api`, envolver build e testes com `dotnet-sonarscanner begin` / `end`, com a
-   cobertura do coverlet em formato **OpenCover**.
-5. **Web**: `SonarSource/sonarqube-scan-action` depois dos testes, apontando para o
-   `coverage/lcov.info` do Vitest.
-6. Tratar o que o primeiro relatório apontar como **bug** ou **vulnerabilidade**; code smells
-   ficam a critério.
+### Situação em 13/11/2026 — 🟡 em andamento
+O repositório foi importado como **projeto único** `PauloVomScheidt_Frota360Core` (organização
+`paulovomscheidt`), em vez dos dois projetos do plano original: o SonarScanner for .NET analisa
+também o TypeScript (`sonar.scanner.scanAll`), então um projeto só cobre o monorepo, com um
+quality gate e um badge.
+
+A primeira análise (automática, sem cobertura) reprovou o gate só por **duplicação em código
+novo** (4,3% contra o limite de 3%) — quase toda em migrations geradas pelo EF, que agora ficam
+fora da análise. Ela apontou 12 achados de segurança e confiabilidade:
+
+| Achado | Tratamento |
+|---|---|
+| `npm ci` sem `--ignore-scripts` no CI | ✅ corrigido |
+| `BackofficeController` lendo o header cru | ✅ corrigido — `[FromHeader(Name = "X-Backoffice-Key")]` |
+| `ExceptionMiddleware` sem `RequestAborted` | ✅ corrigido |
+| `app.Run()` síncrono no `Program.cs` | ✅ corrigido — `await app.RunAsync()` |
+| Segredo JWT "em configuração" (`TokenService`) | marcar como falso positivo: a chave vem de user-secrets/variável de ambiente, nunca de arquivo versionado |
+| Senha no `appsettings.example.json` | marcar como falso positivo: é o template, com a senha do Postgres de desenvolvimento |
+| `autoFocus` em cinco formulários de diálogo | marcar como aceito: o padrão de diálogo da WAI-ARIA manda pôr o foco no primeiro campo |
+| `tabIndex` na `Rolagem` da landing | marcar como falso positivo: região rolável **precisa** ser focável para quem navega pelo teclado |
+
+Já está no repositório:
+- `apps/api/coverlet.runsettings` — OpenCover + Cobertura, sem migrations (adianta o passo 1 do
+  item 2).
+- Jobs `api` e `web` publicam a cobertura como artefato; o job novo `sonar` (depois dos dois, não
+  obrigatório) roda `begin` → `build` → `end` e envia os dois relatórios.
+- `projectRoot: '../..'` no reporter `lcov` do Vitest, para os caminhos baterem com a raiz.
+- Badges no README.
+
+O primeiro run pelo CI (PR #22) importou a cobertura — **83,5%** do projeto, 4.761 linhas
+cobríveis —, mas o gate reprovou por **0% de cobertura no código novo**: as três linhas novas
+estavam em `src/Api`, que nenhuma suíte alcançava. Resolvido com a suíte `Frota360.Api.Tests`
+(`ExceptionMiddleware` e `BackofficeController` a 100%) e com o `Program.cs` fora da cobertura. O
+mesmo run trouxe quatro avisos do compilador, também corrigidos: `KnownNetworks`/`IPNetwork`
+obsoletos no `Program.cs` (agora `KnownIPNetworks` com `System.Net.IPNetwork.Parse`) e um
+`JsonSerializerOptions` criado a cada erro no `ExceptionMiddleware`.
+
+Falta, fora do código:
+1. Conferir o gate verde no próximo run do PR.
+2. Marcar os quatro achados da tabela como falso positivo/aceito, com a justificativa dela.
 
 ### Pronto quando
 Os dois projetos aparecem no SonarCloud com cobertura importada e quality gate verde, e o badge
@@ -318,7 +348,8 @@ repositório não tem nenhuma release publicada.
 | **CD (item 7)** | A tag dispara o deploy, e a imagem recebe a mesma versão — o que está no ar é rastreável até o código |
 
 ### Passos
-1. Merge da `develop` na `main` via PR revisado.
+1. Tudo entra na `main` por PR revisado — a `develop` foi aposentada em 13/11/2026, e o
+   "Release 13/11" (#21) já levou o conteúdo dela para a `main`.
 2. Criar a tag `v1.0.0` na `main` e publicar a Release com as notas.
 3. Conferir que a versão no ar é exatamente a da tag.
 
@@ -330,9 +361,6 @@ A release `v1.0.0` existe no GitHub, aponta para a `main` e corresponde ao que e
 ## Outras pendências
 
 Fora da lista principal, mas com prazo no mesmo 30/11.
-
-### Documentação desatualizada
-- `docs/contexto-api.md:697` diz "Sem CI. Não há `.github/workflows`" — o CI existe.
 
 ### PAC Extensionista VIII
 - **Peer review**: PRs revisados pelo squad e issues de QA abertas pelos colegas no seu

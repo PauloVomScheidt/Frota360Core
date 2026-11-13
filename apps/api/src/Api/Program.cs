@@ -210,7 +210,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     // cliente empurre o IP real para fora da janela lida.
     options.ForwardLimit = 1;
 
-    options.KnownNetworks.Clear();
+    options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
 
     // Sub-rede fixada em docker-compose.prod.yml. Em desenvolvimento nao ha proxy e a
@@ -218,11 +218,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     var redeDoProxy = builder.Configuration["ProxyReverso:RedeConfiavel"];
     if (!string.IsNullOrWhiteSpace(redeDoProxy))
     {
-        // KnownNetworks usa o IPNetwork do HttpOverrides, que não tem Parse — daí a
-        // separação manual do CIDR.
-        var partes = redeDoProxy.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(
-            System.Net.IPAddress.Parse(partes[0]), int.Parse(partes[1])));
+        options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(redeDoProxy));
         Log.Information("Confiando nos headers de proxy vindos de {Rede}", redeDoProxy);
     }
 });
@@ -310,4 +306,4 @@ if (app.Environment.IsDevelopment())
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-app.Run();
+await app.RunAsync();

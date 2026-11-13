@@ -30,13 +30,13 @@ namespace Frota360.Api.Controllers
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status422UnprocessableEntity)]
-        public async Task<IActionResult> ProvisionarEmpresa([FromBody] ProvisionarEmpresaRequest request)
+        public async Task<IActionResult> ProvisionarEmpresa(
+            [FromBody] ProvisionarEmpresaRequest request,
+            [FromHeader(Name = "X-Backoffice-Key")] string? chaveInformada)
         {
             var apiKey = configuration["Backoffice:ApiKey"];
 
-            if (string.IsNullOrWhiteSpace(apiKey) ||
-                !Request.Headers.TryGetValue("X-Backoffice-Key", out var chaveInformada) ||
-                chaveInformada != apiKey)
+            if (string.IsNullOrWhiteSpace(apiKey) || chaveInformada != apiKey)
             {
                 return Unauthorized(ApiResponse<object>.Fail("Não autorizado."));
             }
