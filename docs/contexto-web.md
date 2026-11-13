@@ -3,13 +3,15 @@
 > Documento **único** de referência do front-end (React + Vite): arquitetura, rotas, endpoints consumidos, o que cada tela faz e as armadilhas conhecidas.
 > Complementa [`contexto-api.md`](contexto-api.md): lá está o contrato do servidor, aqui está o que a aplicação faz com ele.
 > **Caminhos**: relativos à raiz do monorepo — o código do front vive em `apps/web/`, e os comandos `npm` rodam de lá.
-> Última atualização: 2026-08-28 — tela `/perfil` (§5.11): o próprio usuário corrige nome, CPF e nascimento, em qualquer papel. Também nesta rodada: o 422 da RN08 ao excluir veículo com rota (§5.3) e a placa aceita nos dois formatos e normalizada em maiúsculas pelo servidor.
+> Última atualização: 2026-09-28 — **o dashboard foi redesenhado como triagem** (§5.1): KPIs do mês, bloco "Precisa de atenção", rotas em andamento, ranking de custo e evolução de 6 meses, com o novo `GET /manutencao/resumo`; `/minhas-rotas` ganhou a faixa "Meu mês" (§5.9).
+>
+> Anterior: 2026-09-04 — **as quatro listas transacionais passaram a paginar no servidor** (`/abastecimento`, `/despesa`, `/manutencao`, `/rota`), de forma obrigatória. Com elas vieram os agregados que os rodapés passaram a exigir (`/abastecimento/resumo`, `/despesa/resumo`, `/rota/resumo`), a placa desnormalizada em `RotaResponse`, o filtro `?ativo=` e o `GET /abastecimento/anterior` — que de quebra corrige o km/l inflado que o motorista via. As dez listas limitadas pela frota seguem paginando no cliente (§8.2).
 
 ---
 
 ## 1. Visão geral
 
-SPA React 19 + Vite 8 + TypeScript, front-end da API Frota360 — gestão de frota **multi-tenant** (motoristas, veículos, rotas, manutenção preventiva). Sem suíte de testes.
+SPA React 19 + Vite 8 + TypeScript, front-end da API Frota360 — gestão de frota **multi-tenant** (motoristas, veículos, rotas, manutenção preventiva). Testes com Vitest (§11).
 
 | Aspecto | Escolha |
 |---|---|
@@ -19,16 +21,20 @@ SPA React 19 + Vite 8 + TypeScript, front-end da API Frota360 — gestão de fro
 | HTTP | axios com interceptors (Bearer + refresh) |
 | Estilo | Tailwind 4 + design system próprio (`apps/web/src/styles/design-system.css`) |
 | Lint | oxlint |
+| Testes | Vitest + jsdom + Testing Library + MSW, cobertura v8 (§11) |
 | Sessão | `localStorage` (token, refreshToken, identidade) |
 
 ```bash
 npm run dev      # Vite em http://localhost:5173
 npm run build    # tsc -b + vite build
 npm run lint     # oxlint
+npm run test     # Vitest, uma passada
+npm run test:watch
+npm run test:cov # Vitest + cobertura → coverage/
 npm run gen:api  # regenera tipos do OpenAPI (API precisa estar no ar)
 ```
 
-Base da API por ambiente: `VITE_API_URL` (`.env.development` → `https://localhost:7271/api/v1`; `.env.production` → `https://api.frota360app.com.br/api/v1`). **O `/api/v1` faz parte do valor**: os módulos de `src/api` chamam caminhos relativos (`/veiculo`, `/auth/login`) sobre o `baseURL`. Se a variável estiver vazia, o `http.ts` lança na carga do módulo em vez de deixar o axios cair em URLs relativas à origem do front. É a única variável de ambiente do projeto. A porta 5173 do `npm run dev` é fixa — é a origem liberada no CORS da API.
+Base da API por ambiente: `VITE_API_URL` (`.env.development` → `https://localhost:7271/api/v1`; `.env.production` → `https://api.frota360app.com.br/api/v1`). **O `/api/v1` faz parte do valor**: os módulos de `src/api` chamam caminhos relativos (`/veiculo`, `/auth/login`) sobre o `baseURL`. Se a variável estiver vazia, o `http.ts` lança na carga do módulo em vez de deixar o axios cair em URLs relativas à origem do front. A segunda e última variável é `VITE_GOOGLE_MAPS_KEY` (chave de browser do Maps JavaScript + Places API New), que fica em `.env.local` — gitignored, com o modelo em `.env.example`. Nenhuma das duas é segredo: o Vite as embute no bundle em tempo de build, e a proteção da chave do Maps é a restrição por referenciador HTTP no console do Google. A chave da **Routes API** é de servidor e não tem par `VITE_` — ela vive só na API, em `GoogleRoutes:ApiKey`. A porta 5173 do `npm run dev` é fixa — é a origem liberada no CORS da API.
 
 O `empresaId` **nunca** é enviado pelo cliente — vem do JWT. A multi-tenancy é transparente para o front.
 
@@ -57,8 +63,13 @@ Definido em [`apps/web/src/App.tsx`](apps/web/src/App.tsx). Qualquer rota descon
 | `/rotas` | `RotasPage` | Gestão |
 | `/manutencoes` | `ManutencoesPage` | Todos (Motorista: leitura, sem custo) |
 | `/abastecimentos` | `AbastecimentosPage` | Todos — **leitura e escrita**; Motorista vê só o que é dele |
+| `/despesas` | `DespesasPage` | Gestão — leitura e escrita |
+| `/custos` | `CustosPage` | Gestão — somente leitura |
 | `/minhas-rotas` | `MinhasRotasPage` | **Motorista** |
 | `/tipos-manutencao` | `TiposManutencaoPage` | **Admin / Supervisor** |
+| `/tipos-despesa` | `TiposDespesaPage` | **Admin / Supervisor** |
+| `/tipos-combustivel` | `TiposCombustivelPage` | **Admin / Supervisor** — mas a **leitura** do catálogo na API é aberta a todos, para o Motorista lançar |
+| `/postos` | `PostosPage` | **Admin / Supervisor** — mesma nota da anterior |
 | `/usuarios` | `UsuariosPage` | **Admin** |
 | `/convites` | `ConvitesPage` | **Admin** |
 | `/auditoria` | `AuditoriaPage` | **Admin** |
@@ -66,13 +77,13 @@ Definido em [`apps/web/src/App.tsx`](apps/web/src/App.tsx). Qualquer rota descon
 
 "Gestão" significa **todos os papéis menos `Motorista`**. Ele tem `/minhas-rotas` como home e mais duas telas em leitura: veículos e manutenções — saber o estado do caminhão faz parte do trabalho.
 
-Os guardas estão em [`apps/web/src/components/RequireAuth.tsx`](apps/web/src/components/RequireAuth.tsx) e são **dois**: `RequireAuth`, que redireciona para `/login` quando não há token (guardando a origem em `location.state.from`), e `RequirePode`, que recebe um predicado de `auth/permissions.ts`.
+Os guardas estão em [`apps/web/src/components/RequireAuth.tsx`](apps/web/src/components/RequireAuth.tsx) e são **dois**: `RequireAuth`, que redireciona para `/login` quando não há sessão (guardando a origem em `location.state.from`), e `RequirePode`, que recebe um predicado de `auth/permissions.ts`. Como o JWT vive num cookie `HttpOnly` invisível ao JS, `RequireAuth` decide pela identidade em cache (`useSession`), não por um token lido do storage — o 401 do servidor cobre o caso de cookie ausente/expirado que o guard não vê.
 
 Cada rota declara a própria permissão (`<RequirePode permitido={pode.verVeiculos} />`). Um guarda por bloco de papéis deixou de fazer sentido quando o motorista passou a enxergar parte do painel: quem manda é a tela, não o papel.
 
 **`/perfil` é a exceção**: fica dentro de `RequireAuth` e fora de qualquer `RequirePode`. Editar o próprio cadastro é direito de quem está autenticado, seja qual for o papel — e envolvê-la num predicado seria criar um `pode.verPerfil` que devolve `true` para todo mundo.
 
-**Todo redirecionamento de guarda usa `rotaInicial(role)`** de `auth/permissions.ts` (`/minhas-rotas` para motorista, `/dashboard` para o resto), nunca `/dashboard` fixo — para o motorista o dashboard é justamente uma tela bloqueada, e o par de guardas entraria em pingue-pongue. Os destinos pós-login (`LoginPage`) e pós-aceite de convite (`AcceptInvitePage`) usam a mesma função, a partir do `role` que vem no `AuthResponse`.
+**Todo redirecionamento de guarda usa `rotaInicial(role)`** de `auth/permissions.ts` (`/minhas-rotas` para motorista, `/dashboard` para o resto), nunca `/dashboard` fixo — para o motorista o dashboard é justamente uma tela bloqueada, e o par de guardas entraria em pingue-pongue. Os destinos pós-login (`LoginPage`) e pós-aceite de convite (`AcceptInvitePage`) usam a mesma função, a partir do `role` que vem na `SessaoResponse`.
 
 O servidor continua sendo a autoridade — os guardas só evitam telas que resultariam em 401/403.
 
@@ -82,30 +93,31 @@ O servidor continua sendo a autoridade — os guardas só evitam telas que resul
 
 ### 3.1 `/` — Landing page
 
-Página de apresentação do produto (v3 — "ficha de controle"). Não consome a API.
+Página de apresentação do produto (v4). Não consome a API.
 
-**Mesma linguagem visual do painel.** Até a v2 a landing era deliberadamente o oposto do painel (cantos arredondados, cartões brancos, botões-pílula, sombras difusas). Isso foi revertido: a landing agora é reta, bege e sem sombra como o resto do sistema, e **todas as cores saem de [`design-system.css`](apps/web/src/styles/design-system.css)** — `#fdfaf6` de fundo, `#201e1d` de texto, `#1f3a5f` de acento. Motivo: o mock do painel é o principal argumento da página, e ele mentia sobre o produto quando desenhado noutra língua.
+**Volta a ter linguagem visual própria.** A v3 tinha revertido a landing para a mesma língua reta/sem sombra do painel — essa decisão foi desfeita: a landing é de novo cantos arredondados, cartões com sombra e nav flutuante em pílula, o oposto do painel. A **exceção** é o que fica dentro de um `Dispositivo` (moldura arredondada + sombra) — os mocks que fingem ser telas de verdade (painel de veículos, rotas, manutenções): esses continuam **retos e reaproveitam as classes globais** `.table`/`.tag`/`.btn` de [`design-system.css`](apps/web/src/styles/design-system.css), porque representam o produto real, e desenhá-los arredondados mentiria sobre como ele é. Cor, sombra (`--shadow-*`) e tipografia (`--font-*`) continuam saindo do design system em toda a página — só o raio arredondado e as sombras maiores da vitrine (`--lp-radius-*`, `--lp-shadow-*`) são tokens exclusivos da landing.
 
-Ela mantém folha própria, [`apps/web/src/styles/landing.css`](apps/web/src/styles/landing.css), escopada em `.lp` e importada só por esta tela — mas agora por causa da **escala** (display grande, faixas de ponta a ponta, odômetro), não por discordar do sistema.
+Ela mantém folha própria, [`apps/web/src/styles/landing.css`](apps/web/src/styles/landing.css), escopada em `.lp` e importada só por esta tela — pela **escala** (display grande) e pelo visual divergente do painel.
 
 Convenções da folha, que valem ao editar:
 
 - **Escala tipográfica em tokens** (`--t-h1`, `--t-h2`, `--t-corpo`, `--t-cap`…) no bloco `.lp`. Não use tamanho solto no JSX.
-- **Três níveis de tinta para texto**, com nome de intenção e não de opacidade: `--tinta-forte` (.86), `--tinta-media` (.74) e `--tinta-fraca` (.66). Os valores foram **calibrados por contraste** — todos passam de 4,5:1 sobre `--papel`. Os antigos `--tinta-35`/`--tinta-50` reprovavam (2,15:1 e 3,13:1) em 23 pontos da página. Hierarquia aqui se faz com tamanho, peso e caixa; para régua e contorno use `--regua`/`--regua-fraca`, que **não são cor de texto**.
-- **`min-width: 0` nos filhos de todo grid que contenha tabela** (`.lp-mock > *`, `.lp-split > *`…). Sem isso o filho cresce até o `min-width` da tabela, o `overflow-x` de `.lp-rolagem` nunca entra e cabeçalho e rodapé do mock são cortados fora da tela no celular.
-- **O odômetro dimensiona por `cqw`**, não `vw` — ele tem que caber na coluna dele, que muda de largura por breakpoint; `.lp-instrumento` é o `container-type: inline-size`. A fita de algarismos tem `height: 1000%` (dez células de uma linha); com `inset: 0` cada célula vira um décimo de linha e o glifo estoura para fora da janela.
-- **`.lp-odo-digito` precisa de `contain: paint`, não só `overflow: hidden`.** Enquanto a fita anima ela vira camada composta própria e escapa do recorte do pai: os algarismos derramam por cima e por baixo da janela e chegam a encostar nas réguas do instrumento. O sintoma é característico — **só os dígitos em movimento vazam**, os parados recortam certo. Pelo mesmo motivo a fita **não** leva `will-change: transform`, que era justamente o que forçava a promoção da camada.
-- **Mono para número.** Placa, quilometragem, data, rótulo de campo e cabeçalho de tabela usam **IBM Plex Mono** (`--mono`); título e corpo seguem em Archivo. A fonte é carregada em [`index.html`](apps/web/index.html).
-- **Vermelho (`--alerta`) e âmbar (`--vencendo`) são estado de manutenção, nunca enfeite.** Só aparecem em "Atrasada" e "Vencendo".
+- **Três níveis de tinta para texto**, com nome de intenção e não de opacidade: `--tinta-forte` (78%), `--tinta-media` (62%) e `--tinta-fraca` (45%) — todos derivados de `var(--color-text)` por `color-mix()`, não um hex novo. Hierarquia aqui se faz com tamanho, peso e caixa; para régua use `--regua`/`--regua-forte`, que **não são cor de texto**.
+- **`min-width: 0` nos filhos de todo grid que contenha tabela** (`.lp-painel > *`, `.lp-split > *`, `.lp-cta-grade > *`). Sem isso o filho cresce até o `min-width` da tabela, o `overflow-x` de `.lp-rolagem` nunca entra e cabeçalho e rodapé do mock são cortados fora da tela no celular.
+- **`Dispositivo` (`comMenu?`) é a moldura de vitrine** — arredondada, com sombra, `overflow: hidden` (necessário aqui: os filhos retos têm fundo próprio e precisam ser recortados pelo raio da moldura). Por dentro fica um `.lp-painel`, que só abre a segunda coluna (206px de sidebar) com o modificador `.lp-painel-com-menu` — rotas e manutenções são um card só, sem sidebar.
+- **Dentro do `Dispositivo` as réguas do painel real (2px) afinam para 1px** — `.lp-painel-aside`, `.lp-painel-cab` e o cabeçalho de `.lp-painel .table` sobrescrevem só a espessura, nunca a cor (`var(--color-divider)` continua vindo do design system). Em escala reduzida a régua de 2px pesa mais do que no painel de verdade; a cor idêntica é o que garante que o mock ainda "é" a UI real, só menor.
+- **As demais rolagens horizontais (`.lp-compara`, `.lp-matriz-cartao`) NÃO levam `overflow: hidden`.** Elas não têm fundo próprio nas linhas, então não há nada pra recortar — e recortar quebraria a rolagem: o `.lp-rolagem` em volta só enxerga overflow que realmente transborda por um ancestral sem `overflow: hidden` no meio do caminho.
+- **Sem fonte mono.** A v3 usava IBM Plex Mono para placa/km/data — removida (o painel de verdade também não usa mono, então a mock não precisava). Números tabulares vêm de `font-variant-numeric: tabular-nums` em Archivo. `index.html` carrega só Archivo agora.
+- **Vermelho (`var(--color-danger)`) e âmbar (`var(--color-warning)`) são estado de manutenção, nunca enfeite** — os mesmos tokens do design system, via `.tag-danger`/`.tag-warning` dentro do `.lp-painel`. Não inventa um sexto tom nem apaga um existente (§8.1).
 - **O reset de `.lp` usa `:where()`** — `:where()` não soma especificidade, então `.lp :where(p) { margin: 0 }` vale (0,1,0) e qualquer classe abaixo o vence. Escrever `.lp p` em vez disso quebra silenciosamente as margens de `.lp-lead`, `.lp-hero-sub` e o sublinhado de `.lp-cta-mail`.
-- `.lp-wrap.lp-hero` usa classe dupla de propósito: precisa vencer `.lp-wrap` inclusive dentro do media query de 600px, que vem depois no arquivo.
+- **Espaço entre faixas via `--topo`.** `Faixa` recebe `espaco` (px, padrão 120) e escreve `--topo` inline; o CSS lê `margin-top: var(--topo, 120px)` e reduz pela metade abaixo de 700px. Não há mais régua entre faixas (era a identidade "ficha" da v3) — o espaço é a própria divisão.
 
-Seções, na ordem: barra fixa reta (âncoras, "Entrar", CTA de WhatsApp, menu `<details>` de seções no celular) → **hero com o odômetro** → mock do painel (sidebar + tabela de veículos) → "O que a planilha perde" (4 rótulos de campo) → comparativo planilha × Frota360 → "Recursos" (Motoristas, Veículos, Rotas, Manutenções) → **Manutenção** (mock da lista + catálogo de tipos no rodapé) → "Permissões" (matriz + três garantias de isolamento) → "Implantação" (3 passos) → "Dúvidas" (9 perguntas em `<details>`) → CTA azul com formulário de demonstração → rodapé.
+Seções, na ordem: nav flutuante em pílula (âncoras, "Entrar", CTA de WhatsApp, menu `<details>` no celular) → **hero** (texto centralizado, sem imagem) → mock do painel de veículos → barra "Construído sobre" → estatísticas → "O que a planilha perde" (4 dores numeradas) → comparativo planilha × Frota360 → **Recursos** (Motoristas, Veículos, Rotas, Manutenções) → **Como funciona** (3 passos) → Rotas (texto + mock) → **Manutenção** (mock da lista + catálogo de tipos + destaque) → **Permissões** (matriz) → Segurança (3 cards) → Objeções (3 citações) → **Dúvidas** (7 perguntas em `<details>`) → CTA azul com formulário de demonstração → rodapé. `ANCORAS` segue essa mesma ordem de leitura.
 
-- **O odômetro é o elemento de assinatura.** No hero, a quilometragem do veículo `MJU-5F71` conta de `KM_INICIAL` (51.780) até `KM_FINAL` (51.988) — cada algarismo é uma fita de 0–9 que desliza (`.lp-odo-fita`, `--digito`). Ao chegar perto de `KM_PREVISTO` (52.000) a manutenção abaixo acende como **Vencendo**, dentro da faixa `FAIXA_AVISO` (500 km). É a mecânica real do produto encenada; o selo "Demonstração" no alto do instrumento marca que os números são ilustrativos.
-- **Animação**: só o odômetro e o "+" do FAQ. Os *reveals* por `IntersectionObserver` da v2 foram removidos — eram 13 seções com a mesma transição. `prefers-reduced-motion` já entrega o odômetro no valor final (estado inicial do `useState`, sem salto depois do primeiro render).
-- **Numeração**: só "Implantação" é numerada, porque só ela é uma sequência de verdade. As falhas da planilha são identificadas por **rótulo de campo** (`Quilometragem`, `Responsável`, `Permissão`, `Cadastro`), não por `01/02/03`.
-- **Acessibilidade**: toda área rolável passa pelo componente `Rolagem` (`tabIndex=0` + `role="region"` + `aria-label`), sem o que ninguém alcança as tabelas só pelo teclado. O odômetro é `role="img"` com `aria-label`, e **sem** `aria-live`: o texto muda a cada tique e viraria dezenas de anúncios.
+- **Sem peça de assinatura no hero.** A v4 original tinha um odômetro decorativo (fita de dígitos contando até a manutenção "vencer") ao lado do texto — removido: complexidade (dois `useEffect` com `setTimeout`/`setInterval` encadeados, `contain: paint` para não vazar a animação) para um elemento que não era nem o mock do painel nem parte do produto real. O hero agora é só texto centralizado.
+- **Animação**: o "+" do FAQ e um *reveal* por `IntersectionObserver` (`useRevelarFaixas`) — cada `.lp-faixa` a partir da segunda (a primeira é o mock do painel, sempre visível) nasce oculta e aparece ao entrar na viewport. Quem prefere menos movimento **nunca recebe a classe que começa oculta** — não é a transição que se pula, é o esconder que não acontece.
+- **Numeração**: "Como funciona" (passos) e "O que a planilha perde" (dores) são as duas sequências numeradas da página — a primeira por serem passos de verdade, a segunda porque o layout de vitrine do canvas de origem pede o número como elemento visual do card.
+- **Acessibilidade**: toda área rolável passa pelo componente `Rolagem` (`tabIndex=0` + `role="region"` + `aria-label`), sem o que ninguém alcança as tabelas só pelo teclado.
 - **Matriz de permissões**: mostra ✓ (`CheckIcon`) e ✗ (`XIcon`) — mas a palavra "Sim"/"Não" continua no DOM em `.lp-oculto`, porque um ✓ sozinho não se lê em leitor de tela. `.lp-matriz td` é `position: relative` de propósito: sem bloco contentor, o `.lp-oculto` absoluto se posiciona pelo bloco inicial, escapa do `.lp-rolagem` **e** do `overflow-x: clip` do `.lp`, e cria rolagem horizontal na página inteira abaixo de 480px.
 - **Formulário de demonstração**: não existe endpoint público na API, então o envio monta um `mailto:` já preenchido com nome, empresa, e-mail e tamanho da frota. Como não há como saber se o cliente de e-mail abriu, a confirmação **não afirma que abriu** — diz o que era para acontecer e oferece WhatsApp e e-mail como saída. Trocar por um endpoint real é uma alteração local em `FormularioDemonstracao`.
 - Os contatos são as constantes `WHATSAPP` e `EMAIL` no topo de [`LandingPage.tsx`](apps/web/src/pages/LandingPage.tsx) — trocar ali muda todos os links da página.
@@ -117,8 +129,9 @@ Seções, na ordem: barra fixa reta (âncoras, "Entrar", CTA de WhatsApp, menu `
 Divide a tela em painel de marca (escondido abaixo de `md`) e formulário.
 
 - Campos: e-mail e senha, com botão de mostrar/ocultar senha.
-- `POST /auth/login` → grava token, refreshToken e identidade; navega para `location.state.from` ou `/dashboard`.
-- Erros da API aparecem acima do botão; link para "Esqueci minha senha".
+- `POST /auth/login` → token e refreshToken chegam em cookie `HttpOnly` (o front nunca os lê); `tokenStorage.setSession` grava só a identidade, o cache do React Query é limpo (trocar de conta na mesma aba não pode mostrar dado da empresa anterior) e a tela navega para `location.state.from` — a tela de onde o guarda tirou a pessoa — ou `rotaInicial(role)`.
+- Erros da API aparecem acima do botão, com a mensagem literal (credencial inválida, 429 do rate limit, API fora do ar); link para "Esqueci minha senha". `/auth/login` é rota anônima no `http.ts`: um 401 ali não dispara refresh.
+- Campos vazios ou e-mail sem formato não chegam à API — a validação é a nativa do `required`/`type="email"`.
 - A logo do painel esquerdo é um link para a landing page.
 - Não existe link de cadastro: contas nascem por convite.
 
@@ -136,11 +149,13 @@ Três estados:
 
 ### 3.5 `/convite?token=…`
 
-Além de nome e senha, o formulário tem **CPF e data de nascimento opcionais** — hoje é o único ponto de entrada desses dados, já que não existe tela de perfil (§9). Em branco viram `undefined` no corpo, para o back gravar nulo em vez de string vazia. O CPF usa `mascaraCpf` na digitação e vai só com os 11 dígitos.
+Além de nome e senha, o formulário tem **CPF e data de nascimento opcionais** — a pessoa pode informá-los já no aceite, e depois corrigi-los em `/perfil` (§5.11). Em branco viram `undefined` no corpo, para o back gravar nulo em vez de string vazia. O CPF usa `mascaraCpf` na digitação e vai só com os 11 dígitos.
 
 Destino do link enviado pelo admin. Sem token, mostra "Convite inválido".
 
-Formulário: nome, senha, confirmação e checkbox de termos (obrigatório, validado só no cliente). `POST /convite/aceitar` já devolve a sessão autenticada — o usuário cai direto em `/dashboard`, sem passar pelo login. Empresa e permissão vêm do convite, não do formulário.
+**Antes de o formulário existir, a tela consulta o convite** (`POST /convite/consultar`, anônimo, desde 28/09/2026) e diz de que empresa ele é: "Você foi convidado para acessar o painel de frota de **Transportadora X** como **Motorista**", mais o e-mail com que a conta será criada. Convite inválido, já utilizado ou expirado (404) troca a tela inteira por **"Convite indisponível"** com o link para o login — a pessoa descobre isso antes de preencher, e não ao enviar. Qualquer outra falha (rede, 429 do rate limit) cai no texto genérico e o formulário segue funcionando: a consulta é informativa, o aceite continua sendo quem valida. Chave `['convite', 'consulta', token]`, sem retry e com `staleTime: Infinity`.
+
+Formulário: nome, senha, confirmação e checkbox de termos (obrigatório, validado só no cliente). `POST /convite/aceitar` já devolve a sessão autenticada — o usuário cai direto em `rotaInicial(role)` (o motorista em `/minhas-rotas`), sem passar pelo login, e o cache do React Query é limpo como no login. Empresa e permissão vêm do convite, não do formulário.
 
 ---
 
@@ -148,9 +163,14 @@ Formulário: nome, senha, confirmação e checkbox de termos (obrigatório, vali
 
 Todas as telas autenticadas são embrulhadas por `AppLayout` ([`apps/web/src/components/AppLayout.tsx`](apps/web/src/components/AppLayout.tsx)):
 
-- **Sidebar** recolhível (preferência guardada no `localStorage`), com as categorias "Dashboard" (Visão geral, Motoristas, Veículos, Rotas, Manutenções e — só para Admin/Supervisor — Tipos de manutenção) e "Controle" (Usuários, Convites, Auditoria) — esta só aparece para Admin.
-- Para a role **Motorista** a sidebar tem **duas** categorias: "Operação" (Minhas rotas, Abastecimentos — o que ele **faz**) e "Visualização" (Veículos, Manutenções — o que ele só **consulta**). A separação é por escrita vs. leitura, não por assunto: misturar as quatro sugeria que ele pudesse editar veículo e manutenção. Ele não tem painel de frota: esconder os itens acompanha o guarda `RequireGestao`, não o substitui.
-- **Header** com o avatar de iniciais, nome e papel do usuário — o bloco inteiro é o link para `/perfil` — e o botão de sair (`POST /auth/logout` → limpa tokens, limpa o cache do React Query, vai para `/login`).
+- **Sidebar** recolhível (preferência guardada no `localStorage`), com **três** categorias para a gestão:
+  - **"Dashboard"** — Visão geral, Motoristas, Veículos, Rotas, Manutenções, Abastecimentos, Despesas, Custos: o dia a dia.
+  - **"Parametrização"** (Admin/Supervisor) — Tipos de manutenção, Tipos de despesa, Tipos de combustível e Postos. São os catálogos que alimentam os seletores das telas de lançamento; ficam juntos por serem a mesma **natureza de trabalho** (configurar antes de operar), não por compartilharem assunto. `/postos` entra apesar de não se chamar "tipo": é catálogo como os outros, mantido pelas mesmas pessoas e consumido do mesmo jeito pelo formulário de abastecimento.
+  - **"Controle"** (só Admin) — Usuários, Convites, Auditoria.
+
+  ⚠️ A categoria de parametrização é gated por **um** predicado (`pode.editarTiposManutencao`), e não por um por item, porque os quatro coincidem hoje em Admin/Supervisor. Se algum divergir, ele passa a precisar de guarda própria na lista e o gate vira um OR — está anotado no código.
+- Para a role **Motorista** a sidebar tem **duas** categorias: "Operação" (Minhas rotas, Abastecimentos — o que ele **faz**) e "Visualização" (Veículos, Manutenções — o que ele só **consulta**). A separação é por escrita vs. leitura, não por assunto: misturar as quatro sugeria que ele pudesse editar veículo e manutenção. Ele não tem painel de frota: esconder os itens acompanha o `RequirePode` de cada rota, não o substitui. O menu de cada papel é **exatamente** o conjunto de telas do §2 que ele alcança — `AppLayout.test.tsx` confere isso para os quatro papéis contra aquela tabela.
+- **Header** com o **nome da empresa** à esquerda (ícone de prédio, `nomeEmpresa` da sessão, truncado com o nome inteiro no `title`), o avatar de iniciais, nome e papel do usuário — o bloco inteiro é o link para `/perfil` — e o botão de sair (`POST /auth/logout` → limpa tokens, limpa o cache do React Query, vai para `/login`). Abaixo de `sm` o nome e o papel do usuário somem (fica o avatar), para a empresa caber. Sessão gravada antes de 28/09/2026 não tem `nomeEmpresa`: o bloco não aparece até o próximo refresh de token, sem erro.
 - `PageHeader` padroniza título, subtítulo e o botão de ação da página.
 
 O sino de notificações é decorativo — não há funcionalidade por trás dele ainda.
@@ -161,13 +181,29 @@ O sino de notificações é decorativo — não há funcionalidade por trás del
 
 ### 5.1 `/dashboard` — Visão geral
 
-Somente leitura. Busca as três listas (`veiculos`, `motoristas`, `rotas`) e monta:
+Somente leitura, e com um papel diferente das demais telas: responde **"o que está acontecendo agora e o que precisa de mim hoje"**. É triagem — cada bloco leva à tela de detalhe, onde a análise acontece (`/custos`) ou o lançamento é feito. Redesenhado em 28/09/2026: a versão anterior contava cadastros (veículos, motoristas, km acumulado do odômetro) e repetia a tabela de `/veiculos`; nada disso levava a uma ação, e manutenção, custo, abastecimento e despesa não apareciam.
 
-- **5 KPIs**: total de veículos, total de motoristas, rotas ativas (`de N no total`), quilometragem acumulada da frota (soma de `quilometragem`) e **km rodado no mês** (soma de `kmPercorrido` das rotas cujo `dataFim` cai no mês corrente, com a contagem de rotas encerradas no detalhe). Enquanto carrega, mostram `—`.
-- **Tabela de veículos** com busca client-side (filtra por placa, nome, marca e último motorista) e uma tag para a última viagem (`Sem viagens` quando nula).
-- O subtítulo mostra o horário da última atualização do cache.
+Quatro blocos, nesta ordem:
 
-Todos os cálculos são feitos no cliente — a API não tem endpoint de agregação.
+1. **Faixa de 6 KPIs do mês corrente** (`mesAteHoje()` — do dia 1 até hoje): **frota agora** (`emRota` de `/veiculo`: "N / total", "em rota · M disponíveis"), **custo do mês** (valor compacto "R$ 48,2 mil", o cheio no `title`) com a variação contra o **mesmo período do mês passado** (`mesmoPeriodoDoMesPassado()` — comparar o dia 10 com um mês fechado daria sempre "queda"), **km rodado** (`/rota/resumo`, com a contagem de rotas encerradas), **custo por km** e **consumo médio** (os dois do `/custo/resumo`, com o mesmo detalhe de origem do km que `/custos` exige) e **manutenção** (atrasadas, em vermelho quando > 0, e "N vencendo em até 500 km"). A grade é `1 → 2 → 3 → 6` colunas conforme a largura — em 1440 px fica 3×2, a partir de 1536 px numa linha só.
+2. **Precisa de atenção** — lista de alertas, cada um com tag de situação, contexto, detalhe colorido e link para a tela de origem. Quando não há nada, vira uma linha só com `Tudo em dia` (`tag-success`). As fontes:
+   - **Manutenções atrasadas e vencendo** — os `urgentes` de `GET /manutencao/resumo` (no máximo 10; o que passar disso vira uma linha "Mais N manutenções"). Atrasada por data mostra "prazo venceu em dd/mm/aaaa", por km mostra "N km em atraso".
+   - **Rota aberta há `DIAS_ALERTA_ROTA_ABERTA` (2) dias ou mais** — `diasEmAberto` em `lib/rota.ts`, sobre `GET /rota?ativo=true`. Rota esquecida segura o odômetro e infla o R$/km do mês. Corte de leitura do cliente, como `FAIXA_AVISO`.
+   - **Veículo que rodou no mês sem abastecimento lançado** — `porVeiculo` do `/custo/resumo` com `km > 0` e `totalAbastecimento === 0`. É o sinal mais forte de lançamento faltando.
+   - **Manutenção concluída sem custo** — `manutencoesSemCustoInformado` do mesmo resumo.
+3. **Duas colunas** (uma abaixo de `xl`): **rotas em andamento** (até 5, com estimativa de distância/duração quando há traçado e a tag `Há N dias` na esquecida; "Ver todas (N)" quando há mais) e **veículos que mais custaram no mês** (top 5 do `porVeiculo`, com barra relativa ao maior e R$/km).
+4. **Custo dos últimos 6 meses** — o `PainelCustoMensal` (28/09/2026, a partir de um design próprio), sobre `ultimosMeses(6)`. Cartão com cantos arredondados — a **única exceção** ao `border-radius: 0` do painel, decidida de propósito para este bloco — em duas colunas (empilha abaixo de `lg`):
+   - **À esquerda, o resumo do mês selecionado:** nome, total em BRL, chip de variação e a composição (barra de proporção de 100% e a lista Combustível / Manutenção / Despesas com valor e %). O chip usa os tokens de estado: **âmbar** quando o custo sobe, **verde** quando cai, neutro em 0%.
+   - **Comparação.** Mês fechado compara com o mês anterior da lista ("vs. ago/26"). ⚠️ **O mês corrente compara com o mesmo trecho do mês anterior**, não com ele inteiro — o mesmo `/custo/resumo` de 1 até o mesmo dia que o KPI "Custo do mês" já busca —, e uma linha curta diz os dias comparados ("Mês em andamento: compara 1 a 28/09 com 1 a 28/08."), para o número não ser lido como mês contra mês. Sem base: "Sem registros em {mês} para comparar."; primeiro mês da lista: "Primeiro mês do período.".
+   - **À direita, as colunas empilhadas** (56px, cantos superiores arredondados, 2px entre segmentos, degraus **500 / 400 / 300** da rampa do acento, `SERIES_CUSTO` em `lib/custo.ts`), com o total compacto acima e, no mês vazio, "sem registros" e uma linha tracejada. Escala de **três marcas** (`escalaDeTresMarcas`: 0, passo e 2 × passo, passo em 1/2/2,5/5 × 10ⁿ, teto sempre acima do maior valor). **Linha tracejada de média** dos meses com lançamento só com dois ou mais; o valor dela vai para o cabeçalho, como legenda, e os totais das colunas ficam por cima da linha.
+   - **Duas leituras convivem:** passar o mouse, clicar ou focar (teclado) uma coluna — cada uma é um `<button>` com `aria-label` e `aria-pressed` — seleciona o mês e atualiza o resumo; passar o mouse numa **fatia** abre o tooltip dela (`TooltipCustoMensal`: valor em destaque, série e participação no mês, e abaixo as três séries com o total; desliza para dentro nas bordas, então nunca sai do gráfico) e esmaece as demais. Começa no último mês com lançamento.
+   - **Paleta:** as séries são categorias, não situações, então não usam as classes `.tag-*` (§8.1). Validada com o script da skill de dataviz: passa na separação para daltonismo e visão normal (ΔE ≥ 18); a rampa é monocromática e dessaturada, então os checks de croma e de faixa de claridade reprovam por construção, e o 300 fica em 1,9:1 contra a superfície. Por isso a identidade nunca depende só da cor: a lista do resumo e o tooltip nomeiam a série.
+   - **Nunca some**: `porMes` só traz mês com lançamento, então `preencherMeses` (`lib/custo.ts`) completa os seis com zero — um cliente novo vê o painel já no primeiro mês. Sem custo em nenhum dos seis, o cartão mostra só um texto.
+   - Abaixo de `sm` os totais das colunas e o "sem registros" somem (o resumo e o tooltip os mostram) e os meses encurtam para "abr".
+
+**Atualizar** no cabeçalho refaz as sete consultas; o subtítulo mostra o mês e o horário da mais recente.
+
+As sete consultas e suas chaves: `['veiculos']`, `['rotas', {ativo: true, tamanhoPagina: 100}]`, `['rotas', 'resumo', mes]`, `['custos', 'resumo', mes]`, `['custos', 'resumo', comparacao]`, `['custos', 'resumo', semestre]` e `['manutencoes', 'resumo']`. Todas caem sob prefixos que as mutações já invalidam (§6.4) — nenhuma tela precisou aprender a invalidar o dashboard.
 
 ### 5.2 `/motoristas`
 
@@ -180,7 +216,7 @@ Todos os cálculos são feitos no cliente — a API não tem endpoint de agrega�
 | Trocar perfil / desativar | `/usuarios` |
 
 - Colunas: nome, e-mail, CPF, nascimento, **status** (Ativo/Inativo, que é o do usuário) e desde quando.
-- **CPF e nascimento são opcionais** e mostram `—` quando vazios: a pessoa os informa ao aceitar o convite, e não há outro ponto de entrada hoje (§9).
+- **CPF e nascimento são opcionais** e mostram `—` quando vazios: a pessoa os informa ao aceitar o convite e os corrige depois em `/perfil` (§5.11).
 - Cadastrar aqui recriaria a duplicação que o modelo eliminou — uma pessoa existindo como `Motorista` **e** como `Usuario`, com um vínculo frágil entre os dois.
 
 ### 5.3 `/veiculos`
@@ -198,13 +234,13 @@ Cadastro completo para a gestão; **leitura para o motorista**, que chega aqui p
 | Ação | Quem |
 |---|---|
 | Ver / criar / editar / encerrar | Gestão (Admin / Supervisor / Operador) |
-| Excluir | Admin |
+| Excluir | Admin, Supervisor |
 
 Esta é a tela de **toda a frota**. O motorista não a alcança — ele tem `/minhas-rotas` (§5.9).
 
 A rota tem um ciclo de vida: nasce **ativa** com o hodômetro de abertura e é **encerrada** por uma ação própria, que apura a quilometragem percorrida e avança o odômetro do veículo.
 
-- Formulário: origem, destino, motorista (select), veículo (select), início e **quilometragem inicial**. Não há mais campo de "fim" nem de "situação" — a API os removeu dos requests justamente para que encerrar seja a única transição de estado (por `PUT` dava para "encerrar" uma rota sem calcular km nem tocar no odômetro).
+- Formulário: **partida, chegada** (endereços — desde 08/09/2026 substituem os antigos `origem`/`destino`, que saíram da entidade), motorista (select), veículo (select), início e **quilometragem inicial**. Os dois endereços saem do componente compartilhado **`TrajetoRota`** — ver §8.3. Não há mais campo de "fim" nem de "situação" — a API os removeu dos requests justamente para que encerrar seja a única transição de estado (por `PUT` dava para "encerrar" uma rota sem calcular km nem tocar no odômetro).
 - A **quilometragem inicial só aparece na criação**: o `PUT` não altera esse número, então exibi-lo na edição sugeriria um poder que a tela não tem.
 - O formulário **sugere a quilometragem inicial** como o odômetro atual do veículo selecionado, reaplicando a sugestão quando o veículo muda, mas nunca sobrescrevendo um número digitado à mão (mesma mecânica de `/manutencoes`, comparando com a última sugestão emitida). O select de veículos mostra o km atual de cada um.
 - Regras lembradas na própria tela: a quilometragem inicial não pode ser menor que o odômetro do veículo (422 com o km atual na mensagem) e, quando é maior, o odômetro é atualizado **já na abertura** — o veículo rodou fora do sistema, e o número mais recente vence. Por isso o cadastro invalida também `['veiculos']` e `['manutencoes']`.
@@ -213,6 +249,7 @@ A rota tem um ciclo de vida: nasce **ativa** com o hodômetro de abertura e é *
 - A `RotaResponse` é flat (só traz as FKs), então a tela cruza `codigoMotorista`/`codigoVeiculo` com as listas de motoristas e veículos para exibir nome e placa; sem correspondência, mostra `#id`. O mapa de veículos serve também à sugestão de km.
 - A coluna **Quilometragem** mostra `kmPercorrido` (que vem persistido da API — não é recalculado aqui) e, abaixo, o intervalo `kmInicial → kmFinal`; nas rotas ativas, só o km de abertura.
 - O status é **derivado**, não vem da API: `ativo` → "Ativa"; senão com `dataFim` → "Encerrada"; senão → "Inativa". A função vive em `src/lib/rota.ts` (`statusDaRota`), compartilhada com `/minhas-rotas` para que as duas telas nomeiem o mesmo estado do mesmo jeito.
+- **Editar a rota de um motorista rebaixado preserva o motorista.** Ele some de `GET /motorista`, mas o select da edição ganha uma opção só para ele ("Fulano (não é mais motorista)"), montada com o `nomeMotorista` desnormalizado. Sem ela o `<select required>` caía em "Selecione…" e a rota só salvava reatribuída a outra pessoa.
 - Excluir um veículo invalida também o cache de rotas, porque a lista exibe a placa dele. O **nome do motorista não precisa de cruzamento**: vem desnormalizado em `rota.nomeMotorista`, o que mantém a rota identificável mesmo depois que a pessoa é rebaixada e some da lista de motoristas.
 
 ### 5.5 `/manutencoes`
@@ -224,16 +261,19 @@ A rota tem um ciclo de vida: nasce **ativa** com o hodômetro de abertura e é *
 |---|---|
 | Ver a lista | Todos |
 | Agendar / editar / concluir | Admin, Supervisor |
-| Excluir | Admin |
+| Excluir | Admin, Supervisor |
 
 A tela de manutenção preventiva. Um registro nasce **planejado** (veículo + tipo + km previsto) e recebe os dados de execução ao ser concluído — é o mesmo registro nos dois momentos.
 
 - **Os filtros** de veículo, situação e **período** disparam a query no servidor (`GET /manutencao?veiculoId=&status=&de=&ate=`), então entram na chave do cache: `['manutencoes', { veiculoId, status, de, ate }]`. "Cancelada" **não** é oferecida no filtro: o status existe no enum, mas nenhum endpoint o produz ainda.
-- **O período é um select de opções prontas** (`Todo o período`, `Hoje`, `Últimos 7/30 dias`, `Este mês`, `Mês passado`), não dois campos de data. Dois campos soltos exigiam do usuário o que o sistema já sabe fazer, e ainda obrigavam as duas datas a baterem entre si. A conversão para `de`/`ate` é do **cliente** ([`lib/periodo.ts`](apps/web/src/lib/periodo.ts)) — a API não conhece "últimos 7 dias" e não mudou.
+- **O período é o `FiltroPeriodo`**: opções prontas primeiro (`Todo o período`, `Hoje`, `Últimos 7/30 dias`, `Este mês`, `Mês passado`, `Últimos 3/6 meses`, `Este ano`, `Ano passado`) e, por último, **`Personalizado…`**, que abre os campos De e Até ao lado (28/09/2026). As prontas cobrem quase toda consulta real; o intervalo livre existe para o resto, sem obrigar ninguém a digitar duas datas para ver "este mês". A conversão para `de`/`ate` é do **cliente** ([`lib/periodo.ts`](apps/web/src/lib/periodo.ts)) — a API não conhece "últimos 7 dias" e não mudou.
+  - O estado da tela é um `FiltroDePeriodo` (`{ periodo, de, ate }`, com `de`/`ate` só valendo no personalizado), e `intervaloDoFiltro` o converte. "Últimos 3/6 meses" e "Este ano" vão até o **fim** do mês/ano corrente, pelo mesmo motivo do "Este mês": em manutenções, cortar em hoje esconderia o que ainda vai vencer.
+  - Ao escolher "Personalizado…", os campos vêm **pré-preenchidos com o intervalo que estava na tela** — quem sai de "Últimos 3 meses" só ajusta. Aceita um lado só ("a partir de", "até").
+  - **Intervalo invertido não vira consulta:** as datas ficam num rascunho local, e só sobem quando `ate >= de`. Com o "Até" antes do "De", a mensagem "A data final não pode ser anterior à inicial." aparece sob os campos e a lista continua no último intervalo válido — sem ida ao servidor para tomar 422.
 - **O período olha a data relevante do status**, não um campo fixo: pendência é situada pela `dataPrevista`, concluída pela `dataRealizacao`. Filtrar por uma só das duas deixaria metade da tela de fora. A tela **avisa em texto** quando há período ativo que pendência agendada só por quilometragem, sem `dataPrevista`, não aparece — ela não está em data nenhuma.
 - **A lista não é reordenada no cliente** — a API já devolve pendentes primeiro e, dentro de cada grupo, o que vence antes no topo.
 - **`atrasada` e `kmRestantes` vêm prontos do servidor** (recalculados a cada leitura, comparando o km previsto com a quilometragem atual do veículo). A tela só formata: `atrasada` tem precedência sobre `status` na badge, e `kmRestantes` negativo vira "3.200 km em atraso". Nada disso é recalculado aqui.
-- **Cinco situações, cinco cores** (§8.1): `Atrasada` (vermelho), `Vencendo` (âmbar), `Pendente` (azul), `Concluída` (verde), `Cancelada` (cinza). **`Vencendo` é do cliente**: pendente, ainda não vencida e com `kmRestantes <= FAIXA_AVISO` (500 km, em [`lib/manutencao.ts`](apps/web/src/lib/manutencao.ts)) — é corte de leitura, não regra do servidor, porque `kmRestantes` já chega calculado. A coluna "Andamento" acompanha a cor da tag da mesma linha.
+- **Cinco situações, cinco cores** (§8.1): `Atrasada` (vermelho), `Vencendo` (âmbar), `Pendente` (azul), `Concluída` (verde), `Cancelada` (cinza). **`Vencendo` é calculado nos dois lados**: pendente, ainda não vencida e com `kmRestantes <= FAIXA_AVISO` (500 km, em [`lib/manutencao.ts`](apps/web/src/lib/manutencao.ts)). Na listagem o corte é do cliente, porque `kmRestantes` já chega calculado; desde 28/09/2026 a API usa o mesmo número (`RegrasDeManutencao.FaixaAvisoKm`) para **contar** as vencendo em `GET /manutencao/resumo` — ⚠️ mexeu numa, mexa na outra. A coluna "Andamento" acompanha a cor da tag da mesma linha.
 - O formulário **sugere a quilometragem prevista** como `km atual do veículo + intervaloKm do tipo`. A sugestão é reaplicada quando o veículo ou o tipo mudam, mas nunca sobrescreve um número digitado à mão (a comparação é com a última sugestão emitida).
 - O select de tipos usa `apenasAtivos=true`: agendar com tipo inativo resulta em 422. `dataPrevista` ganha `min` de hoje no cadastro e nenhum limite na edição, espelhando a regra da API (o PUT permite replanejar um agendamento antigo).
 - **Editar e Concluir só aparecem em linha pendente** — `PUT`/`concluir` em registro realizado retorna 422; o resto é histórico somente leitura.
@@ -247,7 +287,7 @@ Catálogo da empresa que alimenta o seletor de agendamento.
 
 - A lista vem **sem** `apenasAtivos` — os inativos aparecem esmaecidos, para poderem ser reativados.
 - Formulário: nome (único por empresa, ≤ 100 caracteres) e intervalo em km (opcional; em branco vira `null`, não `0`). O campo "Situação" só aparece na edição, porque o POST não aceita `ativo`.
-- **Inativar em vez de excluir**: cada linha tem um botão Inativar/Ativar (um `PUT` com o `ativo` invertido). O DELETE fica só para Admin e responde 422 quando o tipo já é referenciado por alguma manutenção — o diálogo de confirmação avisa disso antes.
+- **Inativar em vez de excluir**: cada linha tem um botão Inativar/Ativar (um `PUT` com o `ativo` invertido). O DELETE é de Admin e Supervisor, e responde 422 quando o tipo já é referenciado por alguma manutenção — o diálogo de confirmação avisa disso antes.
 - O intervalo é **informativo**: serve para sugerir a quilometragem no agendamento. A recorrência automática não existe na API.
 
 ### 5.7 `/usuarios` (Admin)
@@ -264,9 +304,9 @@ Gestão da equipe, tudo editado direto na linha:
 
 ### 5.8 `/convites` (Admin)
 
-- Formulário sempre visível: e-mail + permissão. A descrição do papel selecionado é mostrada abaixo, junto do aviso de que reenviar invalida o convite pendente anterior.
+- Botão "Novo convite" abre o modal: e-mail + permissão. A descrição do papel selecionado é mostrada abaixo, junto do aviso de que reenviar invalida o convite pendente anterior.
 - **`Motorista` é só mais uma opção do select de permissão** — o formulário não muda, não pede nada a mais, e o convite segue o mesmo caminho das outras roles.
-- Após criar, o **link em claro** retornado pela API aparece num painel destacado com botão "Copiar link" — em dev o e-mail só vai para o log da API, então esse é o caminho prático.
+- Após criar, o modal fecha e o **link em claro** retornado pela API aparece num painel destacado **na página**, com botão "Copiar link" — em dev o e-mail só vai para o log da API, então esse é o caminho prático. O link fica fora do modal de propósito: quem copia precisa dele depois de enviar, não durante o preenchimento.
 - Tabela com status **derivado no cliente**: `utilizadoEm` → "Utilizado" (verde); `expiraEm` no passado → "Expirado" (âmbar); senão "Pendente" (azul). Os três têm cor própria: expirado é uma falha que pede reenvio e antes ficava idêntico a um aceito — os dois eram neutros (§8.1).
 - Convites não utilizados podem ser cancelados; os utilizados mostram a data do aceite no lugar do botão.
 
@@ -281,13 +321,14 @@ A tela do motorista, e a única que ele enxerga. O recorte é **do servidor** (`
 
 Layout pensado para uso rápido, não para auditoria:
 
-1. **Rota em andamento** em destaque no topo (contorno grosso): origem → destino, veículo, data de abertura, km de saída, e um botão único **Encerrar rota**.
+1. **Rota em andamento** em destaque no topo (contorno grosso): partida → chegada, veículo, data de abertura, km de saída, a **estimativa de distância e duração** quando a rota tem traçado, e dois botões — **Lançar abastecimento** (link para `/abastecimentos`, onde o formulário já trava o veículo da rota) e **Encerrar rota**.
+1. **Meu mês** — três cartões logo abaixo: **km rodado no mês** (`GET /rota/resumo`, que para o motorista soma só as rotas dele — o recorte é do servidor), **meus abastecimentos** (`GET /abastecimento/resumo`, quantidade e valor, mesmo recorte) e **manutenção do veículo da rota ativa** (a pendência mais urgente de `GET /manutencao?status=Pendente&veiculoId=`, com `badgeDaManutencao`; `Em dia` quando não há nenhuma; sem rota aberta, o cartão pede para abrir uma).
 2. **Abrir rota** no cabeçalho, desabilitado enquanto houver rota ativa (com o motivo no `title`) ou se não houver veículo cadastrado. O formulário **não tem seletor de motorista**: o `POST /rota` sai sem `codigoMotorista` (`AbrirMinhaRotaRequest`), porque a API grava o id do usuário logado e ignora o corpo. A sugestão de quilometragem pelo veículo escolhido é a mesma de `/rotas`; `dataInicio` já vem com hoje.
 3. **Histórico** — tabela das rotas encerradas, com km percorrido e o intervalo de odômetro.
 
-**Aviso de manutenção.** Ao escolher o veículo no formulário de abrir rota, as pendências daquele veículo aparecem logo abaixo do seletor — contorno vermelho quando há alguma atrasada. Vem de `GET /manutencao?status=Pendente` numa consulta só para a frota (a lista é curta e o cruzamento é local, em vez de uma consulta por veículo selecionado). **Não bloqueia a abertura**: informa no momento em que a informação decide algo, e quem decide é o motorista.
+**Aviso de manutenção.** Ao escolher o veículo no formulário de abrir rota, as pendências daquele veículo aparecem logo abaixo do seletor — contorno vermelho quando há alguma atrasada. Vem de `GET /manutencao?status=Pendente&veiculoId=` — **uma consulta por veículo escolhido** (a mesma chave do cartão de manutenção do "Meu mês"); a versão antiga baixava as pendências da frota inteira e agrupava no cliente, o que a paginação de `/manutencao` inviabilizou. **Não bloqueia a abertura**: informa no momento em que a informação decide algo, e quem decide é o motorista.
 
-Cache: chave própria **`['rotas', 'minhas']`** — o conteúdo é um recorte de `['rotas']`, e as duas telas nunca convivem na mesma sessão. Abrir invalida `['rotas','minhas']` e `['veiculos']`; encerrar invalida as mesmas duas. Não invalida `['manutencoes']`: o motorista não tem acesso a esse endpoint, então a chave nunca está povoada na sessão dele (a cadeia rota → veículo → manutenção continua valendo do lado da gestão — §6.4).
+Cache: chave própria **`['rotas', 'minhas']`** — o conteúdo é um recorte de `['rotas']`, e as duas telas nunca convivem na mesma sessão. O km do mês usa `['rotas', 'minhas', 'resumo', mes]`, os abastecimentos `['abastecimentos', 'resumo', mes]` e a manutenção do veículo `['manutencoes', {status, veiculoId}]` — a mesma chave do aviso do formulário de abertura. Abrir e encerrar invalidam `['rotas','minhas']` (que alcança o km do mês), `['veiculos']` e `['manutencoes']`; encerrar também `['custos']` (§6.4).
 
 Os 422 do encerramento caem no `ErrorList` do próprio `FormDialog`, igual a `/rotas`.
 
@@ -295,37 +336,124 @@ Os 422 do encerramento caem no `ErrorList` do próprio `FormDialog`, igual a `/r
 
 A **única tela que todo mundo lê e escreve**: quem abastece na estrada é o motorista, no pátio é o operador.
 
-O apontamento é curto de propósito — **veículo, motorista, valor, data e observação**. A versão anterior pedia litros e odômetro para calcular consumo; era precisão que não se paga no posto e que fazia o lançamento ser evitado. O que sobrou serve ao que a tela existe para responder: **quanto se gastou**, por veículo, por motorista e por período.
+O apontamento é **fiscal** desde 03/09/2026 — veículo, motorista, **combustível, posto, litros, valor do litro, odômetro e nota fiscal**, mais frentista (opcional), data e observação. A versão anterior era deliberadamente curta, apostando que precisão não se paga no posto; a aposta foi revista com o stakeholder, porque sem litros nem odômetro **km/l e R$/l eram impossíveis de apurar** — e é o que a gestão de frota precisa medir.
+
+São treze campos, o maior formulário do app — e por isso o modal os divide em **quatro `SecaoCampos`**: **Veículo e motorista** (só no cadastro), **Abastecimento** (combustível, litros, R$/litro, valor total, odômetro, data, mais os avisos de odômetro retroativo e de consumo estimado), **Dados do posto** (posto, nota fiscal, frentista) e **Observação**. É a tela que justifica o agrupamento: numa fileira única os treze campos não têm hierarquia nenhuma.
 
 | Ação | Quem |
 |---|---|
 | Ver a frota inteira | Admin, Supervisor, Operador |
 | Ver **o que é dele** | Motorista |
 | Lançar e corrigir | Todos |
-| Excluir | Admin |
+| Excluir | Admin, Supervisor |
 
 - **O recorte do motorista é do servidor** (sai do `sub` do token), como em `/minhas-rotas`: um `motoristaId` enviado por ele é sobrescrito — filtro de cliente não é isolamento. Consequência prática na tela: **toda linha que o motorista enxerga é dele**, então o botão de corrigir não precisa de condicional por dono. Para ele a coluna "Quem lançou" some (seria sempre alguém da gestão ou ele mesmo) e o filtro por motorista também.
 - **"Motorista" e "Quem lançou" são pessoas diferentes** quando a gestão lança em nome de alguém: o gasto é do motorista, o registro é de quem digitou. O recorte do motorista é pelo **primeiro** — ele enxerga o que o supervisor lançou **para** ele.
 - **O campo motorista muda de natureza pelo papel**: para a gestão é um `<select required>` alimentado por `['motoristas']`; para a role Motorista é um `input disabled` com o próprio nome, e o corpo nem leva o campo — a API o resolve pelo token. O `useQuery` de motoristas é `enabled: !motorista`, porque `GET /motorista` é restrito à gestão e devolveria **403** para ele.
 - **Trava de veículo por rota aberta**: tendo o motorista uma rota ativa (`['rotas','minhas']`, `r.ativo` — a mesma derivação de `/minhas-rotas`), o select mostra **só o veículo da rota**, já pré-selecionado, e o formulário diz com qual carro ele está. Sem rota aberta, a lista completa. **A trava não é só visual**: mandar outro veículo devolve **422** do servidor.
-- O filtro de período usa o mesmo select de `/manutencoes` (`lib/periodo.ts`); ao lado dele, a gestão filtra por veículo e por motorista.
-- **O abastecimento não mexe no odômetro do veículo.** Quem o avança são a rota e a manutenção — a tela não participa da cadeia, e por isso a mutation invalida só `['abastecimentos']` (ver §6.4).
-- **Veículo e motorista não são editáveis na correção** — trocar qualquer um reatribuiria o gasto. Para isso, exclua e lance de novo; a tela diz isso no formulário. Só valor, data e observação são corrigíveis.
-- A rota é **contexto derivado**: a API vincula sozinha quando há rota aberta do motorista naquele veículo, e a tabela mostra "Origem → Destino" no lugar do modelo. Ninguém escolhe rota na tela.
+- O filtro de período é o mesmo `FiltroPeriodo` de `/manutencoes`, com o personalizado; ao lado dele, a gestão filtra por veículo e por motorista.
+- ⚠️ **O valor total é readonly e não vai no corpo.** A tela calcula `litros × valor do litro` para o usuário conferir na hora, mas quem grava é o servidor, que recalcula e ignora qualquer `valor` recebido. O input é `readOnly` com `tabIndex={-1}` — espelho, não entrada. ⚠️ **O espelho arredonda como a API**: `valorTotalAbastecimento` (`lib/abastecimento.ts`) faz a conta em inteiros e leva o meio centavo para longe do zero, igual ao `decimal` + `MidpointRounding.AwayFromZero` do servidor. Em `double` puro, 20,5 L × R$ 5,39 mostrava R$ 110,49 contra os R$ 110,50 gravados.
+- ⚠️ **O abastecimento passou a mexer no odômetro do veículo.** É o **terceiro** caminho que o avança, ao lado de rota e manutenção, e como eles só anda para frente: um lançamento retroativo com km menor é aceito e não retrocede a ficha. Por isso a mutation invalida **quatro** chaves — `['abastecimentos']`, `['custos']`, `['veiculos']` e `['manutencoes']` (§6.4).
+- **Odômetro menor que a ficha do veículo dispara um aviso, não um erro.** O servidor aceita (pode ser lançamento retroativo — o caminhão rodou desde a data do abastecimento) e apenas não retrocede a quilometragem. Mas o mesmo formato tem cara de erro de digitação, e um número furado envenena o km/l daquele veículo depois — então a tela compara com `['veiculos']` e avisa em `var(--color-warning)`, **sem bloquear o envio**. Bloquear com 422 no servidor foi descartado: mataria o lançamento retroativo, que é caso comum e não exceção.
+- **A tela estima o km/l enquanto a pessoa digita.** Assim que odômetro e litros fecham, aparece uma linha dizendo desde qual abastecimento a conta parte: `Desde o abastecimento de 28/08 (152.340 km): 500 km ÷ 48,5 L ≈ 10,3 km/l`. É o método tanque a tanque — os litros de agora repõem o que foi queimado no trecho. A referência é o abastecimento de **maior odômetro abaixo do digitado** (ordenar por odômetro e não por data é o que impede lançamento retroativo de virar km negativo), e em modo de correção o próprio registro fica de fora. Some no primeiro abastecimento do veículo, onde não há de onde partir.
+- A prévia usa uma query própria — `['abastecimentos', 'doVeiculo', id]`, **sem recorte de data**, porque o abastecimento anterior pode ser de qualquer época e o filtro da listagem (que abre no mês corrente) esconderia justamente a referência. Só busca com o formulário aberto; o prefixo `['abastecimentos']` faz o `invalidar()` já existente alcançá-la.
+- ⚠️ **Para a role Motorista a prévia pode sair inflada, e é por isso que a referência aparece nomeada.** A lista dele vem recortada pelo servidor: se o abastecimento anterior daquele caminhão foi de outra pessoa, a conta vai pegar um lançamento mais antigo dele mesmo — km maior, litros do tanque errado. Mostrar a data e o odômetro da referência deixa isso visível em vez de silencioso; corrigir exigiria afrouxar o recorte, o que não vale a troca.
+- **Combustível e posto vêm dos catálogos** (`/tipos-combustivel` e `/postos`), carregados com `apenasAtivos: true` e **sem `enabled`**, ao contrário de `['motoristas']`: a API abre a leitura dos dois a todos os papéis justamente para o motorista conseguir lançar. Sem catálogo cadastrado o botão de novo lançamento fica desabilitado, com o motivo no `title` — mesma mecânica de "sem veículos"/"sem motoristas".
+- **Veículo e motorista não são editáveis na correção** — trocar qualquer um reatribuiria o gasto. Para isso, exclua e lance de novo; na correção a seção inteira "Veículo e motorista" some, e a `descricao` do modal diz o motivo. Todo o resto do apontamento é corrigível.
+- A rota é **contexto derivado**: a API vincula sozinha quando há rota aberta do motorista naquele veículo, e a tabela mostra "Partida → Chegada" no lugar do modelo. Ninguém escolhe rota na tela.
+- Litros e R$/litro dividem uma célula na tabela (`48,5 L` com `R$ 6,19/L · 152.340 km` embaixo), no mesmo formato de duas linhas da célula de veículo — a tabela já tem nove colunas.
 - Rodapé com o total **do que está filtrado** (quantidade e valor), não da frota inteira.
 
 Cache: `['abastecimentos', filtro]`, com `filtro` incluindo `motoristaId`.
 
+### 5.9.2 `/custos` (gestão)
+
+Onde o gasto da frota fica visível numa tela só. Antes dela, a resposta para "quanto esse veículo custou em agosto" exigia abrir duas telas e somar à mão: `/abastecimentos` totalizava no cliente, `/manutencoes` exibia a coluna `Custo` e nem isso. Hoje são **três** origens — abastecimento, manutenção concluída e despesa avulsa (§5.9.3).
+
+**Somente leitura, e de propósito.** Não há botão "Novo", `FormDialog` nem `RowActions`: o lançamento continua acontecendo nas telas de origem. Do lado da API não existe tabela de custos — as duas origens são unidas na leitura (§ 8.2 do contexto-api), e é isso que faz corrigir um valor em `/abastecimentos` corrigir o total aqui.
+
+**Só gestão.** O endpoint devolve totais da frota inteira, que é justamente o que o motorista não pode ver — a API já esconde dele o custo da manutenção. Sendo a tela fechada na porta (`Roles.Gestao` → 403), nenhum valor precisa ser escondido condicionalmente aqui dentro.
+
+A tela tem **dois** blocos, nesta ordem — a tabela de lançamentos e o gráfico de evolução mensal saíram. O gráfico, em 28/09/2026: a evolução no tempo já é o "Custo dos últimos 6 meses" do dashboard (§5.1), e aqui ele só aparecia com mais de um mês no filtro, disputando espaço com o resumo. A lista de lançamentos saiu antes, pelo mesmo motivo: uma lista longa embaixo do resumo competia com ele pela atenção, e quem abre `/custos` quer o total, descendo ao lançamento só quando um número não fecha.
+
+1. **Faixa de KPIs** no formato do dashboard, em **seis** cartões: custo total (com a contagem de lançamentos), combustível, manutenção e despesas (cada um com sua participação no total), **custo por km** e **consumo médio**. Os números vêm somados do banco, não de `reduce` no cliente.
+2. **Tabela por veículo** — combustível, manutenção, despesas, total, km rodado e R$/km, do maior total para o menor. A última coluna traz um botão **"Ver"** por linha, e é por ele que se chega aos lançamentos.
+
+**Os lançamentos são detalhe sob demanda.** O botão da linha abre o `PainelDialog` `LancamentosDoVeiculoDialog`, que consulta `GET /custo` com o **recorte da tela** (período, origem, motorista) mais o `veiculoId` daquela linha — então o que se vê ali explica exatamente o número que foi clicado, nunca um recorte diferente. Paginação do servidor, com o mesmo seletor de 10/15/20 do resto do painel (teto de 100 no servidor). Mudar qualquer filtro **fecha o modal**: mantê-lo aberto sobre um recorte que mudou embaixo dele diria uma coisa e mostraria outra.
+
+⚠️ **Não há mais uma visão de "todos os lançamentos" sem escolher veículo.** É a troca consciente por uma tela de resumo limpa; o caminho para a lista crua de um período é o filtro da própria tela de origem (`/abastecimentos`, `/despesas`, `/manutencoes`).
+
+**Dois avisos em `tag-warning`, e ambos existem porque sem eles o número mente:**
+
+- **`N manutenções concluídas sem custo informado não entram neste total`** — `custo` é opcional em `ConcluirManutencaoRequest`, e quem concluiu sem preencher some da soma. A contagem vem do servidor (`manutencoesSemCustoInformado`).
+- **`Manutenção não é atribuída a motorista`**, quando há filtro de motorista ativo. O recorte por pessoa devolve **abastecimentos e despesas** (multa tem dono), mas nunca manutenção — é a única das três origens que some inteira nesse filtro. Sem o aviso, "custo do motorista X = R$ 800" seria lido como se incluísse oficina.
+
+Outros detalhes que decidem se o número é confiável:
+
+- **O período começa em "Este mês"**, não em "Todo o período": um total de todos os tempos não responde pergunta nenhuma e ainda faz a primeira carga ser a mais cara possível. É a única tela cujo `FiltroPeriodo` não abre em `todos`.
+- **Custo por km é `—`, nunca zero, quando não houve rota encerrada no período.** Sem denominador não existe métrica, e zero afirmaria que a frota rodou de graça. Rota ainda aberta não tem `kmPercorrido`, então o mês corrente subestima o km e **superestima** o R$/km.
+- ⚠️ **Os dois KPIs de km medem coisas diferentes, e o detalhe de cada um diz qual.** O R$/km divide pelo km das **rotas encerradas** (`"2.000 km em rotas encerradas"`); o consumo médio divide pelo **odômetro dos abastecimentos** (`"3.100 km pelo odômetro"`), porque combustível é queimado dentro e fora de rota e o km das rotas subestimaria o consumo. Ver os dois números lado a lado e não entender por que divergem seria pior do que a divergência — daí o detalhe ser obrigatório nos dois cartões.
+- **Consumo médio é `—` quando o veículo teve menos de dois abastecimentos no período.** Sem intervalo entre dois pontos não existe consumo. Os litros do primeiro abastecimento do período são descontados do denominador: eles pagaram o trecho *anterior* a ele (§ 8.2 do contexto-api).
+- ⚠️ **Filtrar por motorista superestima o consumo**, e a tela mostra uma segunda `tag tag-warning` dizendo isso: o recorte deixa só os abastecimentos daquela pessoa, mas o odômetro continua saltando os dos outros, então o km cobre trechos que ela não abasteceu.
+- **Veículo que rodou sem custo lançado aparece com total zero.** É o caso que mais merece ser visto — ninguém lançou o abastecimento —, e mantê-lo faz as colunas fecharem com o km total.
+- Filtros no servidor (veículo, motorista, origem, período); qualquer mudança **volta para a página 1**. Botão **Atualizar** no cabeçalho, como em `/auditoria`.
+- `formatCustoPorKm` (`lib/custo.ts`) usa até 4 casas: o valor costuma ficar abaixo de um real, e duas casas transformariam a diferença entre veículos em "R$ 0,50" para todo mundo.
+
+Cache: **`['custos', filtro]`** para a lista e **`['custos', 'resumo', recorte]`** para os totais — o recorte do resumo não carrega paginação, senão trocar de página refaria as somas. Ao contrário de `['auditoria']`, esta chave **é** invalidada de fora: ver a segunda cadeia longa em §6.4.
+
+### 5.9.3 `/despesas` (gestão)
+
+Onde entra o custo que não tinha lugar nenhum: pedágio, multa, IPVA, seguro, licenciamento. É a **terceira origem** de `/custos`, e a única cuja tabela é fonte de verdade — as outras duas são lidas das telas de abastecimento e manutenção.
+
+**Só gestão**, Operador incluído. O Motorista não vê a tela nem o endpoint (403): o lançamento é administrativo e ele não enxerga valor de frota.
+
+| Ação | Quem |
+|---|---|
+| Ver e lançar | Admin, Supervisor, Operador |
+| Excluir | Admin, Supervisor |
+
+Mesmo formato de `/abastecimentos`: cadastro em `FormDialog`, filtros, e rodapé com o total **do que está filtrado**. Duas seções no modal — **Despesa** (veículo, tipo, motorista) e **Lançamento** (valor, data, observação). As diferenças:
+
+- **A data abre com o dia de hoje calculado ao abrir o formulário** — não no carregamento da tela, senão uma aba aberta de um dia para o outro sugeriria a data de ontem.
+- **O motorista é opcional** e o select abre em "Não atribuída". Multa tem dono; IPVA e seguro não. É esse campo que faz o filtro por motorista de `/custos` alcançar a despesa.
+- **O veículo é obrigatório** — sem ele o resumo por veículo não fecharia com os totais.
+- **A correção alcança todos os campos**, inclusive veículo, tipo e motorista. Em `/abastecimentos` a tela diz "exclua e lance de novo" porque a troca reatribuiria um gasto sujeito a recorte por dono; aqui não há recorte, e a auditoria grava o diff campo a campo.
+- **O select de tipo mostra só os ativos** (`['tiposDespesa', 'ativos']`) — lançar em tipo aposentado devolve 422. Quando não há nenhum tipo ativo, um aviso `tag-warning` aparece e o botão "Nova despesa" fica desabilitado: é melhor do que deixar abrir um formulário que não tem como ser enviado.
+- Período padrão "Últimos 30 dias" — é uma tela de lançamento, não de análise como `/custos`.
+
+Cache: `['despesas', filtro]`. Toda mutação invalida também `['custos']` (§6.4).
+
+### 5.9.4 `/tipos-despesa` (Admin / Supervisor)
+
+Gêmeo de `/tipos-manutencao`, sem o campo de intervalo em km. Catálogo por empresa, com nome único, semeado no provisionamento (Pedágio, Multa de trânsito, IPVA, Licenciamento, Seguro, Lavagem, Estacionamento) — as empresas que já existiam foram semeadas pela migration, então a tela nunca abre vazia num cliente antigo.
+
+- **Inativar é o caminho, não excluir**: o atalho na linha tira o tipo do seletor de lançamento sem apagar o histórico. O DELETE de um tipo em uso devolve 422 dizendo exatamente isso, exibido dentro do `ConfirmDialog`.
+- ⚠️ Renomear um tipo muda o que **três** telas exibem: o catálogo, a lista de despesas (que desnormaliza o nome) e a coluna Categoria de `/custos`. Por isso a mutação invalida as três chaves (§6.4).
+
+### 5.9.5 `/tipos-combustivel` e `/postos` (Admin / Supervisor)
+
+Os dois catálogos que sustentam o apontamento de abastecimento, no mesmo formato de `/tipos-despesa`.
+
+| | `/tipos-combustivel` | `/postos` |
+|---|---|---|
+| Campos | Nome | Nome, CNPJ (opcional), Cidade (opcional) |
+| Seed no provisionamento | Diesel S10/S500, Gasolina comum/aditivada, Etanol, GNV, ARLA 32 | **nenhum** — cada empresa credencia a sua rede |
+| Atalho na linha | Inativar / Ativar | Descredenciar / Credenciar |
+
+- ⚠️ **A tela é de Admin/Supervisor, mas o endpoint de leitura é aberto a todos os papéis.** É a diferença em relação a `/tipos-despesa`: o motorista lança abastecimento e precisa dos dois catálogos para preencher o formulário. `pode.editarTiposCombustivel`/`pode.editarPostos` escondem só a tela e o item de menu.
+- **Inativar é o caminho, não excluir**, como no catálogo de despesa: o DELETE de um item em uso devolve 422 pedindo exatamente isso, exibido dentro do `ConfirmDialog`.
+- ⚠️ **Renomear muda o que duas telas exibem** — o catálogo e a lista de abastecimentos, que desnormaliza os dois nomes. **Não** muda `/custos`: a categoria da linha de custo do abastecimento é a constante "Combustível", não o nome do tipo. Por isso a mutação invalida duas chaves, e não três como a de tipo de despesa (§6.4).
+
 ### 5.10 `/auditoria` (Admin)
 
-Trilha do que a equipe alterou. **Somente leitura** — não há `InlineForm` nem `RowActions`, porque a API não expõe caminho para alterar ou apagar uma linha (nem para o Admin).
+Trilha do que a equipe alterou. **Somente leitura** — não há botão "Novo" nem `RowActions`, porque a API não expõe caminho para alterar ou apagar uma linha (nem para o Admin).
 
-- **Filtros no servidor**, como em `/manutencoes`: o quê (entidade), ação, quem (select alimentado por `['usuarios']` — a tela é Admin, a query já existe) e período de/até. Qualquer mudança de filtro **volta para a página 1**; sem isso a tela abriria vazia ao filtrar estando na página 4.
+- **Filtros no servidor**, como em `/manutencoes`: o quê (entidade), ação, quem (select alimentado por `['usuarios']` — a tela é Admin, a query já existe) e período — o `FiltroPeriodo` das outras telas desde 28/09/2026, no lugar dos dois campos de data soltos que a tela tinha (o intervalo livre continua em "Personalizado…"). Qualquer mudança de filtro **volta para a página 1**; sem isso a tela abriria vazia ao filtrar estando na página 4.
 - Colunas: **Quando** (`formatDateTime`), **Quem** (nome + o papel *do momento da ação*, que vem gravado na linha e não é o papel atual), **Ação** (`tag`), **Registro** (`Entidade #id`) e **O que aconteceu** (a `descricao` pronta que vem do servidor — nunca montada no cliente).
-- A cor da tag sinaliza **consequência, não entidade** (§8.1): `tag-danger` para Excluiu/Desativou, `tag-warning` para AlterouPermissao/Cancelou, `tag-accent` para Criou, `tag-success` para Concluiu/Encerrou/Ativou/Aceitou. `Atualizou` fica neutro **de propósito** — é a ação mais comum da trilha, e colori-la afogaria o resto. Numa tabela longa, colorir por entidade viraria arco-íris.
+- A cor da tag sinaliza **consequência, não entidade** (§8.1): `tag-danger` para Excluiu/Desativou, `tag-warning` para AlterouPermissao/Cancelou, `tag-accent` para Criou, `tag-success` para Concluiu/Encerrou/Ativou/Aceitou. `Atualizou` fica neutro **de propósito** — é a ação mais comum da trilha, e colori-la afogaria o resto. ⚠️ `Calculou` (chamada cobrada à Routes API, desde 08/09/2026) entrou na união `AcaoAuditoria` e recebeu o rótulo "Calculou rota" em `ROTULO_ACAO` — **obrigatório, não opcional**: o `Record<AcaoAuditoria, string>` é exaustivo, e uma união ampliada sem a chave correspondente quebra o `tsc -b`. Cor própria ela não tem: cai no `tag-neutral`, como `Atualizou`. Numa tabela longa, colorir por entidade viraria arco-íris.
 - **Linha expansível** quando há diff: clicar abre uma sublinha com `campo · de → para`, mais o IP de origem. Sem diff (criação, exclusão) a seta nem aparece — não há o que abrir.
 - Os valores do diff chegam em cultura invariante, de propósito: o histórico não depende de quem o escreveu. A tela converte datas ISO para pt-BR na leitura; o resto passa direto.
-- Rodapé com o componente `Paginacao` (25 por página, teto de 100 no servidor) e botão **Atualizar** no cabeçalho.
+- Rodapé com o componente `Paginacao` (o tamanho é a preferência do painel inteiro — 10/15/20, padrão 15 —, teto de 100 no servidor) e botão **Atualizar** no cabeçalho.
 
 Cache: **`['auditoria', filtro]`**, no padrão de `['manutencoes', filtro]`. **Sem cross-invalidation** — ver §6.4.
 
@@ -334,7 +462,7 @@ Cache: **`['auditoria', filtro]`**, no padrão de `['manutencoes', filtro]`. **S
 Formulário único, sem tabela: **nome, CPF e data de nascimento** do próprio usuário. É o caminho do direito de correção da LGPD (Art. 18, III) e a única tela alcançável por todas as roles — inclusive o Motorista, que é justamente quem tem CPF. Chega-se a ela pelo bloco do avatar no header.
 
 - Carrega por `GET /usuario/perfil` (`['perfil']`) e salva por `PUT /usuario/perfil`. Nenhum id trafega: o alvo é o dono do token.
-- **E-mail e papel aparecem como texto, não como campo**, com a razão escrita ao lado: o e-mail é a chave de acesso e o papel é concedido pelo administrador. Mostrá-los evita a pergunta de onde alterar; deixá-los editáveis prometeria o que a API não faz.
+- **E-mail, papel e empresa aparecem como texto, não como campo**, com a razão escrita ao lado: o e-mail é a chave de acesso, o papel é concedido pelo administrador e a empresa (com o CNPJ formatado por `formatCnpj`) é a conta à qual o acesso pertence. Mostrá-los evita a pergunta de onde alterar; deixá-los editáveis prometeria o que a API não faz. A resposta de `/usuario/perfil` é o `PerfilResponse` (`UsuarioResponse` + `nomeEmpresa`/`cnpjEmpresa`).
 - CPF com `mascaraCpf` na digitação e só os 11 dígitos no envio (mesmo par `mascaraCpf`/`somenteDigitos` de `/convite`). Em branco vira `undefined` → a API grava `null`, e a tela avisa que apagar o campo remove o CPF do cadastro.
 - CPF já usado por outro usuário da mesma empresa → **422**, exibido no `ErrorList`.
 - O formulário é preenchido a partir da query com um **ajuste de estado durante o render** guardado pelo `id` já carregado, e não num `useEffect`: a fonte é o próprio estado do componente, e a guarda impede que um refetch descarte o que está sendo digitado.
@@ -346,10 +474,10 @@ Formulário único, sem tabela: **nome, CPF e data de nascimento** do próprio u
 
 ### 6.1 `apps/web/src/api/http.ts`
 
-- `baseURL` = `VITE_API_URL`; interceptor de request injeta `Authorization: Bearer`.
-- Interceptor de response: em **401**, dispara um único refresh (`refreshInFlight` como lock — a rotação do refresh token invalida o anterior, então dois refreshes paralelos quebrariam o segundo), refaz a requisição original uma vez e, se o refresh falhar, limpa a sessão e força `/login`.
-- Rotas anônimas (`/auth/login`, `/auth/refresh`, `/auth/esqueci-senha`, `/auth/redefinir-senha`, `/convite/aceitar`) são isentas: 401 ali é credencial inválida, não sessão expirada.
-- `unwrap()` desembrulha o envelope `{ sucesso, mensagem, dados, erros }` e lança `ApiError` quando `sucesso: false`.
+- `baseURL` = `VITE_API_URL`; `withCredentials: true` — o JWT e o refresh token viajam em cookie `HttpOnly; Secure; SameSite=None` setado pelo servidor, nunca em `localStorage`/header `Authorization`. Sem `withCredentials` o navegador não anexaria o cookie numa chamada cross-origin (front e API vivem em portas/domínios diferentes).
+- Interceptor de response: em **401**, dispara um único refresh (`refreshInFlight` como lock — a rotação do refresh token invalida o anterior, então dois refreshes paralelos quebrariam o segundo), refaz a requisição original uma vez e, se o refresh falhar, limpa a sessão e força `/login`. `POST /auth/refresh` não leva corpo: o refresh token vai no cookie, anexado sozinho pelo navegador — o refresh renova esse mesmo cookie, e a requisição original é só repetida.
+- Rotas anônimas (`/auth/login`, `/auth/refresh`, `/auth/esqueci-senha`, `/auth/redefinir-senha`, `/convite/consultar`, `/convite/aceitar`) são isentas: 401 ali é credencial inválida, não sessão expirada.
+- `unwrap()` desembrulha o envelope `{ sucesso, mensagem, dados, erros }` e lança `ApiError` quando `sucesso: false`. **Só o `sucesso` decide**: `dados: null` com sucesso é devolvido como `null` — é a resposta legítima de `GET /abastecimento/anterior` para veículo sem histórico.
 
 ### 6.2 Erros
 
@@ -357,13 +485,17 @@ Formulário único, sem tabela: **nome, CPF e data de nascimento** do próprio u
 
 ### 6.3 Sessão
 
-- [`tokenStorage`](apps/web/src/api/tokenStorage.ts) guarda `frota360.token`, `frota360.refreshToken` e `frota360.user` (nome, e-mail, role) no `localStorage`.
+- [`tokenStorage`](apps/web/src/api/tokenStorage.ts) guarda só `frota360.user` (nome, e-mail, role e **nome da empresa**) no `localStorage` — puramente para a UI exibir quem está logado. Token e refresh token não passam por aqui: chegam do servidor em cookie `HttpOnly`, invisível a JavaScript (mitiga exfiltração por XSS — era o achado do React Doctor `auth-token-in-web-storage`), e nenhum código do front os lê ou escreve.
 - [`useSession`](apps/web/src/auth/useSession.ts) expõe o usuário logado de forma reativa via `useSyncExternalStore`, ouvindo o evento `storage` (outras abas) e um evento próprio `frota360:sessao` (esta aba — `localStorage` não notifica quem escreveu).
 - O papel usado pela UI vem desse cache local; ele só é atualizado quando o token renova. Mudança de papel pode levar até 1 h para refletir na interface — o servidor, porém, já recusa a ação antes disso.
 
 ### 6.4 Chaves do React Query
 
-`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['usuarios']`, `['convites']`, `['perfil']`, `['manutencoes', filtro]`, `['abastecimentos', filtro]`, `['auditoria', filtro]`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`apps/web/src/lib/queryClient.ts`](apps/web/src/lib/queryClient.ts)).
+`['motoristas']`, `['veiculos']`, `['rotas']`, `['rotas', 'minhas']`, `['rotas', 'resumo', intervalo]`, `['rotas', 'minhas', 'resumo', intervalo]`, `['manutencoes', 'resumo']`, `['abastecimentos', 'resumo', recorte]`, `['usuarios']`, `['convites']`, `['perfil']`, `['manutencoes', filtro]`, `['abastecimentos', filtro]`, `['auditoria', filtro]`, `['custos', filtro]`, `['custos', 'resumo', recorte]`, `['despesas', filtro]`, `['tiposDespesa']`, `['tiposDespesa', 'ativos']`, `['tiposCombustivel']`, `['tiposCombustivel', 'ativos']`, `['postos']`, `['postos', 'ativos']`, `['tiposManutencao']` e `['tiposManutencao', 'ativos']` — invalidadas após cada mutação da respectiva tela (e cruzadas quando uma exclusão afeta outra lista). `staleTime` de 30 s e sem retry em erro < 500 ([`apps/web/src/lib/queryClient.ts`](apps/web/src/lib/queryClient.ts)).
+
+⚠️ **`['rota', 'calculo', latPartida, lngPartida, latChegada, lngChegada]` é a única chave que existe por causa de dinheiro.** Cada acerto de cache é uma chamada à Google que **não** foi cobrada. Por isso ela carrega as quatro coordenadas (par idêntico nunca recalcula), usa `staleTime: Infinity` em vez dos 30 s do padrão, e `retry: false` — repetir automaticamente uma chamada faturada que falhou seria pagar duas vezes pelo mesmo erro. Ninguém a invalida.
+
+⚠️ **Duas condições fazem essa economia funcionar de verdade, e as duas nasceram de uma cobrança dupla observada no navegador:** a query só é `enabled` quando **não há traçado salvo no formulário** (sem isso, abrir para editar uma rota já calculada paga outra vez pelo mesmo trajeto), e a chave **arredonda a coordenada em 6 casas**, que é a precisão da coluna `numeric(9,6)` — o Places devolve precisão cheia, e sem o arredondamento o ponto lido do banco e o mesmo ponto escolhido na tela geram chaves diferentes, fazendo o cache errar exatamente onde ele mais importa.
 
 ⚠️ `['rotas']` e `['rotas','minhas']` são **listas diferentes**, não pai e filho: a segunda vem de outro endpoint e traz só as rotas do motorista logado. Invalidar pelo prefixo `['rotas']` alcançaria as duas, o que é inofensivo apenas porque nenhuma sessão usa as duas telas. Ao mexer nisso, invalide a chave exata.
 
@@ -375,7 +507,10 @@ Cruzamentos que não são óbvios, conferidos no código:
 - **Excluir uma rota** invalida `['rotas']` **e `['veiculos']`** — se a rota estava aberta, o veículo volta a `Disponível` na coluna Situação de `/veiculos` (§5.3). Não invalida `['manutencoes']`: excluir não mexe no odômetro.
 - Em `/minhas-rotas`, **abrir** e **encerrar** invalidam `['rotas','minhas']`, `['veiculos']` **e** `['manutencoes']` — a mesma cadeia da tela de gestão, agora que o motorista também lê manutenções e a tela mostra a pendência do veículo escolhido.
 - **Salvar o perfil** invalida `['perfil']`, `['motoristas']` **e** `['usuarios']` ([PerfilPage.tsx](apps/web/src/pages/PerfilPage.tsx)) — as duas listas exibem nome e CPF de quem acabou de se corrigir. É o único cruzamento que parte de uma tela sem tabela.
-- **Lançar, corrigir ou excluir abastecimento** invalida **só** `['abastecimentos']` — o lançamento é só o gasto e não toca no odômetro do veículo, então não entra na cadeia rota → veículo → manutenção. (Ele já entrou: enquanto o formulário pedia odômetro, invalidava também `['veiculos']` e `['manutencoes']`.)
+- ⚠️ **Lançar, corrigir ou excluir abastecimento invalida quatro chaves**: `['abastecimentos']`, `['custos']`, `['veiculos']` **e** `['manutencoes']`. Desde 03/09/2026 o apontamento carrega odômetro e **avança a ficha do veículo** — o abastecimento voltou para a cadeia rota → veículo → manutenção, agora como o **terceiro** caminho que move o odômetro. `['custos']` continua porque o valor é metade do que `/custos` soma. (Este bullet já disse o contrário: enquanto o formulário não pedia odômetro, eram só duas chaves.)
+- ⚠️ **`['custos']` é a segunda cadeia longa do app, e a menos óbvia.** Ela é alimentada por **quatro** telas: abastecimento (criar/corrigir/excluir), manutenção (**concluir** — é onde o custo entra —, editar, que pode trocar o veículo a que o custo é atribuído, e excluir), **despesa** (criar/corrigir/excluir) e **encerrar rota**, que apura o `kmPercorrido`: o denominador do R$/km. Encerrar rota invalida **quatro** chaves. As duas chaves de custo (lista e resumo) compartilham o prefixo `['custos']`, então uma invalidação alcança as duas de propósito — nenhuma tela usa uma sem a outra.
+- **Mutação de tipo de combustível ou de posto invalida duas chaves**: a própria (`['tiposCombustivel']` / `['postos']`, prefixo que cobre o catálogo completo e a lista de ativos) e `['abastecimentos']`, porque os dois nomes são desnormalizados na listagem. **`['custos']` fica de fora de propósito**: a categoria da linha de custo do abastecimento é a constante `"Combustível"`, não o nome do tipo — ao contrário da despesa, logo abaixo.
+- **Mutação de tipo de despesa invalida três chaves**: `['tiposDespesa']`, `['despesas']` e `['custos']`. O nome do tipo é desnormalizado na resposta da despesa **e** é a `categoria` da linha de custo — renomear um tipo muda o que as três telas exibem. É o cruzamento mais fácil de esquecer, porque a tela do catálogo não mostra despesa nenhuma.
 - Qualquer mutação no catálogo invalida o prefixo `['tiposManutencao']`, que cobre de uma vez o catálogo completo e a lista de ativos usada no agendamento.
 - ⚠️ **`['auditoria']` é a exceção deliberada: ninguém a invalida.** Praticamente toda mutação do app cria uma linha de trilha, então invalidar de dentro de cada tela espalharia acoplamento pelo front inteiro — cada mutation passaria a conhecer uma tela que ela não afeta. O `staleTime` de 30 s cobre o uso normal, e a tela tem botão "Atualizar" para quem quer ver agora.
 
@@ -391,30 +526,40 @@ Cruzamentos que não são óbvios, conferidos no código:
 | **convite** | `POST /convite` (Admin) | ConvitesPage — a resposta traz `linkConvite` em claro |
 | | `GET /convite` (Admin) | ConvitesPage |
 | | `DELETE /convite/{id}` (Admin) | cancelar pendente (utilizado → 422) |
-| | `POST /convite/aceitar` (anônimo) | AcceptInvitePage — **já devolve sessão autenticada**; leva `cpf`/`dataNascimento` opcionais |
-| **auditoria** | `GET /auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` (Admin) | AuditoriaPage — **único endpoint paginado**: `dados` é um `ResultadoPaginado<T>`, não um array |
+| | `POST /convite/consultar` (anônimo) | AcceptInvitePage — `{nomeEmpresa, email, role, expiraEm}` sem consumir o convite; inválido/utilizado/expirado → **404** |
+| | `POST /convite/aceitar` (anônimo) | AcceptInvitePage — **já devolve sessão autenticada** (com `nomeEmpresa`); leva `cpf`/`dataNascimento` opcionais |
+| **auditoria** | `GET /auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` (Admin) | AuditoriaPage — paginado: `dados` é um `ResultadoPaginado<T>`, não um array |
+| **custo** | `GET /custo?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&origem=&de=&ate=` · `GET /custo/resumo?veiculoId=&motoristaId=&origem=&de=&ate=` (gestão) | CustosPage — a lista é paginada (`ResultadoPaginado<T>`); o resumo é a **única agregação servida pela API** |
+| **despesa** | `GET /despesa?pagina=&tamanhoPagina=&veiculoId=&tipoDespesaId=&motoristaId=&de=&ate=` · `GET /despesa/resumo?<mesmos filtros>` | DespesasPage |
+| **tipodespesa** | `GET /tipodespesa?apenasAtivos=`, `POST`, `PUT /{id}`, `DELETE /{id}` (gestão; escrita e DELETE Admin+Supervisor) | TiposDespesaPage e o seletor de DespesasPage |
+| **tipocombustivel** | `GET /tipocombustivel?apenasAtivos=` (**qualquer autenticado**, Motorista incluído), `POST`, `PUT /{id}`, `DELETE /{id}` (Admin+Supervisor) | TiposCombustivelPage e o seletor de AbastecimentosPage — a query **não** usa `enabled`, ao contrário de `['motoristas']` |
+| **posto** | `GET /posto?apenasAtivos=` (**qualquer autenticado**), `POST`, `PUT /{id}`, `DELETE /{id}` (Admin+Supervisor) | PostosPage e o seletor de AbastecimentosPage; item em uso no DELETE → **422** pedindo para inativar |
 | **usuario** | `GET /usuario` (Admin) | UsuariosPage, **AuditoriaPage** (select "Quem") |
 | | `PUT /usuario/{id}/role` | muda permissão — revoga a sessão do alvo |
 | | `PUT /usuario/{id}/ativo` | ativa/desativa — idem; último admin ativo → 422 |
-| | `GET /usuario/perfil` (**qualquer autenticado**) | PerfilPage — o próprio cadastro; `GET /usuario` é Admin e não serve ao Motorista |
+| | `GET /usuario/perfil` (**qualquer autenticado**) | PerfilPage — o próprio cadastro mais `nomeEmpresa`/`cnpjEmpresa` (`PerfilResponse`); `GET /usuario` é Admin e não serve ao Motorista |
 | | `PUT /usuario/perfil` (**qualquer autenticado**) | PerfilPage — nome/CPF/nascimento; alvo pelo token, CPF duplicado na empresa → 422 |
 | **motorista** | `GET /motorista`, `GET /motorista/{id}` | MotoristasPage, RotasPage (select) — **somente leitura**: são os usuários com a role Motorista |
-| **manutencao** | `GET /manutencao?status=Pendente` | MinhasRotasPage — alimenta o aviso de pendência do veículo escolhido |
-| **abastecimento** | `GET /abastecimento?veiculoId=&motoristaId=&de=&ate=` | AbastecimentosPage — `motoristaId` serve à gestão; para o Motorista a API o sobrescreve com o do token |
-| | `POST /abastecimento` | lançamento — a API resolve motorista (token, para a role Motorista) e rota; veículo fora da rota aberta → **422** |
-| | `PUT /abastecimento/{id}` | correção (só valor, data e observação); lançamento de outro motorista → 404 para ele |
-| | `DELETE /abastecimento/{id}` (Admin) | exclusão |
+| **manutencao** | `GET /manutencao?pagina=&tamanhoPagina=&veiculoId=&status=&de=&ate=` | MinhasRotasPage — alimenta o aviso de pendência do veículo escolhido |
+| **abastecimento** | `GET /abastecimento?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&de=&ate=` · `GET /abastecimento/resumo?<mesmos filtros>` · `GET /abastecimento/anterior?veiculoId=&odometro=&ignorarId=` | AbastecimentosPage — **paginado**. `motoristaId` serve à gestão; para o Motorista a API o sobrescreve com o do token, **inclusive no `total` e no `/resumo`**. O `/anterior` é a referência do km/l e enxerga o histórico do veículo (não o do motorista), devolvendo só data e odômetro |
+| | `POST /abastecimento` | lançamento — a API resolve motorista (token, para a role Motorista) e rota, **calcula o `valor`** (litros × R$/l; o corpo não o envia) e **avança o odômetro do veículo**; veículo fora da rota aberta, combustível/posto inativo ou de outra empresa → **422** |
+| | `PUT /abastecimento/{id}` | correção de todo o apontamento **menos** veículo e motorista; lançamento de outro motorista → 404 para ele |
+| | `DELETE /abastecimento/{id}` (Admin, Supervisor) | exclusão |
 | **veiculo** | `GET/POST /veiculo`, `GET/PUT/DELETE /veiculo/{id}` | VeiculosPage, Dashboard — a resposta traz `emRota` derivado (existe rota aberta com o veículo); placa nos dois formatos, normalizada em maiúsculas pelo servidor; DELETE com rota **ou abastecimento** associado → **422** (RN08) |
-| **rota** | `GET/POST /rota`, `GET/PUT/DELETE /rota/{id}` | RotasPage, Dashboard — o POST leva `kmInicial` e **pode avançar o odômetro do veículo**; o PUT não mexe em `kmInicial`, `ativo` nem `dataFim` |
+| **rota** | `GET /rota?pagina=&tamanhoPagina=&ativo=` · `GET /rota/minhas?<idem>` · `GET /rota/resumo?de=&ate=` · `POST /rota`, `GET/PUT/DELETE /rota/{id}` | RotasPage, Dashboard — o POST leva `kmInicial` e **pode avançar o odômetro do veículo**; o PUT não mexe em `kmInicial`, `ativo` nem `dataFim` |
+| | `GET /rota/resumo?de=&ate=` (**qualquer autenticado**) | Dashboard (frota inteira) e MinhasRotasPage — para o Motorista a API soma **só as rotas dele** |
 | | `GET /rota/minhas` (Motorista) | MinhasRotasPage — sem parâmetro: o motorista vem da claim |
 | | `POST /rota` sem `codigoMotorista` | MinhasRotasPage (`abrirMinha`) — a API grava o id do usuário logado |
 | | `POST /rota/{id}/encerrar` | encerramento — apura `kmPercorrido` e **pode avançar o odômetro do veículo**; para o motorista, rota alheia → 404 |
+| | ⚠️ `RotaRequest` perdeu `origem`/`destino` e ganhou `enderecoPartida`/`enderecoChegada` (08/09/2026), mais as quatro coordenadas **opcionais** — `RotaResponse`, `CriarRotaRequest` e `AbrirMinhaRotaRequest` herdam do mesmo tipo, então a troca alcançou as duas telas de rota e o aviso de rota ativa em `/abastecimentos` | |
+| | `POST /rota/calcular` | **consumido pelo `TrajetoRota`** desde 09/09/2026. Recebe `{latitudeOrigem, longitudeOrigem, latitudeDestino, longitudeDestino}`, devolve `{distanciaMetros, duracaoEstimadaSegundos, polylineCodificada}`. Não persiste nada, e **cada chamada é cobrada** — por isso a chave de cache carrega as quatro coordenadas e o `staleTime` é `Infinity` |
+| | `GET /manutencao/resumo` (gestão) | Dashboard — `{atrasadas, vencendo, urgentes}`; as contagens não têm teto, `urgentes` traz no máximo 10 |
 | **tipomanutencao** | `GET /tipomanutencao?apenasAtivos=` | catálogo (sem filtro) / select de agendamento (`true`) |
 | | `POST`, `PUT /{id}`, `DELETE /{id}` | TiposManutencaoPage |
-| **manutencao** | `GET /manutencao?veiculoId=&status=&de=&ate=` | ManutencoesPage — todos os filtros vão para o servidor, período incluído |
+| **manutencao** | `GET /manutencao?pagina=&tamanhoPagina=&veiculoId=&status=&de=&ate=` | ManutencoesPage — todos os filtros vão para o servidor, período incluído |
 | | `POST /manutencao`, `PUT /manutencao/{id}` | agendar / replanejar (só pendente) |
 | | `POST /manutencao/{id}/concluir` | conclusão — **pode avançar o odômetro do veículo** |
-| | `DELETE /manutencao/{id}` (Admin) | descarte (não há endpoint de cancelar) |
+| | `DELETE /manutencao/{id}` (Admin, Supervisor) | descarte (não há endpoint de cancelar) |
 
 ---
 
@@ -431,12 +576,20 @@ Cruzamentos que não são óbvios, conferidos no código:
 | Criar/editar veículos | ✅ | ✅ | — | — |
 | Criar/editar/concluir manutenções e tipos | ✅ | ✅ | — | — |
 | Lançar e corrigir abastecimento | ✅ | ✅ | ✅ | ✅ (só o que é dele) |
-| Excluir qualquer registro | ✅ | — | — | — |
+| Ver os custos consolidados (`/custos`) | ✅ | ✅ | ✅ | — |
+| Lançar e corrigir despesa (`/despesas`) | ✅ | ✅ | ✅ | — |
+| Manter o catálogo de tipos de despesa | ✅ | ✅ | — | — |
+| Manter os catálogos de combustível e postos ⚠️ | ✅ | ✅ | — | — |
+| Excluir qualquer registro das telas de gestão | ✅ | ✅ | — | — |
 | Usuários e convites | ✅ | — | — | — |
 | Ver a trilha de auditoria | ✅ | — | — | — |
 | Editar o **próprio** cadastro (`/perfil`) | ✅ | ✅ | ✅ | ✅ |
 
-A última linha é a única em que as quatro colunas são ✅ — e por isso `/perfil` não tem entrada em `pode.*`: um predicado que devolve `true` para todo mundo é ruído, não permissão. Corrigir o cadastro **de outra pessoa** não aparece na matriz porque não existe em papel nenhum, o Admin incluído.
+⚠️ **Os catálogos de combustível e posto são o único caso em que a tela é mais restrita que o endpoint.** A **leitura** de `/tipocombustivel` e `/posto` é aberta a todos os papéis na API — o motorista precisa dela para lançar abastecimento —, mas as telas `/tipos-combustivel` e `/postos` são de Admin/Supervisor. A linha acima descreve a tela, não o endpoint.
+
+**Exclusão acompanha edição**: quem cadastra numa tela também apaga ali, e por isso `pode.excluir` é uma entrada única para as nove telas de gestão. O Admin segue sozinho nas telas dele — usuários, convites e auditoria —, e o cancelamento de convite (`DELETE /convite/{id}`) é a única exclusão que continua Admin-only.
+
+A linha do perfil é a única em que as quatro colunas são ✅ — e por isso `/perfil` não tem entrada em `pode.*`: um predicado que devolve `true` para todo mundo é ruído, não permissão. Corrigir o cadastro **de outra pessoa** não aparece na matriz porque não existe em papel nenhum, o Admin incluído.
 
 Na prática: sem permissão de edição, o botão "Novo…" e o ícone de lápis somem; sem permissão de exclusão, some a lixeira; sem nenhuma das duas, a coluna "Ações" inteira desaparece.
 
@@ -446,15 +599,30 @@ O `Motorista` combina os dois mecanismos: nas telas que ele alcança (veículos,
 
 ## 8. Design system e componentes compartilhados
 
-Tokens e classes em [`apps/web/src/styles/design-system.css`](apps/web/src/styles/design-system.css): fundo `#fdfaf6`, superfície `#f2ede4`, texto `#201e1d`, acento `#1f3a5f` (com rampa 100–900), perigo `#a03123`, tipografia Archivo e **raio 0 em tudo** — o visual é de réguas retas, não de cartões arredondados. **A landing pública segue esse mesmo visual** desde a v3 (§3.1); não há mais duas linguagens no produto.
+Tokens e classes em [`apps/web/src/styles/design-system.css`](apps/web/src/styles/design-system.css): fundo `#fdfaf6`, superfície `#f2ede4`, texto `#201e1d`, acento `#1f3a5f` (com rampa 100–900), perigo `#a03123`, tipografia Archivo e **raio 0 em tudo** — o visual é de réguas retas, não de cartões arredondados. **A landing pública (§3.1) tem visual próprio** (cantos arredondados, sombra) desde a v4 — a única exceção são os mocks de UI dentro de um `Dispositivo`, que reaproveitam estas mesmas classes (`.table`/`.tag`/`.btn`) porque precisam parecer com o produto real.
 
-`index.html` carrega Archivo (400/600/800) e **IBM Plex Mono** (400/600). O mono é usado hoje só pela landing, para placa, quilometragem, data e rótulo de campo — se o painel passar a usá-lo em coluna numérica, promova-o a token do design system.
+`index.html` carrega só Archivo (400/600/800) — o mono (IBM Plex Mono, usado pela landing até a v3) foi removido; nada no produto usa fonte monoespaçada hoje.
 
 Classes: `.btn` (`.btn-primary`, `.btn-secondary`, `.btn-icon`, `.btn-danger`), `.field` + `.input` (`.input-underline` no login), `.tag` (ver abaixo), `.nav`, `.table`, `.dialog*`.
 
+Os três tokens `--radius-*` já valem `0px`, então **`style={{ borderRadius: 0 }}` num botão ou campo novo é ruído** — não escreva.
+
+O diálogo tem quatro classes além de `.dialog`/`.dialog-title`/`.dialog-body`/`.dialog-actions`, todas nascidas com a migração dos formulários para modal:
+
+| Classe | O que faz |
+|---|---|
+| `.dialog-corpo` | O **único trecho rolável** do diálogo. O `.dialog` para em `85vh`; título e botões ficam fixos e só os campos rolam. O `min-height: 0` é o que permite o overflow acontecer dentro do flex |
+| `.dialog-secao-titulo` | Cabeçalho de cada `SecaoCampos` — 11px, caixa alta, régua de 1px embaixo: a mesma linguagem do `<th>` da `.table` |
+| `.dialog-grid` | `repeat(auto-fit, minmax(190px, 1fr))` — três colunas no modal de cadastro (760px), uma no celular, sem media query. **É ele quem decide a largura dos campos**; largura fixa no wrapper do campo quebra o grid |
+| `.campo-largo` | `grid-column: 1 / -1`, para observação, aviso e nota explicativa |
+
+⚠️ **`.dialog` precisa declarar `inset: 0` e `margin: auto` à mão.** O centramento de um `<dialog>` modal é do navegador e sai desse par na folha do UA — mas o **preflight do Tailwind v4 zera `margin` em `*`**, `<dialog>` incluído, e sem as duas linhas o diálogo cola no canto superior esquerdo da tela. Vale para os três (`ConfirmDialog`, `FormDialog` e o que vier depois), já que todos usam a mesma classe. A largura é `calc(100vw - 2rem)` no limite inferior, e não `100%`, para o backdrop continuar visível no celular.
+
+⚠️ **O `useAbrirModalAoMontar` empurra o foco para o primeiro campo — e isso não é enfeite.** Quando o formulário é longo o bastante para `.dialog-corpo` rolar, o Chrome torna o **contêiner de rolagem** focável (é ele quem responde a PageUp/PageDown) e o `showModal()` pousa o foco ali: o anel de `:focus-visible` contorna o formulário inteiro e quem abriu o diálogo começa sem cursor em campo nenhum. O hook só age nesse caso exato — testa `document.activeElement === corpo` antes —, então o `autoFocus` do Cancelar no `ConfirmDialog` e os declarados nas telas continuam valendo.
+
 ### 8.1 Cor de situação — a tabela normativa
 
-**Situação se sinaliza pela classe `.tag`, nunca por `style` inline.** A `.tag` tem a forma da etiqueta da landing: barra de 3px na cor do estado (`border-left: 3px solid currentColor`), fundo tonal, caixa alta e peso 600. A barra é o que chama o olho numa tabela longa sem que o fundo precise gritar.
+**Situação se sinaliza pela classe `.tag`, nunca por `style` inline.** Barra de 3px na cor do estado (`border-left: 3px solid currentColor`), fundo tonal, caixa alta e peso 600 — a mesma classe usada nos mocks de UI da landing (§3.1), não uma imitação. A barra é o que chama o olho numa tabela longa sem que o fundo precise gritar.
 
 Cinco tokens de estado, em `:root`: `--color-accent`, `--color-success` (`#2e5c42`), `--color-warning` (`#7a5312`), `--color-danger` (`#a03123`) e a rampa neutra — cada um com seu `-bg`. **Não invente um hex novo nem um sexto tom**: a cor diz a consequência, não a entidade, e um tom por entidade transformaria a tabela em arco-íris.
 
@@ -475,37 +643,126 @@ Onde a cor de estado precisa aparecer **fora** de uma tag (texto de andamento em
 
 Os helpers que decidem rótulo e classe vivem em `lib/`, nunca dentro da página: [`lib/rota.ts`](apps/web/src/lib/rota.ts) (`statusDaRota`) e [`lib/manutencao.ts`](apps/web/src/lib/manutencao.ts) (`badgeDaManutencao`, `estaVencendo`, `textoKmRestantes`, `FAIXA_AVISO`) — duas telas nomeiam o mesmo estado e precisam nomeá-lo igual.
 
+### 8.2 Paginação — o corte é no cliente
+
+`lib/paginacao.ts` é o dono da regra. **`usePaginacao(itens)`** recebe a lista já filtrada e devolve a fatia junto com as props do `Paginacao`; **`useTamanhoPagina()`** é só a preferência, para quem pagina no servidor. O tamanho (10/15/20, padrão 15) fica no `localStorage` (`frota360.itensPorPagina`) e vale para o painel inteiro — quem prefere 20 escolhe uma vez.
+
+⚠️ **Desde 04/09/2026 há duas paginações, e a escolha é por recurso, não por gosto:**
+
+| | Quem | Hook |
+|---|---|---|
+| **Servidor** | as quatro listas que crescem sem teto (`/abastecimentos`, `/despesas`, `/manutencoes`, `/rotas`) + `/auditoria` e `/custos` | `usePaginacaoServidor` |
+| **Cliente** | as dez limitadas pela frota e pela equipe (veículos, motoristas, usuários, convites, catálogos) | `usePaginacao` |
+
+As limitadas **continuam no cliente de propósito**: são o que alimenta os dropdowns de todo formulário, e paginá-las obrigaria a criar um endpoint de opções para cada uma.
+
+**O que o corte no servidor custou, e como foi pago.** Os rodapés "N lançamentos · Total: R$ X" somavam o array recebido — com uma página só, passariam a mentir. A resposta foram os endpoints `/abastecimento/resumo` e `/despesa/resumo`, que devolvem `{quantidade, valorTotal}` do **filtro inteiro** com `COUNT`+`SUM` no banco. A chave de cache deles carrega só o recorte, sem paginação: **virar de página não dispara nova soma**. Em `/abastecimentos` a contagem chega ao componente da tabela pela prop **`quantidade`**, separada das linhas, para não haver confusão entre as duas.
+
+⚠️ **O `usePaginacao` clampa a página no render** (`Math.min(pagina, totalPaginas)`), então uma lista que encolhe por um filtro nunca deixa a tela vazia — e **nenhuma tela de cliente precisa chamar `resetar()` ao filtrar**. Como consequência, página vazia só existe quando a lista inteira é vazia; é por isso que passar a fatia para o `empty` de um `TableStates` continua correto. **No servidor a regra se inverte**: o clamp não alcança o que o banco recortou, então toda tela do `usePaginacaoServidor` chama `resetar()` em cada `onChange` de filtro — sem isso, filtrar estando na página 4 abre a tela vazia.
+
+O teto do servidor é **100** em todos os validators de listagem, aplicado por `AplicarRegrasDePaginacao` (`Application/Common/RegrasDePaginacao.cs`) — um lugar só, em vez da constante repetida por recurso.
+
 Componentes reutilizados pelas telas:
 
 | Componente | Onde | O que faz |
 |---|---|---|
 | `AppLayout`, `PageHeader`, `ErrorList` | `components/AppLayout.tsx` | Casca das telas internas, cabeçalho e lista de erros |
 | `AuthScreen`, `AuthHeading` | `components/AuthScreen.tsx` | Casca das telas de autenticação |
-| `InlineForm`, `TableStates` | `components/Table.tsx` | Formulário acima da tabela e as linhas de carregando/erro/vazio |
-| `Paginacao` | `components/Table.tsx` | Rodapé "X–Y de Z" + anterior/próxima. Só `/auditoria` usa (é a única lista que a API pagina) e some quando cabe tudo numa página |
-| `FiltroPeriodo` | `components/Table.tsx` | Select de período pronto, usado por `/manutencoes` e `/abastecimentos`; a conversão para `de`/`ate` está em `lib/periodo.ts` |
+| `TableStates` | `components/Table.tsx` | As linhas de carregando/erro/vazio dentro de um `<tbody>` |
+| `Paginacao` | `components/Table.tsx` | Rodapé de toda listagem: seletor de itens por página (10/15/20), "X–Y de Z" e anterior/próxima. **Some quando o total cabe na menor opção** — não quando há uma página só, senão esconderia o seletor de quem tem 12 registros e quer ver 10 |
+| `PainelDialog` | `components/Table.tsx` | O diálogo que só mostra conteúdo, com "Fechar" como única ação — irmão do `ConfirmDialog` (confirma) e do `FormDialog` (submete). Serve detalhe sob demanda: hoje, os lançamentos de um veículo em `/custos` |
+| `FiltroPeriodo` | `components/Table.tsx` | Filtro de data do sistema: períodos prontos + "Personalizado…" (De/Até, validado antes de consultar). Usado por `/manutencoes`, `/abastecimentos`, `/despesas`, `/custos` e `/auditoria`; a conversão para `de`/`ate` está em `lib/periodo.ts` |
 | `RowActions`, `ConfirmDialog` | `components/Table.tsx` | Ícones de editar/excluir na linha e confirmação de ação consequente (exclusão ou troca de permissão — `variante="padrao"` tira o vermelho quando não é destrutiva) |
-| `FormDialog` | `components/Table.tsx` | Diálogo com campos (concluir uma manutenção, encerrar uma rota) |
+| `FormDialog`, `SecaoCampos` | `components/Table.tsx` | **Todo cadastro/edição do painel** e as transições com campos (concluir manutenção, encerrar rota). `<dialog>` nativo — `showModal()` traz trava de foco, Escape e `::backdrop`; a tabela fica visível ao fundo. `largura` é 760 nos cadastros e 520 (o default) nas transições. `SecaoCampos` agrupa os campos por categoria e o `.dialog-grid` decide a largura de cada um — largura fixa no wrapper, não; `campo-largo` para quem ocupa a linha inteira |
 | `LogoMark`, `Wordmark` | `components/Logo.tsx` | Marca (versões clara e escura) |
 | `icons.tsx` | — | Ícones SVG traçados, 24×24, `currentColor` |
 | `lib/format.ts` | — | Datas, CPF, quilometragem, moeda, iniciais, `paraInputDate` e `hojeInputDate` para `<input type="date">` |
 | `lib/rota.ts` | `/rotas`, `/minhas-rotas` | `statusDaRota` — o status derivado de `ativo` + `dataFim`, igual nas duas telas |
-| `lib/periodo.ts` | `/manutencoes`, `/abastecimentos` | `PERIODOS` e `intervaloDoPeriodo` — converte o período escolhido em `de`/`ate` (hora local, `ate` inclusivo) |
+| `lib/periodo.ts` | telas com `FiltroPeriodo`, dashboard | `PERIODOS`, `FiltroDePeriodo`/`filtroDePeriodo`, `intervaloDoFiltro` (converte em `de`/`ate`, hora local, `ate` inclusivo), `erroDoIntervalo`, e os intervalos fixos do dashboard |
 
 ---
 
+### 8.3 `TrajetoRota` — endereço com autocomplete e mapa
+
+Bloco "Trajeto" compartilhado por `/rotas` e `/minhas-rotas`, que pediam exatamente os mesmos
+campos. Composto por `CampoEndereco` (×2), `MapaRota` e o resumo de distância/duração.
+
+- **`PlaceAutocompleteElement` (Places API New), não o `Autocomplete` legado.** A escolha é
+  imposta pelo `FormDialog`: o widget antigo injeta o dropdown `.pac-container` no `<body>`, que
+  fica **atrás do top layer** de um `<dialog>` modal. O elemento novo renderiza a lista dentro de
+  si, então funciona no diálogo.
+- **É Web Component, não React.** O `@vis.gl/react-google-maps` não traz wrapper para ele:
+  `CampoEndereco` o instancia, anexa num `ref` e escuta `gmp-select`, e mantém os callbacks em
+  refs atualizadas por efeito — sem isso o listener, registrado uma vez, congelaria o `form` da
+  primeira renderização.
+- ⚠️ **O evento entrega `placePrediction`, NÃO `place`.** A seleção é uma predição, e vira um
+  `Place` por `toPlace()`; só então o `fetchFields` traz `formattedAddress`/`location`. Ler
+  `event.place` devolve `undefined` e o endereço entra na tela **sem coordenada nenhuma**, com o
+  aviso de degradação ligado — falha silenciosa, porque a tela continua funcionando. O
+  `@types/google.maps` tem duas classes parecidas (`PlaceSelectEvent`, de outros elementos, e
+  `PlacePredictionSelectEvent`, deste), então **registre o listener pela sobrecarga tipada do
+  elemento e nunca por um `as`**: o `as` é justamente o que esconde a troca. Usar `toPlace()`
+  também é o que faz o `fetchFields` herdar o session token do autocomplete, mantendo a busca
+  cobrada como uma sessão só.
+- ⚠️ **O `autoFocus` do React não alcança o elemento** — ele vale para o `<input>` do fallback.
+  O foco é dado à mão, e **num `requestAnimationFrame`**: chamado logo após o `appendChild`, o
+  campo interno ainda não montou e o `focus()` é engolido em silêncio.
+- **O `APIProvider` mora no componente, não na raiz do app**, para o script do Maps só ser
+  baixado por quem abre o formulário de rota. Só um diálogo fica aberto por vez, então nunca há
+  duas instâncias montadas.
+- **A polyline é desenhada de forma imperativa** (`new google.maps.Polyline`) porque a biblioteca
+  só tem componentes para mapa e marcador. Decodificar usa `geometry.encoding.decodePath` do
+  próprio Maps — **nenhuma dependência a mais**.
+- ⚠️ **Trocar qualquer ponto zera o traçado** (`SEM_TRACADO`), inclusive ao digitar sem escolher
+  da lista, que também zera a coordenada. Sem isso o formulário salvaria um endereço com a
+  distância e o ponto do endereço anterior.
+- ⚠️ **Nada aqui bloqueia o salvamento.** Endereço é obrigatório na API; coordenada e traçado não
+  são. Três degraus de degradação: **sem chave** → campo de texto puro, sem aviso (em produção a
+  chave pode simplesmente não estar provisionada, e alarmar todo usuário seria ruído);
+  **chave que falha ao carregar** → texto puro **com** aviso, porque aí houve erro de verdade;
+  **cálculo que falha** → o 422 da API (que já cobre indisponibilidade, timeout e ausência de
+  trajeto) aparece como aviso. O aviso usa `--color-warning`, não `--color-danger`: é atenção,
+  não falha — a rota continua salvável (§8.1).
+- ⚠️ **A lista de sugestões é recortada pelo `.dialog-corpo`** (`overflow: auto`), porque é
+  desenhada dentro do próprio elemento e não no topo da página. Numa janela de 620px sobravam
+  290px abaixo do campo para uma lista de ~300px: a última sugestão e a atribuição do Google
+  nasciam cortadas. A correção é `scrollIntoView({ block: 'start' })` no `focus` do campo —
+  trazer o campo ao topo da área rolável leva o espaço a 347px e a lista passa a caber inteira.
+  Onde o corpo não rola, é no-op. ⚠️ **Não tente resolver com `position: fixed` no
+  `::part(prediction-list)`**: escapa do recorte, mas a lista perde a âncora e vai parar no
+  canto da viewport, cobrindo o cabeçalho.
+- ⚠️ **`color-scheme: light` no host, e não só no `:root`.** Com o sistema do usuário em modo
+  escuro o widget troca para o tema escuro do Google — a lista de sugestões fica preta, e o
+  `--gmp-mat-color-on-surface` que apontamos para `var(--color-text)` (quase preto) vira texto
+  preto sobre fundo preto. O painel é **só claro** (esta folha não tem nenhum bloco
+  `prefers-color-scheme`), então o `:root` declara `color-scheme: light` — o que também impede
+  o navegador de pintar calendário de `<input type="date">` e barras de rolagem com o esquema
+  do sistema. Mas **o `:root` sozinho não resolve o widget**: ele declara o próprio
+  `color-scheme` no `:host` dele, e declaração própria vence valor herdado, então a linha
+  precisa ser repetida em `.campo-endereco`. Foi um defeito relatado por um usuário com o
+  Windows em modo escuro, invisível para quem desenvolve em modo claro.
+- **O shadow root é FECHADO**: não dá para inspecionar nem estilizar por dentro, só pelos
+  `::part()` expostos e pelas variáveis `--gmp-mat-*`. ⚠️ Por dentro o campo é um trio
+  (lupa | input | limpar) em que **cada segmento desenha o próprio contorno**: quem faz a caixa é
+  o **host**, e os contornos internos são apagados por `--gmp-mat-color-outline: transparent`.
+  Estilizar só o `::part(input)` produz três caixas soltas lado a lado, com a lupa fora do campo.
+  A altura vai no host **e** no `::part(input)`, senão o campo fica com 50px contra os 36px dos
+  irmãos. E o contorno da lista de sugestões é `box-shadow`, **não `border`**: a lista tem
+  `width: 100%`, e 1px de borda a faz transbordar o `.dialog-corpo` e acender uma barra de
+  rolagem horizontal no diálogo inteiro.
+
 ## 9. O que ainda não existe
 
-- **Paginação e ordenação** nas demais listas — tudo vem de uma vez. A exceção é `/auditoria`, o único endpoint paginado da API (§5.10); `ResultadoPaginado<T>` e o componente `Paginacao` já nascem genéricos para as próximas listas que precisarem.
+- **Ordenação por coluna** — nenhuma tabela deixa clicar no cabeçalho para reordenar; a ordem é a que o servidor devolve. (**Paginação deixou de ser uma pendência**: toda listagem pagina desde 04/09/2026 — no cliente, via `usePaginacao`, exceto `/auditoria` e `/custos`, que já paginavam no servidor. Ver §8.)
+- **Biblioteca de gráfico**: não há nenhuma no `package.json`. O único gráfico do app, o `PainelCustoMensal` do dashboard, é feito com divs e altura em pixels — uma dependência nova não se paga por três barras empilhadas.
 - **Toasts globais**: erros e sucessos são exibidos no local da ação, não há notificação central.
 - **Tratamento específico de 429**: a mensagem do rate limit chega como erro comum.
-- **Testes**: não há suíte no front.
+- ~~Cobertura de testes~~ — **resolvido em 12/11/2026**: 93,19% de linhas, com piso de 50% no CI (§11).
 - Sino de notificações e os links do rodapé/termos de uso são placeholders.
 - A landing usa dados fictícios no mock do painel — nada ali reflete a base real.
-- **Cancelar manutenção**: a API ainda não expõe `POST /manutencao/{id}/cancelar`, então descartar um agendamento passa pelo DELETE (Admin) e o filtro "Cancelada" nem é oferecido.
+- **Cancelar manutenção**: a API ainda não expõe `POST /manutencao/{id}/cancelar`, então descartar um agendamento passa pelo DELETE (Admin, Supervisor) e o filtro "Cancelada" nem é oferecido.
 - **Atualizar só a quilometragem do veículo**: não há `PATCH` dedicado. O odômetro sobe pelo `PUT /veiculo/{id}` completo, pela conclusão de uma manutenção e — desde a RN10 — pela abertura e pelo encerramento de rotas, que é o caminho do dia a dia e o que finalmente alimenta os alertas de atraso.
-- **Reabrir uma rota encerrada**: a API não expõe o caminho inverso do encerramento, e o `PUT` não mexe mais em `ativo`/`dataFim`. Corrigir um encerramento errado passa por excluir a rota (Admin) e recriá-la.
-- O dashboard ainda não mostra nada de manutenção (nenhum KPI de atrasadas).
+- **Reabrir uma rota encerrada**: a API não expõe o caminho inverso do encerramento, e o `PUT` não mexe mais em `ativo`/`dataFim`. Corrigir um encerramento errado passa por excluir a rota (Admin, Supervisor) e recriá-la.
 - **Corrigir o cadastro de outra pessoa**: não existe, nem para o Admin. `/perfil` (§5.11) é autoatendimento — se alguém precisa de correção e não consegue entrar, o caminho é reenviar convite ou solicitação formal ao controlador.
 - **Trocar o próprio e-mail**: fora do escopo de `/perfil`. É a chave de login e exigiria reverificação, além de mexer em convite e refresh token.
 - **Purga da trilha de auditoria**: a política é de **12 meses**, mas a rotina que apaga não existe — hoje nada é expurgado. Limitação declarada, não esquecida.
@@ -517,6 +774,7 @@ Componentes reutilizados pelas telas:
 
 - `npm run gen:api` aponta para `http://localhost:5062/openapi/v1.json` ([package.json:10](package.json#L10)), enquanto a API roda em `https://localhost:7271` conforme o `.env.development`. O script provavelmente quebra como está.
 
+
 ### Fuso horário — o front exibe verbatim, e isso é a política (30/08/2026)
 
 As datas chegam da API como ISO **sem sufixo `Z`** (`"2026-08-30T00:00:00"`), e `formatDate`/`formatDateTime` ([lib/format.ts](../apps/web/src/lib/format.ts)) as interpretam como hora local. **O front não converte fuso em lugar nenhum, de propósito.**
@@ -526,3 +784,70 @@ Isso funciona porque o backend grava e devolve **hora local de Brasília**: o `D
 Se o backend algum dia passar a mandar `Z`, `new Date("2026-08-30T00:00:00Z").toLocaleDateString('pt-BR')` exibiria **29/08/2026** no Brasil — erro de um dia em toda tela com data. **Este arquivo e `lib/format.ts` mudam junto com aquela decisão, nunca depois dela.**
 
 Isso fechou dois bugs que este documento listava como conhecidos: o status "Expirado" de [ConvitesPage.tsx:17](../apps/web/src/pages/ConvitesPage.tsx#L17), que aparecia ~3 h antes do prazo real, e a `dataHora` de [AuditoriaPage.tsx:276](../apps/web/src/pages/AuditoriaPage.tsx#L276), que era gravada em UTC e exibida como local. Ambos eram a mesma causa — valor UTC lido como local — e sumiram quando o valor gravado passou a ser local de verdade.
+
+---
+
+## 11. Testes
+
+Vitest 5 + jsdom + React Testing Library + `@testing-library/user-event` + `@testing-library/jest-dom` + MSW 3, com cobertura pelo `@vitest/coverage-v8`. Montado em 12/11/2026 (onda 0 do plano em `docs/pendencias-tcc.md`, item 1). Hoje cobre a `LoginPage` (prova da estrutura de ponta a ponta), a **onda 1** — as funções puras: `lib/` (`format`, `periodo`, `paginacao`, `custo`, `manutencao`, `rota`, `preferencias`), `auth/permissions` e `auth/senha`, `api/errors`, `api/tokenStorage` e `api/http` — a **onda 2**, as cinco telas dos fluxos de negócio: `/abastecimentos`, `/manutencoes`, `/rotas`, `/minhas-rotas` e `/despesas`, todas acima de 90% de linhas, com o `TrajetoRota` junto — e a **onda 3**, autenticação e navegação: `/login`, `/esqueci-senha`, `/redefinir-senha`, `/convite`, `/perfil`, os guardas `RequireAuth`/`RequirePode`, o `AppLayout` e a árvore de rotas do `App.tsx` — e a **onda 4**, fumaça das telas restantes: dashboard (com o `PainelCustoMensal`), `/custos`, `/veiculos`, `/motoristas`, os quatro catálogos, `/usuarios`, `/convites`, `/auditoria`, a landing e o `components/Table.tsx`.
+
+**Cobertura em 12/11/2026: 93,19% de linhas** (91,89% das instruções, 89,56% dos ramos, 92,16% das funções) — 769 testes em 40 arquivos. A exigência da linha Web Apps é 25%; a meta do plano era 50%.
+
+```bash
+npm run test       # vitest run
+npm run test:watch # vitest
+npm run test:cov   # vitest run --coverage → coverage/ (text no terminal, html, lcov)
+```
+
+O CI roda `npm run test:cov` no job `web`, depois do lint e também com `if: always()` — o PR mostra build, lint e testes no mesmo run.
+
+**Gerar o relatório**: `npm run test:cov` em `apps/web/`. Saem três formatos — a tabela por arquivo no terminal, **`coverage/index.html`** (abrir no navegador: navega por pasta e marca linha a linha o que não foi executado) e `coverage/lcov.info` (para ferramenta externa, como o SonarCloud). `coverage/` é gitignored. Para olhar um arquivo só: `npx vitest run src/pages/X.test.tsx --coverage --coverage.include=src/pages/X.tsx`.
+
+### 11.1 Configuração — bloco `test` do `vite.config.ts`
+
+Não há `vitest.config.ts` separado: o Vitest reaproveita a config do Vite (plugins do React e do Tailwind incluídos), e o `/// <reference types="vitest/config" />` no topo tipa o bloco `test`.
+
+| Opção | Valor | Por quê |
+|---|---|---|
+| `environment` | `jsdom` | DOM simulado no Node, sem navegador |
+| `setupFiles` | `src/test/setup.ts` | ciclo de vida do MSW e limpeza entre testes |
+| `env.VITE_API_URL` | `http://localhost:3000/api/v1` | o Vitest roda em `mode=test`, que **não lê** `.env.development` — e o `http.ts` lança no carregamento sem a URL |
+| `environmentOptions.jsdom.url` | `http://localhost:3000` | ⚠️ a página e a API mockada ficam na **mesma origem** de propósito. O jsdom aplica CORS ao XHR, e com o `withCredentials` do `http.ts` uma resposta do MSW sem `Access-Control-Allow-Origin`/`-Credentials` é barrada e chega ao axios como "Network Error" — todo teste HTTP falharia. Apontar a URL para outro host traz o problema de volta |
+| `env.TZ` | `America/Sao_Paulo` | o fuso da API (§10). Sem ele, testes de data dariam um resultado na máquina de dev e outro no CI, que roda em UTC — e a borda que importa ("23h30 ainda é hoje") só existe num fuso negativo |
+| `coverage.include` | `src/**` | sem isso só entram no cálculo os arquivos que algum teste importa, e o percentual sai inflado |
+| `coverage.exclude` | `main.tsx`, `schema.d.ts`, `vite-env.d.ts`, `src/test/**` | o que não é código da aplicação a cobrir. `src/test/` sai porque os helpers seriam ~100% cobertos por qualquer teste e inflariam o número |
+
+**`coverage.thresholds: { lines: 50 }`** — abaixo de 50% de linhas o `npm run test:cov` sai com código 1 (`ERROR: Coverage for lines (x%) does not meet global threshold (50%)`), e o job `web` reprova. Conferido nos dois sentidos: a suíte inteira passa; rodar só `src/lib` (7,59%) reprova. O piso é o do plano, não o número atual — deixa folga para refatorar sem o CI travar por um ponto.
+
+### 11.2 Os arquivos de `src/test/`
+
+- **`setup.ts`** — importa `@testing-library/jest-dom/vitest` (matchers como `toBeInTheDocument`, `toHaveValue`); `beforeAll` sobe o servidor MSW com `onUnhandledFrame: 'error'`; `afterEach` faz `cleanup()` do Testing Library, `resetHandlers()` do MSW e `localStorage.clear()`; `afterAll` fecha o servidor. O `cleanup` é explícito porque não há `globals: true` — sem ele o Testing Library não se registra sozinho. ⚠️ Também faz o **polyfill de `HTMLDialogElement.showModal`/`close`**: o jsdom não os implementa, e todo formulário do app é um `<dialog>` aberto por eles (`FormDialog`, `ConfirmDialog`). O polyfill só põe/tira o atributo `open` e dispara `close` — trava de foco e `::backdrop` não existem em jsdom.
+- **`renderizar.tsx`, opções de navegação** — `rota` aceita também `{ pathname, state }`, para simular quem chega por redirecionamento (`state.from` do `RequireAuth`), e `roteador: false` dispensa o `MemoryRouter` — é como se testa o `App`, que traz o próprio `BrowserRouter` (a URL inicial vai por `window.history.pushState` antes do render).
+- **`RotaAtual.tsx`** — sonda de navegação: posta como `<Route path="*" element={<RotaAtual />} />` ao lado da tela, mostra num `role="status"` (nome "Rota atual") para onde ela mandou o usuário e a origem de `state.from`. É como os testes conferem "vai para `rotaInicial(role)`" sem montar as telas de destino.
+- **`capturar.ts`** — `capturar(metodo, caminho, responder?)` registra um handler e devolve o **array das chamadas recebidas**, cada uma com `url`, `params` (a query já como objeto) e `corpo` (o JSON já lido). É como os testes de tela conferem o que foi enviado: `expect(criar[0].corpo).not.toHaveProperty('valor')`, `expect(lista.at(-1)?.params).toMatchObject({ pagina: '2' })`. `responderJson(dados)` e `responderErro(status, erros)` montam as respostas com o envelope.
+- **`suiteCatalogo.tsx`** — `testarCatalogo(config)`, a bateria dos quatro catálogos (`/postos`, `/tipos-combustivel`, `/tipos-despesa`, `/tipos-manutencao`): listar inclusive inativos, cadastrar e editar com o corpo conferido, 422 de nome duplicado, inativar pela linha, excluir com 422 de "em uso" e esconder tudo para quem não edita. Cada `XPage.test.tsx` continua ao lado da sua tela, chama a suíte com rótulos e corpos próprios e acrescenta o que só ela tem (CNPJ do posto, intervalo do tipo de manutenção).
+- **`consultas.ts`** — `porTextoCompleto(texto | regex)`, matcher para `getByText` que compara o texto **inteiro** do elemento, filhos incluídos ("37 lançamentos" com o número num `<strong>`), e fica com o elemento mais interno; e `normalizar`, que colapsa espaços — inclusive o não separável do `Intl` em "R$ 1,00".
+- **`googleMapsFalso.ts`** + **`mapaFalso.tsx`** — substitutos de `lib/googleMaps`, `CampoEndereco` e `MapaRota` para `vi.mock` (receita no topo do primeiro). `mapaDisponivel: false` tira o `APIProvider` e o SDK de cena; o `CampoEndereco` falso é um input com o botão "Escolher sugestão para Partida/Chegada", que entrega os `PONTOS_FALSOS`. O resto do `TrajetoRota` roda de verdade contra o MSW. São dois arquivos porque misturar componente e constante dispara o `only-export-components` do oxlint.
+- **`renderizar.tsx`** — `renderizar(ui, { rota, papel })` envolve o componente num `QueryClientProvider` com um **`QueryClient` novo por chamada** (queries e mutations com `retry: false`, para um erro aparecer na primeira tentativa) e num `MemoryRouter` com `initialEntries={[rota]}`. Com `papel`, grava a sessão pelo **próprio `tokenStorage.setSession`**, com uma `SessaoResponse` da fábrica — o `useSession` a lê como leria depois de um login. Devolve o resultado do `render` mais `user` (`userEvent.setup()`) e o `queryClient`.
+- **`fabricas.ts`** — `fabricarVeiculo`, `fabricarRota`, `fabricarManutencao`, `fabricarAbastecimento`, `fabricarDespesa`, `fabricarUsuario`, `fabricarMotorista`, `fabricarSessao`, `fabricarResumo` (`{ quantidade, valorTotal }` dos rodapés), `fabricarPerfil`, `fabricarLogAuditoria`, as de custo (`fabricarResumoCustos` — com o `total` somado das três origens, como no servidor —, `fabricarCustoPorVeiculo`, `fabricarCustoPorMes`, `fabricarLancamentoCusto`) e as dos catálogos (`fabricarTipoCombustivel`, `fabricarPosto`, `fabricarTipoManutencao`, `fabricarTipoDespesa`). Cada uma devolve o `*Response` completo de `types.ts` e aceita `Partial` para sobrescrever só o que o teste precisa; o id é sequencial por arquivo de teste. Os envelopes: `envelope(dados)` (sucesso), `envelopeDeErro(erros)` (o formato de um 422) e `paginado(itens, pagina, tamanhoPagina, total)` para as seis listas que devolvem `ResultadoPaginado<T>` — o `total` explícito simula uma página de uma lista maior, que é o que faz o rodapé de `Paginacao` aparecer. O `valor` do abastecimento é derivado de `litros × valorLitro`, como no servidor.
+- **`servidor.ts`** — `setupServer` com os handlers padrão dos catálogos que várias telas pedem: `GET /veiculo`, `/motorista`, `/tipocombustivel`, `/posto`, `/tipomanutencao` e `/tipodespesa`. Os quatro catálogos respeitam `?apenasAtivos=true` (o `catalogoPadrao` tem um item inativo em combustível e em posto, para o filtro ser observável). Exporta também `API` (a base URL) e o `catalogoPadrao`, para o teste conferir o que a tela mostra.
+
+### 11.3 Regras ao escrever um teste
+
+- **Arquivo ao lado do testado**: `src/pages/LoginPage.test.tsx`. Os testes ficam dentro de `src/`, então o `tsc -b` do build também os type-checa, e o lint também os lê.
+- **HTTP é sempre MSW, nunca `vi.mock` do axios** — é o que faz `http.ts`, `unwrap()` e o interceptor de 401 entrarem no teste. Endpoint específico do teste: `servidor.use(http.get(`${API}/rota`, () => HttpResponse.json(envelope(paginado([fabricarRota()])))))`. O `resetHandlers()` do `afterEach` desfaz o `use`.
+- **Request sem handler reprova o teste.** É de propósito: uma tela que passa a chamar um endpoint novo sem o teste saber é exatamente o que se quer descobrir. ⚠️ No MSW 3 a opção chama-se `onUnhandledFrame`; o `onUnhandledRequest` dos tutoriais é do MSW 2.
+- **Busque como o usuário vê**: `getByLabelText`, `getByRole`, `getByText` — não por classe CSS nem por `data-testid`.
+- **Google Maps** (`MapaRota`, `CampoEndereco`, `lib/googleMaps.ts`) não roda em jsdom: substitua com `vi.mock(..., () => import('../test/googleMapsFalso'))` (§11.2). O `TrajetoRota` é testado de verdade, com `POST /rota/calcular` respondido pelo MSW — inclusive a regra de custo: rota com traçado salvo **não** dispara o cálculo.
+- **No MSW, o último `use` vence.** Sobrescrever um handler que o `montar()` do teste já registrou exige registrar **depois** dele; registrar antes não tem efeito. Cenário que muda o que a tela carrega no primeiro render (lista vazia, erro) vai como opção do `montar()`, não como `servidor.use` depois do `renderizar` — aí a ordem entre o efeito e o handler vira sorte.
+- **Formulário com `<select required>` sem opção válida não envia.** O jsdom aplica a validação de restrição como o navegador: um `codigoMotorista` que não existe na lista de motoristas deixa o select em "Selecione…" e o submit não acontece. Foi assim que apareceu o bug da rota de motorista rebaixado (§10) — e é por isso que as fábricas apontam para os ids do `catalogoPadrao`.
+- **Rótulo acessível com moeda tem espaço não separável.** `getByRole('button', { name: 'Excluir a despesa de R$ 50,00' })` não acha nada: o `Intl` põe ` ` depois do "R$", e o nome acessível não o normaliza. Use regex com `\s` (`/R\$\s50,00/`) ou o `normalizar` de `consultas.ts`.
+- **Teste a regra, não a implementação.** A matriz de `permissions.test.ts` é escrita a partir da tabela do §7, não copiada do código, e um teste confere que ela cobre **toda** entrada de `pode` — permissão nova sem cenário reprova.
+- **"Hoje" se congela**: `vi.useFakeTimers({ toFake: ['Date'] })` + `vi.setSystemTime(new Date(2026, 10, 12, 23, 30))`, sempre em hora local, e `vi.useRealTimers()` no `afterEach`. `periodo.test.ts` cobre as viradas de mês (inclusive fevereiro bissexto) e de ano.
+- **Redirecionamento**: o `location.assign` do jsdom não aceita `vi.spyOn` (propriedade não configurável). Use `vi.stubGlobal('location', { ...window.location, assign })` e `vi.unstubAllGlobals()` no `afterEach` — é como `http.test.ts` confere o envio para `/login`.
+- **Bug que gera rejeição sem tratamento não cabe em `it.fails`.** O Vitest trata uma *unhandled rejection* como erro da execução inteira — o run sai vermelho mesmo com o teste marcado como falha esperada. Nesse caso o registro é um `it.todo` com o `// BUG:` explicando o teste a escrever. Foi o caso do logout com a API fora do ar, corrigido em 12/11/2026: `logout()` engole a falha do `POST` e limpa a sessão do mesmo jeito.
+- **Foco inicial do `<dialog>` não se testa aqui.** Quem põe o foco em "Cancelar" no `ConfirmDialog` são os passos de foco do `showModal()` nativo, que nem o jsdom nem o polyfill reproduzem — é verificação do Playwright.
+- **Rótulo repetido entre a tela e o menu** ("Despesas", "Manutenção" em KPI, etiqueta e série do painel): restrinja a busca ao `<main>` com `within(screen.getByRole('main'))`, e quando o mesmo texto aparece mais de uma vez dentro dele, use a ordem do DOM (`findAllByText(...)[0]`) com um comentário dizendo qual é qual.
+- **Bug achado por teste não se corrige no mesmo passo**: o teste descreve o comportamento certo, fica marcado com `it.fails` e ganha um comentário `// BUG:` com a causa. Quando o código for corrigido, o `it.fails` passa a reprovar e lembra de virar `it`. O primeiro caso foi o `unwrap()` lançando `ApiError` para `{ sucesso: true, dados: null }` (o `GET /abastecimento/anterior` de veículo sem histórico) — achado e corrigido em 12/11/2026. A onda 2 achou mais três, corrigidos no mesmo dia: o arredondamento do valor total do abastecimento, a edição de rota de motorista rebaixado e a data sugerida em "Nova despesa" — hoje os três são testes comuns. Antes de confiar num `it.fails`, troque-o por `it` uma vez e confira que ele falha **pelo motivo descrito** — senão ele passa por qualquer erro.
+- O jsdom **não calcula layout**: posição de diálogo, rolagem e responsividade continuam sendo coisa do Playwright (ver `apps/web/CLAUDE.md`).
+- ⚠️ No **Git Bash** (`cd /c/...`) o Vitest 5 falha com *"Vitest failed to find the runner"*: o caminho com drive em minúsculo faz o pacote `vitest` ser carregado duas vezes. No PowerShell e no CI (Linux) não acontece.

@@ -234,13 +234,26 @@ Base: `api/v1/{controller}`. A versão também é aceita via header `api-version
 | GET/POST/DELETE | `/convite`, `/convite/{id}` | Admin |
 | POST | `/convite/aceitar` | anônimo |
 | GET | `/usuario` · PUT `/usuario/{id}/role` · `/usuario/{id}/ativo` | Admin |
-| GET | `/veiculo`, `/motorista`, `/rota`, `/tipomanutencao?apenasAtivos=`, `/manutencao?veiculoId=&status=` (+ `/{id}`) | qualquer autenticado |
-| POST/PUT | `/veiculo`, `/motorista`, `/tipomanutencao`, `/manutencao`, `/manutencao/{id}/concluir` | Admin, Supervisor |
+| GET/PUT | `/usuario/perfil` — o próprio cadastro | qualquer autenticado |
+| GET | `/veiculo`, `/tipomanutencao?apenasAtivos=`, `/manutencao?veiculoId=&status=&de=&ate=` (+ `/{id}`) | qualquer autenticado (o Motorista não recebe `custo` da manutenção) |
+| GET | `/motorista`, `/rota` (+ `/{id}`) | Admin, Supervisor, Operador |
+| GET | `/rota/minhas` | **Motorista** (as próprias, pelo `sub` do token) |
+| GET/POST/PUT | `/abastecimento?veiculoId=&motoristaId=&de=&ate=` (+ `/{id}`) — apontamento fiscal; `valor` é derivado de litros × R$/l e **não** entra no corpo | qualquer autenticado — o Motorista só alcança o que é dele |
+| GET | `/custo?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&origem=&de=&ate=` · `/custo/resumo?…` | Admin, Supervisor, Operador |
+| GET/POST/PUT | `/despesa?veiculoId=&motoristaId=&tipoDespesaId=&de=&ate=` (+ `/{id}`) — custo avulso | Admin, Supervisor, Operador |
+| DELETE | `/despesa/{id}` — ⚠️ **exceção**: o Supervisor também exclui | Admin, **Supervisor** |
+| GET | `/tipodespesa?apenasAtivos=` (+ `/{id}`) — catálogo; POST/PUT Admin+Supervisor, DELETE só Admin | Admin, Supervisor, Operador |
+| GET | `/tipocombustivel?apenasAtivos=` (+ `/{id}`) — catálogo; POST/PUT Admin+Supervisor, DELETE só Admin | **qualquer autenticado** — o Motorista precisa dele para lançar |
+| GET | `/posto?apenasAtivos=` (+ `/{id}`) — rede credenciada; POST/PUT Admin+Supervisor, DELETE só Admin | **qualquer autenticado** |
+| GET | `/auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` | Admin |
+| POST/PUT | `/veiculo`, `/tipomanutencao`, `/manutencao`, `/manutencao/{id}/concluir` | Admin, Supervisor |
 | POST/PUT | `/rota`, `/rota/{id}/encerrar` | qualquer autenticado (inclui Operador) |
 | DELETE | `/{qualquer}/{id}` | **Admin** |
 | GET | `/health`, `/health/detail`, `/scalar/v1` | aberto |
 
 Transição de estado é sempre **endpoint próprio**, nunca PUT: `POST /manutencao/{id}/concluir`, `POST /rota/{id}/encerrar`.
+
+`/auditoria` e `/custo` são os dois endpoints paginados — o `dados` do envelope vem como `ResultadoPaginado<T>`, não como array. `/custo` une **três origens** na leitura — `Abastecimento.Valor`, `Manutencao.Custo` e `Despesa.Valor` —, e `/custo/resumo` é a única agregação servida pela API. Só a `Despesa` tem tabela própria: as outras duas são lidas das telas de origem, e o read model não guarda nada.
 
 ---
 

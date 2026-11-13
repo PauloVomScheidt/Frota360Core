@@ -16,5 +16,8 @@ namespace Frota360.Infrastructure.Repositories
 
         public async Task<bool> ExisteCnpjAsync(string cnpj)
             => await context.Empresas.AnyAsync(e => e.CNPJ == cnpj);
+
+        public async Task<Empresa?> GetByIdAsync(int id)
+            => await context.Empresas.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id);
     }
 }

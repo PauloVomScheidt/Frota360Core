@@ -47,6 +47,11 @@ namespace Frota360.Infrastructure.DependencyInjection
             services.AddScoped<ITipoManutencaoRepository, TipoManutencaoRepository>();
             services.AddScoped<IAbastecimentoRepository, AbastecimentoRepository>();
             services.AddScoped<ILogAuditoriaRepository, LogAuditoriaRepository>();
+            services.AddScoped<ITipoDespesaRepository, TipoDespesaRepository>();
+            services.AddScoped<IDespesaRepository, DespesaRepository>();
+            services.AddScoped<ITipoCombustivelRepository, TipoCombustivelRepository>();
+            services.AddScoped<IPostoRepository, PostoRepository>();
+            services.AddScoped<ICustoRepository, CustoRepository>();
             services.AddScoped<ITokenService, TokenService>();
 
             // E-mail: Resend quando a chave está configurada; em dev sem chave, loga o conteúdo no console
@@ -54,6 +59,12 @@ namespace Frota360.Infrastructure.DependencyInjection
                 services.AddHttpClient<IEmailService, ResendEmailService>();
             else
                 services.AddSingleton<IEmailService, LogEmailService>();
+
+            // Google Routes API. O timeout curto é a parte que importa: o padrão do HttpClient
+            // é 100 s, e um cálculo de trajeto que demora isso já não serve a ninguém —
+            // melhor a tela dizer que a estimativa não veio do que prender a requisição.
+            services.AddHttpClient<IGoogleRoutesClient, GoogleRoutesClient>(client =>
+                client.Timeout = TimeSpan.FromSeconds(10));
 
             // JWT
             services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -74,6 +85,19 @@ namespace Frota360.Infrastructure.DependencyInjection
                     // 401/403 no mesmo envelope ApiResponse do resto da API
                     options.Events = new JwtBearerEvents
                     {
+                        // O front não envia mais Authorization: o token vive só no cookie
+                        // HttpOnly setado no login/refresh. O header continua funcionando
+                        // (Scalar, curl, um cliente externo) — o cookie é só um segundo
+                        // caminho para quando ele não vem.
+                        OnMessageReceived = context =>
+                        {
+                            if (string.IsNullOrEmpty(context.Token) &&
+                                context.Request.Cookies.TryGetValue(CookiesDeSessao.Token, out var token))
+                            {
+                                context.Token = token;
+                            }
+                            return Task.CompletedTask;
+                        },
                         OnChallenge = context =>
                         {
                             context.HandleResponse();

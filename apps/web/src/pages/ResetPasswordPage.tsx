@@ -21,6 +21,8 @@ export function ResetPasswordPage() {
   const redefinirMutation = useMutation({
     mutationFn: redefinirSenha,
     // O reset revoga as sessões antigas: o usuário precisa entrar de novo.
+    // Sem invalidação de propósito: troca a senha e redireciona para /login sem abrir
+    // sessão — não há query em cache pra esta rota, 100% anônima, para invalidar.
     onSuccess: () => setTimeout(() => navigate('/login', { replace: true }), 2500),
   })
 

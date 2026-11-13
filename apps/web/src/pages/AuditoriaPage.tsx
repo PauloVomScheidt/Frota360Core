@@ -9,13 +9,13 @@ import type {
   LogAuditoriaResponse,
 } from '../api/types'
 import { AppLayout, PageHeader } from '../components/AppLayout'
-import { Paginacao, TableStates } from '../components/Table'
+import { FiltroPeriodo, Paginacao, TableStates } from '../components/Table'
+import { usePaginacaoServidor } from '../lib/paginacao'
 import { ChevronDownIcon, ChevronRightIcon } from '../components/icons'
 import { formatDateTime } from '../lib/format'
+import { filtroDePeriodo, intervaloDoFiltro, type FiltroDePeriodo } from '../lib/periodo'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
-
-const TAMANHO_PAGINA = 25
 
 /** Rótulos legíveis para o vocabulário fechado da API (§ Auditoria do contexto). */
 const ROTULO_ENTIDADE: Record<EntidadeAuditada, string> = {
@@ -24,6 +24,10 @@ const ROTULO_ENTIDADE: Record<EntidadeAuditada, string> = {
   Manutencao: 'Manutenção',
   Abastecimento: 'Abastecimento',
   TipoManutencao: 'Tipo de manutenção',
+  Despesa: 'Despesa',
+  TipoDespesa: 'Tipo de despesa',
+  TipoCombustivel: 'Tipo de combustível',
+  Posto: 'Posto',
   Usuario: 'Usuário',
   Convite: 'Convite',
 }
@@ -39,6 +43,7 @@ const ROTULO_ACAO: Record<AcaoAuditoria, string> = {
   Desativou: 'Desativou',
   Cancelou: 'Cancelou',
   Aceitou: 'Aceitou',
+  Calculou: 'Calculou rota',
 }
 
 /**
@@ -66,26 +71,116 @@ function formatarValor(valor: string | null | undefined): string {
   return /^\d{4}-\d{2}-\d{2}T/.test(valor) ? formatDateTime(valor) : valor
 }
 
+/**
+ * Uma linha da trilha, com a segunda linha de detalhe (o diff campo a campo) que
+ * aparece quando expandida. Extraída à parte — é o bloco que fez `AuditoriaPage`
+ * passar de 300 linhas depois do teclado (Enter/Espaço) entrar no toggle.
+ */
+function LinhaAuditoria({
+  log,
+  aberta,
+  onAlternar,
+}: {
+  log: LogAuditoriaResponse
+  aberta: boolean
+  onAlternar: (log: LogAuditoriaResponse) => void
+}) {
+  const temDiff = log.alteracoes.length > 0
+
+  return (
+    <Fragment>
+      <tr
+        // Só a linha com diff é de fato acionável — role/tabIndex/teclado só entram
+        // junto com o clique, senão um leitor de tela anunciaria "botão" numa linha
+        // que não faz nada ao ser ativada.
+        onClick={temDiff ? () => onAlternar(log) : undefined}
+        onKeyDown={
+          temDiff
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onAlternar(log)
+                }
+              }
+            : undefined
+        }
+        role={temDiff ? 'button' : undefined}
+        tabIndex={temDiff ? 0 : undefined}
+        aria-expanded={temDiff ? aberta : undefined}
+        style={{ cursor: temDiff ? 'pointer' : 'default' }}
+      >
+        <td style={{ color: mutedText }}>
+          {/* Sem diff não há o que abrir — a seta some em vez de enganar. */}
+          {temDiff && (aberta ? <ChevronDownIcon size={15} /> : <ChevronRightIcon size={15} />)}
+        </td>
+        <td style={{ whiteSpace: 'nowrap' }}>{formatDateTime(log.dataHora)}</td>
+        <td>
+          <div>{log.usuarioNome}</div>
+          {/* O papel é o do momento da ação, não o atual — vem gravado na linha. */}
+          <div className="text-[11px] uppercase" style={{ letterSpacing: '0.06em', color: mutedText }}>
+            {log.usuarioRole}
+          </div>
+        </td>
+        <td>
+          <span className={classeDaAcao(log.acao)}>{ROTULO_ACAO[log.acao]}</span>
+        </td>
+        <td style={{ whiteSpace: 'nowrap' }}>
+          {ROTULO_ENTIDADE[log.entidade]}
+          {log.entidadeId != null && <span style={{ color: mutedText }}> #{log.entidadeId}</span>}
+        </td>
+        <td>{log.descricao}</td>
+      </tr>
+
+      {aberta && (
+        <tr>
+          <td />
+          <td colSpan={5} style={{ background: 'var(--color-surface)' }}>
+            <div className="flex flex-col gap-1 py-1">
+              {log.alteracoes.map((alteracao, i) => (
+                <div key={`${log.id}-${i}`} className="text-[13px]">
+                  <strong>{alteracao.campo}</strong>{' '}
+                  <span style={{ color: mutedText }}>{formatarValor(alteracao.de)}</span>
+                  <span style={{ color: mutedText }}> → </span>
+                  <span>{formatarValor(alteracao.para)}</span>
+                </div>
+              ))}
+              {log.ipOrigem && (
+                <div className="mt-1 text-[12px]" style={{ color: mutedText }}>
+                  Origem: {log.ipOrigem}
+                </div>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </Fragment>
+  )
+}
+
 export function AuditoriaPage() {
-  const [pagina, setPagina] = useState(1)
+
   const [filtroEntidade, setFiltroEntidade] = useState('')
   const [filtroAcao, setFiltroAcao] = useState('')
   const [filtroUsuario, setFiltroUsuario] = useState('')
-  const [de, setDe] = useState('')
-  const [ate, setAte] = useState('')
+  const [periodo, setPeriodo] = useState<FiltroDePeriodo>(filtroDePeriodo('todos'))
+  const { de, ate } = intervaloDoFiltro(periodo)
 
   // Linhas com diff abrem sob demanda: a descrição resolve a maioria das consultas,
   // e o campo-a-campo é o detalhe de quem está investigando um caso específico.
   const [expandida, setExpandida] = useState<number | null>(null)
 
+  // A paginação é do servidor: o par página/tamanho entra no filtro da consulta e o
+  // rodapé sai do `ResultadoPaginado` que a API devolveu.
+  const paginacao = usePaginacaoServidor()
+
   const filtro: AuditoriaFiltro = {
-    pagina,
-    tamanhoPagina: TAMANHO_PAGINA,
+    pagina: paginacao.pagina,
+    tamanhoPagina: paginacao.tamanhoPagina,
     entidade: filtroEntidade === '' ? undefined : (filtroEntidade as EntidadeAuditada),
     acao: filtroAcao === '' ? undefined : (filtroAcao as AcaoAuditoria),
     usuarioId: filtroUsuario === '' ? undefined : Number(filtroUsuario),
-    de: de === '' ? undefined : de,
-    ate: ate === '' ? undefined : ate,
+    de,
+    ate,
   }
 
   const auditoriaQuery = useQuery({
@@ -100,23 +195,20 @@ export function AuditoriaPage() {
   const logs = dados?.itens ?? []
   const usuarios = usuariosQuery.data ?? []
 
-  const temFiltro = filtroEntidade !== '' || filtroAcao !== '' || filtroUsuario !== '' || de !== '' || ate !== ''
+  const temFiltro = filtroEntidade !== '' || filtroAcao !== '' || filtroUsuario !== '' || periodo.periodo !== 'todos'
 
   /** Qualquer mudança de filtro volta para a primeira página — senão a tela abre vazia. */
-  function aplicar(mudanca: () => void) {
-    mudanca()
-    setPagina(1)
+  function resetarPaginacao() {
+    paginacao.resetar()
     setExpandida(null)
   }
 
   function limparFiltros() {
-    aplicar(() => {
-      setFiltroEntidade('')
-      setFiltroAcao('')
-      setFiltroUsuario('')
-      setDe('')
-      setAte('')
-    })
+    setFiltroEntidade('')
+    setFiltroAcao('')
+    setFiltroUsuario('')
+    setPeriodo(filtroDePeriodo('todos'))
+    resetarPaginacao()
   }
 
   function alternarLinha(log: LogAuditoriaResponse) {
@@ -150,7 +242,10 @@ export function AuditoriaPage() {
             className="input"
             style={{ borderRadius: 0 }}
             value={filtroEntidade}
-            onChange={(e) => aplicar(() => setFiltroEntidade(e.target.value))}
+            onChange={(e) => {
+              setFiltroEntidade(e.target.value)
+              resetarPaginacao()
+            }}
           >
             <option value="">Tudo</option>
             {(Object.keys(ROTULO_ENTIDADE) as EntidadeAuditada[]).map((entidade) => (
@@ -168,7 +263,10 @@ export function AuditoriaPage() {
             className="input"
             style={{ borderRadius: 0 }}
             value={filtroAcao}
-            onChange={(e) => aplicar(() => setFiltroAcao(e.target.value))}
+            onChange={(e) => {
+              setFiltroAcao(e.target.value)
+              resetarPaginacao()
+            }}
           >
             <option value="">Todas</option>
             {(Object.keys(ROTULO_ACAO) as AcaoAuditoria[]).map((acao) => (
@@ -186,7 +284,10 @@ export function AuditoriaPage() {
             className="input"
             style={{ borderRadius: 0 }}
             value={filtroUsuario}
-            onChange={(e) => aplicar(() => setFiltroUsuario(e.target.value))}
+            onChange={(e) => {
+              setFiltroUsuario(e.target.value)
+              resetarPaginacao()
+            }}
           >
             <option value="">Qualquer pessoa</option>
             {usuarios.map((u) => (
@@ -197,29 +298,14 @@ export function AuditoriaPage() {
           </select>
         </div>
 
-        <div className="field w-[160px]">
-          <label htmlFor="de">De</label>
-          <input
-            id="de"
-            type="date"
-            className="input"
-            style={{ borderRadius: 0 }}
-            value={de}
-            onChange={(e) => aplicar(() => setDe(e.target.value))}
-          />
-        </div>
-
-        <div className="field w-[160px]">
-          <label htmlFor="ate">Até</label>
-          <input
-            id="ate"
-            type="date"
-            className="input"
-            style={{ borderRadius: 0 }}
-            value={ate}
-            onChange={(e) => aplicar(() => setAte(e.target.value))}
-          />
-        </div>
+        <FiltroPeriodo
+          valor={periodo}
+          id="filtroPeriodoAuditoria"
+          onMudar={(valor) => {
+            setPeriodo(valor)
+            resetarPaginacao()
+          }}
+        />
 
         {temFiltro && (
           <button
@@ -258,83 +344,27 @@ export function AuditoriaPage() {
                   : 'Nada registrado ainda. A trilha começa na próxima alteração feita no sistema.'
               }
             />
-            {logs.map((log) => {
-              const temDiff = log.alteracoes.length > 0
-              const aberta = expandida === log.id
-
-              return (
-                <Fragment key={log.id}>
-                  <tr
-                    onClick={() => alternarLinha(log)}
-                    style={{ cursor: temDiff ? 'pointer' : 'default' }}
-                  >
-                    <td style={{ color: mutedText }}>
-                      {/* Sem diff não há o que abrir — a seta some em vez de enganar. */}
-                      {temDiff &&
-                        (aberta ? <ChevronDownIcon size={15} /> : <ChevronRightIcon size={15} />)}
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{formatDateTime(log.dataHora)}</td>
-                    <td>
-                      <div>{log.usuarioNome}</div>
-                      {/* O papel é o do momento da ação, não o atual — vem gravado na linha. */}
-                      <div className="text-[11px] uppercase" style={{ letterSpacing: '0.06em', color: mutedText }}>
-                        {log.usuarioRole}
-                      </div>
-                    </td>
-                    <td>
-                      <span className={classeDaAcao(log.acao)}>{ROTULO_ACAO[log.acao]}</span>
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      {ROTULO_ENTIDADE[log.entidade]}
-                      {log.entidadeId != null && (
-                        <span style={{ color: mutedText }}> #{log.entidadeId}</span>
-                      )}
-                    </td>
-                    <td>{log.descricao}</td>
-                  </tr>
-
-                  {aberta && (
-                    <tr>
-                      <td />
-                      <td colSpan={5} style={{ background: 'var(--color-surface)' }}>
-                        <div className="flex flex-col gap-1 py-1">
-                          {log.alteracoes.map((alteracao, i) => (
-                            <div key={`${log.id}-${i}`} className="text-[13px]">
-                              <strong>{alteracao.campo}</strong>{' '}
-                              <span style={{ color: mutedText }}>{formatarValor(alteracao.de)}</span>
-                              <span style={{ color: mutedText }}> → </span>
-                              <span>{formatarValor(alteracao.para)}</span>
-                            </div>
-                          ))}
-                          {log.ipOrigem && (
-                            <div className="mt-1 text-[12px]" style={{ color: mutedText }}>
-                              Origem: {log.ipOrigem}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              )
-            })}
+            {logs.map((log) => (
+              <LinhaAuditoria
+                key={log.id}
+                log={log}
+                aberta={expandida === log.id}
+                onAlternar={alternarLinha}
+              />
+            ))}
           </tbody>
         </table>
       </div>
 
-      {dados && (
-        <Paginacao
-          pagina={dados.pagina}
-          totalPaginas={dados.totalPaginas}
-          total={dados.total}
-          tamanhoPagina={dados.tamanhoPagina}
-          onMudar={(p) => {
-            setPagina(p)
-            setExpandida(null)
-          }}
-          pending={auditoriaQuery.isFetching}
-        />
-      )}
+      <Paginacao
+        {...paginacao.props(dados)}
+        // A linha expandida é de um registro que a página seguinte não tem.
+        onMudar={(p) => {
+          paginacao.props(dados).onMudar(p)
+          setExpandida(null)
+        }}
+        pending={auditoriaQuery.isFetching}
+      />
     </AppLayout>
   )
 }

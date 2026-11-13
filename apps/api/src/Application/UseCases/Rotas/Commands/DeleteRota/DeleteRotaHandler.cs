@@ -1,4 +1,4 @@
-using Frota360.Application.Abstractions.Messaging;
+﻿using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.Interfaces;
 using Frota360.Domain.Common;
 using Frota360.Domain.Interfaces.Repositories;
@@ -33,7 +33,7 @@ namespace Frota360.Application.UseCases.Rotas.Commands.DeleteRota
                 // Excluir rota é hoje o único jeito de desfazer um encerramento errado
                 // (a API não expõe o caminho inverso) — vale registrar com o percurso inteiro.
                 await auditoria.RegistrarAsync(EntidadesAuditadas.Rota, AcoesAuditoria.Excluiu, command.Id,
-                    $"Excluiu a rota #{command.Id} ({rota.Origem} → {rota.Destino}) de {rota.Motorista?.Nome ?? "motorista removido"}");
+                    $"Excluiu a rota #{command.Id} ({rota.EnderecoPartida} → {rota.EnderecoChegada}) de {rota.Motorista?.Nome ?? "motorista removido"}");
 
                 return true;
             }

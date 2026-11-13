@@ -15,11 +15,12 @@ namespace Frota360.Tests.Services
     public class AuthServiceTests
     {
         private readonly IUsuarioRepository _repository = Substitute.For<IUsuarioRepository>();
+        private readonly IEmpresaRepository _empresaRepository = Substitute.For<IEmpresaRepository>();
         private readonly ITokenService _tokenService = Substitute.For<ITokenService>();
         private readonly IEmailService _emailService = Substitute.For<IEmailService>();
 
         private AuthService CriarServico() =>
-            new(_repository, _tokenService, _emailService,
+            new(_repository, _empresaRepository, _tokenService, _emailService,
                 new FrontendSettings("http://localhost:5173"), NullLogger<AuthService>.Instance);
 
         private static string HashDe(string refreshToken) =>
@@ -51,6 +52,45 @@ namespace Frota360.Tests.Services
             await _repository.Received(1).UpdateAsync(Arg.Is<Usuario>(u =>
                 u.RefreshTokenHash == HashDe("refresh-token") &&
                 u.RefreshTokenExpiraEm > DateTime.Now));
+        }
+
+        [Fact]
+        public async Task Login_DeveDevolverONomeDaEmpresaDoUsuario()
+        {
+            var usuario = new Usuario
+            {
+                Id = 1,
+                EmpresaId = 7,
+                Nome = "Ana",
+                Email = "ana@email.com",
+                SenhaHash = BCrypt.Net.BCrypt.HashPassword("SenhaForte123")
+            };
+            _repository.GetByEmailAsync("ana@email.com").Returns(usuario);
+            _empresaRepository.GetByIdAsync(7).Returns(new Empresa { Id = 7, Nome = "Transportadora Sul" });
+
+            var resposta = await CriarServico().LoginAsync(
+                new LoginRequest { Email = "ana@email.com", Senha = "SenhaForte123" });
+
+            Assert.Equal("Transportadora Sul", resposta!.NomeEmpresa);
+        }
+
+        [Fact]
+        public async Task Refresh_DeveDevolverONomeDaEmpresaDoUsuario()
+        {
+            var usuario = new Usuario
+            {
+                Id = 1,
+                EmpresaId = 7,
+                Ativo = true,
+                RefreshTokenHash = HashDe("refresh-atual"),
+                RefreshTokenExpiraEm = DateTime.Now.AddDays(1)
+            };
+            _repository.GetByRefreshTokenHashAsync(HashDe("refresh-atual")).Returns(usuario);
+            _empresaRepository.GetByIdAsync(7).Returns(new Empresa { Id = 7, Nome = "Transportadora Sul" });
+
+            var resposta = await CriarServico().RefreshAsync(new RefreshTokenRequest { RefreshToken = "refresh-atual" });
+
+            Assert.Equal("Transportadora Sul", resposta!.NomeEmpresa);
         }
 
         [Fact]

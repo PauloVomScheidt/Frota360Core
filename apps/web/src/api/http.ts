@@ -1,6 +1,6 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import { tokenStorage } from './tokenStorage'
-import type { ApiResponse, AuthResponse } from './types'
+import type { ApiResponse, SessaoResponse } from './types'
 
 // Sem baseURL o axios cai em URLs relativas à origem do front, e o CloudFront responde o
 // index.html do SPA — o erro chega como falha de parse de JSON, sem nenhuma pista de que a
@@ -13,37 +13,39 @@ if (!baseURL) {
   )
 }
 
-export const http = axios.create({ baseURL })
-
-http.interceptors.request.use((config) => {
-  const token = tokenStorage.getToken()
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  return config
-})
+// withCredentials: o JWT e o refresh token viajam em cookie HttpOnly, não em
+// localStorage/Authorization — sem isto o navegador nunca anexaria o cookie
+// numa chamada cross-origin (front e API vivem em portas/domínios diferentes).
+export const http = axios.create({ baseURL, withCredentials: true })
 
 // Rotas anônimas: um 401 aqui é credencial/token inválido, não sessão expirada,
 // então não faz sentido tentar refresh nem derrubar o usuário para o login.
-const ANONYMOUS_ROUTES = ['/auth/login', '/auth/refresh', '/auth/esqueci-senha', '/auth/redefinir-senha', '/convite/aceitar']
+const ANONYMOUS_ROUTES = [
+  '/auth/login',
+  '/auth/refresh',
+  '/auth/esqueci-senha',
+  '/auth/redefinir-senha',
+  '/convite/consultar',
+  '/convite/aceitar',
+]
 
 // A rotação de refresh token invalida o token anterior a cada uso, então
 // dois refreshes simultâneos fariam o segundo falhar. O lock abaixo garante
 // um único refresh em voo; as demais requisições 401 aguardam o mesmo.
-let refreshInFlight: Promise<string> | null = null
+let refreshInFlight: Promise<void> | null = null
 
-async function refreshTokens(): Promise<string> {
-  const refreshToken = tokenStorage.getRefreshToken()
-  if (!refreshToken) throw new Error('Sem refresh token')
-
-  // axios "cru" para não passar pelos interceptors deste cliente
-  const { data } = await axios.post<ApiResponse<AuthResponse>>(
+async function refreshTokens(): Promise<void> {
+  // Sem corpo: o refresh token vai no cookie HttpOnly, anexado sozinho pelo navegador.
+  // axios "cru" para não passar pelos interceptors deste cliente.
+  const { data } = await axios.post<ApiResponse<SessaoResponse>>(
     `${baseURL}/auth/refresh`,
-    { refreshToken },
+    {},
+    { withCredentials: true },
   )
   if (!data.dados) throw new Error('Refresh sem dados')
 
   // O refresh também renova as claims: é aqui que uma mudança de role passa a valer.
   tokenStorage.setSession(data.dados)
-  return data.dados.token
 }
 
 http.interceptors.response.use(
@@ -64,8 +66,8 @@ http.interceptors.response.use(
       refreshInFlight ??= refreshTokens().finally(() => {
         refreshInFlight = null
       })
-      const newToken = await refreshInFlight
-      original.headers.Authorization = `Bearer ${newToken}`
+      await refreshInFlight
+      // O novo token já está no cookie — só repetir a requisição original.
       return await http(original)
     } catch {
       tokenStorage.clear()
@@ -75,12 +77,16 @@ http.interceptors.response.use(
   },
 )
 
-/** Desembrulha o envelope da API, lançando erro amigável quando sucesso=false. */
+/**
+ * Desembrulha o envelope da API, lançando erro amigável quando sucesso=false. Quem decide se
+ * o resultado é uma falha é só o `sucesso`: `dados: null` com sucesso é resposta legítima
+ * (ex.: `GET /abastecimento/anterior` de um veículo sem histórico).
+ */
 export function unwrap<T>(response: ApiResponse<T>): T {
-  if (!response.sucesso || response.dados === null) {
+  if (!response.sucesso) {
     throw new ApiError(response.mensagem, response.erros ?? [])
   }
-  return response.dados
+  return response.dados as T
 }
 
 export class ApiError extends Error {

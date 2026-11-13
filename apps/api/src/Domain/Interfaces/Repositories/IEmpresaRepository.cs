@@ -6,5 +6,6 @@ namespace Frota360.Domain.Interfaces.Repositories
     {
         Task<Empresa> AddAsync(Empresa empresa);
         Task<bool> ExisteCnpjAsync(string cnpj);
+        Task<Empresa?> GetByIdAsync(int id);
     }
 }

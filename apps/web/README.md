@@ -8,6 +8,7 @@ Front-end React da API [Frota360](../api) (`apps/api`, mesmo repositório) — g
 - Tailwind CSS 4 + design system "Modernist" (`src/styles/design-system.css`)
 - React Router 7
 - TanStack Query 5 + Axios (Bearer + refresh automático com lock)
+- Vitest + jsdom + Testing Library + MSW (testes e cobertura)
 
 ## Como rodar
 
@@ -32,6 +33,9 @@ A URL da API vem de `VITE_API_URL` (`.env.development` / `.env.production`).
 | `npm run dev` | Servidor de desenvolvimento |
 | `npm run build` | Type-check + build de produção |
 | `npm run lint` | Lint (oxlint) |
+| `npm run test` | Testes (Vitest), uma passada |
+| `npm run test:watch` | Testes em modo watch |
+| `npm run test:cov` | Testes + relatório de cobertura em `coverage/` (abra `coverage/index.html`). Reprova abaixo de 50% de linhas — hoje em 93% |
 | `npm run gen:api` | Gera `src/api/schema.d.ts` a partir do OpenAPI da API (precisa da API rodando) |
 
 ## Rotas
@@ -43,26 +47,40 @@ A URL da API vem de `VITE_API_URL` (`.env.development` / `.env.production`).
 | `/esqueci-senha` | anônimo | Dispara `POST /auth/esqueci-senha` (resposta neutra) |
 | `/redefinir-senha?token=` | anônimo | Destino do e-mail de reset |
 | `/convite?token=` | anônimo | Destino do convite: cria a conta e já autentica |
-| `/dashboard` | autenticado | Visão geral da frota |
-| `/motoristas` | autenticado (cadastro: Admin/Supervisor) | Lista e cadastro de motoristas |
+| `/dashboard` | gestão | Visão geral da frota |
+| `/motoristas` | gestão | Lista de motoristas (somente leitura) |
 | `/veiculos` | autenticado (cadastro: Admin/Supervisor) | Lista e cadastro de veículos |
-| `/rotas` | autenticado | Lista e cadastro de rotas |
+| `/rotas` | gestão | Lista e cadastro de rotas |
+| `/manutencoes` | autenticado (edição: Admin/Supervisor) | Plano de manutenção; o Motorista não vê custo |
+| `/abastecimentos` | autenticado | Apontamento fiscal (combustível, posto, litros, R$/l, odômetro, NF); o Motorista vê só o que é dele |
+| `/despesas` | gestão | Custos avulsos: pedágio, multa, IPVA, seguro |
+| `/custos` | gestão | Abastecimentos, manutenções e despesas consolidados, com totais e R$/km |
+| `/minhas-rotas` | Motorista | Abrir e encerrar as próprias rotas |
+| `/tipos-manutencao` | Admin/Supervisor | Catálogo de tipos de manutenção |
+| `/tipos-despesa` | Admin/Supervisor | Catálogo de tipos de despesa |
+| `/tipos-combustivel` | Admin/Supervisor | Catálogo de combustíveis (a leitura na API é aberta a todos) |
+| `/postos` | Admin/Supervisor | Rede de postos credenciados (idem) |
 | `/usuarios` | Admin | Alterar permissão, ativar/desativar |
 | `/convites` | Admin | Criar, listar e cancelar convites |
+| `/auditoria` | Admin | Trilha do que a equipe alterou (somente leitura) |
+| `/perfil` | qualquer autenticado | O próprio cadastro |
+
+"Gestão" é todo papel menos `Motorista`, que tem `/minhas-rotas` como home.
 
 A navegação interna é uma **sidebar colapsável** (`AppLayout`) com duas categorias: *Dashboard*
-(Visão geral, Motoristas, Veículos, Rotas) e *Controle* (Usuários, Convites — só para Admin).
-O estado recolhido/expandido fica em `localStorage`.
+(as telas da frota) e *Controle* (Usuários, Convites, Auditoria — só para Admin). Para o
+Motorista ela separa o que ele **faz** do que só **consulta**. O estado recolhido/expandido
+fica em `localStorage`.
 
 ## Estrutura
 
 ```
 src/
 ├── api/            # camada de acesso à API
-│   ├── http.ts         # axios + Bearer + refresh automático em 401 (single-flight)
+│   ├── http.ts         # axios + cookie HttpOnly (withCredentials) + refresh automático em 401 (single-flight)
 │   ├── errors.ts       # mensagensDeErro(): extrai texto do envelope em qualquer status
 │   ├── types.ts        # envelope, Role e DTOs
-│   ├── tokenStorage.ts # tokens + identidade (nome/email/role) no localStorage
+│   ├── tokenStorage.ts # só identidade (nome/email/role) no localStorage — tokens vêm em cookie HttpOnly
 │   ├── auth.ts, convites.ts, usuarios.ts
 │   └── motoristas.ts, veiculos.ts, rotas.ts
 ├── auth/           # sessão e permissões
@@ -71,7 +89,18 @@ src/
 │   └── senha.ts        # regras de senha compartilhadas
 ├── components/     # AppLayout (sidebar+topbar), Table, AuthScreen, Logo, RequireAuth/RequireAdmin, icons
 ├── lib/            # queryClient do TanStack Query, format.ts (datas, km, CPF)
-└── pages/          # telas
+├── pages/          # telas (o teste de cada uma fica ao lado: LoginPage.test.tsx)
+└── test/           # infraestrutura de testes
+    ├── setup.ts            # jest-dom, ciclo de vida do MSW, cleanup, localStorage e polyfill do <dialog>
+    ├── renderizar.tsx      # QueryClient novo + MemoryRouter + usuário logado por papel
+    ├── fabricas.ts         # dados falsos dos *Response e o envelope ApiResponse
+    ├── servidor.ts         # servidor MSW com os catálogos padrão
+    ├── capturar.ts         # handler MSW que guarda params e corpo de cada chamada
+    ├── consultas.ts        # matcher de texto completo e normalização de espaços
+    ├── RotaAtual.tsx       # sonda de navegação: para onde a tela mandou o usuário
+    ├── suiteCatalogo.tsx   # bateria compartilhada dos quatro catálogos
+    ├── googleMapsFalso.ts  # substituto de lib/googleMaps (sem SDK)
+    └── mapaFalso.tsx       # CampoEndereco e MapaRota falsos
 ```
 
 ## Convenções da API

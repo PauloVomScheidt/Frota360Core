@@ -2,15 +2,22 @@ import { http, unwrap } from './http'
 import type {
   AbrirMinhaRotaRequest,
   ApiResponse,
+  CalcularRotaRequest,
+  CalculoRotaResponse,
   CriarRotaRequest,
   EncerrarRotaRequest,
+  ResultadoPaginado,
+  ResumoRotas,
+  RotaFiltro,
   RotaRequest,
   RotaResponse,
 } from './types'
 
 export const rotasApi = {
-  async getAll(): Promise<RotaResponse[]> {
-    const { data } = await http.get<ApiResponse<RotaResponse[]>>('/rota')
+  async getAll(filtro: RotaFiltro = {}): Promise<ResultadoPaginado<RotaResponse>> {
+    const { data } = await http.get<ApiResponse<ResultadoPaginado<RotaResponse>>>('/rota', {
+      params: { pagina: filtro.pagina, tamanhoPagina: filtro.tamanhoPagina, ativo: filtro.ativo },
+    })
     return unwrap(data)
   },
   /**
@@ -18,8 +25,20 @@ export const rotasApi = {
    * claim do JWT, então não há como pedir as rotas de outra pessoa. Para as demais
    * roles a API responde 403 — elas usam `getAll`.
    */
-  async getMinhas(): Promise<RotaResponse[]> {
-    const { data } = await http.get<ApiResponse<RotaResponse[]>>('/rota/minhas')
+  async getMinhas(filtro: RotaFiltro = {}): Promise<ResultadoPaginado<RotaResponse>> {
+    const { data } = await http.get<ApiResponse<ResultadoPaginado<RotaResponse>>>('/rota/minhas', {
+      params: { pagina: filtro.pagina, tamanhoPagina: filtro.tamanhoPagina, ativo: filtro.ativo },
+    })
+    return unwrap(data)
+  },
+  /**
+   * Quantidade e km somado das rotas **encerradas** no período. Aberto a todos os papéis: a
+   * gestão recebe a frota inteira, o motorista só as rotas dele (recorte do servidor).
+   */
+  async resumo(de: string, ate: string): Promise<ResumoRotas> {
+    const { data } = await http.get<ApiResponse<ResumoRotas>>('/rota/resumo', {
+      params: { de, ate },
+    })
     return unwrap(data)
   },
   async getById(id: number): Promise<RotaResponse> {
@@ -58,6 +77,15 @@ export const rotasApi = {
    */
   async encerrar(id: number, body: EncerrarRotaRequest): Promise<RotaResponse> {
     const { data } = await http.post<ApiResponse<RotaResponse>>(`/rota/${id}/encerrar`, body)
+    return unwrap(data)
+  },
+  /**
+   * Distância, duração e traçado entre duas coordenadas. **Não persiste nada** e
+   * **cada chamada é cobrada pela Google** — dispare só quando os dois pontos mudarem,
+   * nunca a cada tecla.
+   */
+  async calcular(body: CalcularRotaRequest): Promise<CalculoRotaResponse> {
+    const { data } = await http.post<ApiResponse<CalculoRotaResponse>>('/rota/calcular', body)
     return unwrap(data)
   },
   async remove(id: number): Promise<void> {

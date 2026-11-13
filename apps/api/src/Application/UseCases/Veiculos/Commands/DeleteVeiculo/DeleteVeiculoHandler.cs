@@ -9,6 +9,7 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo
     public sealed class DeleteVeiculoHandler(IVeiculoRepository repository,
                                              IRotaRepository rotaRepository,
                                              IAbastecimentoRepository abastecimentoRepository,
+                                             IDespesaRepository despesaRepository,
                                              ICurrentUserService currentUser,
                                              IAuditoriaService auditoria,
                                              ILogger<DeleteVeiculoHandler> logger)
@@ -39,6 +40,11 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.DeleteVeiculo
                 if (await abastecimentoRepository.ExisteComVeiculoAsync(currentUser.EmpresaId, veiculo.Id))
                     throw new InvalidOperationException(
                         "Não é possível excluir um veículo com abastecimentos lançados. Remova os lançamentos antes.");
+
+                // Terceira guarda, mesma razão: a FK da despesa também é Restrict.
+                if (await despesaRepository.ExisteComVeiculoAsync(currentUser.EmpresaId, veiculo.Id))
+                    throw new InvalidOperationException(
+                        "Não é possível excluir um veículo com despesas lançadas. Remova os lançamentos antes.");
 
                 await repository.DeleteAsync(veiculo);
 

@@ -1,10 +1,10 @@
 using Frota360.Application.Abstractions.Messaging;
+using Frota360.Application.DTOs.Rota.Request;
 using Frota360.Application.DTOs.Rota.Response;
+using Frota360.Domain.Common;
 
 namespace Frota360.Application.UseCases.Rotas.Queries.GetMinhasRotas
 {
-    /// <summary>
-    /// Sem parâmetros de propósito: o motorista vem da claim, nunca do cliente.
-    /// </summary>
-    public sealed record GetMinhasRotasQuery : IQuery<IEnumerable<RotaResponse>>;
+    public sealed record GetMinhasRotasQuery(ConsultarRotasRequest Filtro)
+        : IQuery<ResultadoPaginado<RotaResponse>>;
 }

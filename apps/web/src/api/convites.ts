@@ -3,9 +3,10 @@ import { tokenStorage } from './tokenStorage'
 import type {
   AceitarConviteRequest,
   ApiResponse,
-  AuthResponse,
+  ConviteConsultadoResponse,
   ConviteResponse,
   CriarConviteRequest,
+  SessaoResponse,
 } from './types'
 
 export const convitesApi = {
@@ -25,10 +26,19 @@ export const convitesApi = {
   },
 }
 
+/**
+ * Anônimo: lê o convite sem consumi-lo. Inválido, utilizado ou expirado → 404. POST para o
+ * token ir no corpo, e não na URL.
+ */
+export async function consultarConvite(token: string): Promise<ConviteConsultadoResponse> {
+  const { data } = await http.post<ApiResponse<ConviteConsultadoResponse>>('/convite/consultar', { token })
+  return unwrap(data)
+}
+
 /** Anônimo: cria a conta na empresa/role do convite e já devolve a sessão autenticada. */
-export async function aceitarConvite(body: AceitarConviteRequest): Promise<AuthResponse> {
-  const { data } = await http.post<ApiResponse<AuthResponse>>('/convite/aceitar', body)
-  const auth = unwrap(data)
-  tokenStorage.setSession(auth)
-  return auth
+export async function aceitarConvite(body: AceitarConviteRequest): Promise<SessaoResponse> {
+  const { data } = await http.post<ApiResponse<SessaoResponse>>('/convite/aceitar', body)
+  const sessao = unwrap(data)
+  tokenStorage.setSession(sessao)
+  return sessao
 }

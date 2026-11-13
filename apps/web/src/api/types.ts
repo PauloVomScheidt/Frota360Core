@@ -36,12 +36,21 @@ export interface LoginRequest {
   senha: string
 }
 
-export interface AuthResponse {
-  token: string
-  refreshToken: string
+/** Token e refreshToken não vêm mais aqui — o servidor os manda em cookie HttpOnly. */
+export interface SessaoResponse {
   nome: string
   email: string
   role: Role
+  /** Exibido no cabeçalho do painel. */
+  nomeEmpresa: string
+}
+
+/** `POST /convite/consultar` (anônimo): o que a tela de aceite mostra antes de a conta existir. */
+export interface ConviteConsultadoResponse {
+  nomeEmpresa: string
+  email: string
+  role: Role
+  expiraEm: string
 }
 
 export interface EsqueciSenhaRequest {
@@ -92,6 +101,12 @@ export interface UsuarioResponse {
   dataNascimento?: string | null
   ativo: boolean
   dataInclusao: string
+}
+
+/** `GET/PUT /usuario/perfil`: o próprio cadastro mais a empresa, só leitura. */
+export interface PerfilResponse extends UsuarioResponse {
+  nomeEmpresa: string
+  cnpjEmpresa?: string | null
 }
 
 export interface AlterarRoleRequest {
@@ -161,8 +176,24 @@ export interface VeiculoResponse extends VeiculoRequest {
  * permitiria "encerrar" uma rota por edição, sem calcular km nem tocar no odômetro.
  */
 export interface RotaRequest {
-  origem: string
-  destino: string
+  enderecoPartida: string
+  enderecoChegada: string
+  /**
+   * Coordenadas do Places. Opcionais enquanto o autocomplete não existe na tela — sem elas
+   * a rota é gravada sem traçado, e `dataCalculoRota` permanece nula.
+   */
+  latitudePartida?: number | null
+  longitudePartida?: number | null
+  latitudeChegada?: number | null
+  longitudeChegada?: number | null
+  /**
+   * Traçado já calculado por `POST /rota/calcular`. Enviado pelo cliente em vez de
+   * recalculado no servidor porque a chamada à Routes API é cobrada — o front acabou de
+   * pagar por este mesmo trajeto. `dataCalculoRota` não entra: quem a carimba é a API.
+   */
+  distanciaMetros?: number | null
+  duracaoEstimadaSegundos?: number | null
+  polylineCodificada?: string | null
   codigoMotorista: number
   codigoVeiculo: number
   dataInicio: string
@@ -190,6 +221,25 @@ export interface CriarRotaRequest extends RotaRequest {
  */
 export type AbrirMinhaRotaRequest = Omit<CriarRotaRequest, 'codigoMotorista'>
 
+/**
+ * Corpo de `POST /rota/calcular`. Consulta avulsa: não carrega id de rota, porque o
+ * cálculo antecede o cadastro.
+ */
+export interface CalcularRotaRequest {
+  latitudeOrigem: number
+  longitudeOrigem: number
+  latitudeDestino: number
+  longitudeDestino: number
+}
+
+/** Trajeto devolvido pela Routes API. */
+export interface CalculoRotaResponse {
+  distanciaMetros: number
+  duracaoEstimadaSegundos: number
+  /** Nula quando a Google devolve o trajeto sem traçado — distância e duração seguem válidas. */
+  polylineCodificada?: string | null
+}
+
 /** `dataFim` opcional — a API assume "agora" quando omitida. */
 export interface EncerrarRotaRequest {
   kmFinal: number
@@ -199,6 +249,13 @@ export interface EncerrarRotaRequest {
 export interface RotaResponse extends RotaRequest {
   id: number
   nomeMotorista?: string | null
+  /**
+   * Placa e nome do veículo, desnormalizados pelo servidor como em `ManutencaoResponse` e
+   * `AbastecimentoResponse`. Antes as telas de rota montavam um `Map` a partir de
+   * `['veiculos']` para achar a placa — dependência que a paginação no servidor inviabilizou.
+   */
+  veiculoPlaca?: string | null
+  veiculoNome?: string | null
   ativo: boolean
   dataFim?: string | null
   kmInicial: number
@@ -207,6 +264,15 @@ export interface RotaResponse extends RotaRequest {
   /** Fato histórico persistido pela API (`kmFinal - kmInicial`), não recalcular aqui. */
   kmPercorrido?: number | null
   dataInclusao: string
+  /**
+   * Traçado calculado pela Routes API. ⚠️ `dataCalculoRota` é o discriminador: nula, os
+   * demais campos deste bloco estão nos seus zeros e não devem ser exibidos como se fossem
+   * medida real — distância 0 e "não calculado" são indistinguíveis sem ela.
+   */
+  distanciaMetros: number
+  duracaoEstimadaSegundos: number
+  polylineCodificada?: string | null
+  dataCalculoRota?: string | null
 }
 
 // ---------- Tipo de manutenção ----------
@@ -253,6 +319,9 @@ export interface ConcluirManutencaoRequest {
 }
 
 export interface ManutencaoFiltro {
+  /** Paginação do servidor. Sem eles a API assume página 1 com 15 itens; teto de 100. */
+  pagina?: number
+  tamanhoPagina?: number
   veiculoId?: number
   status?: StatusManutencao
   /**
@@ -296,6 +365,15 @@ export interface ManutencaoResponse {
   dataInclusao: string
 }
 
+/** `GET /manutencao/resumo` (gestão): as contagens não têm teto; `urgentes` traz no máximo 10. */
+export interface ResumoManutencoes {
+  atrasadas: number
+  /** Pendentes ainda não vencidas dentro de `FAIXA_AVISO` km do previsto. */
+  vencendo: number
+  /** Atrasadas primeiro, depois vencendo; em cada grupo, o menor `kmRestantes` antes. */
+  urgentes: ManutencaoResponse[]
+}
+
 // ---------- Auditoria (Admin) ----------
 
 /** Vocabulário fechado no servidor: um valor fora daqui volta 400 do validator. */
@@ -305,6 +383,10 @@ export type EntidadeAuditada =
   | 'Manutencao'
   | 'Abastecimento'
   | 'TipoManutencao'
+  | 'Despesa'
+  | 'TipoDespesa'
+  | 'TipoCombustivel'
+  | 'Posto'
   | 'Usuario'
   | 'Convite'
 
@@ -319,6 +401,7 @@ export type AcaoAuditoria =
   | 'Desativou'
   | 'Cancelou'
   | 'Aceitou'
+  | 'Calculou'
 
 /** Um campo que mudou. Valores já vêm como texto — o log é histórico legível. */
 export interface AlteracaoCampo {
@@ -364,8 +447,9 @@ export interface AuditoriaFiltro {
 // ---------- Abastecimento ----------
 
 /**
- * O apontamento é curto de propósito: é o que se registra no posto sem atrito. Não há
- * `rotaId` — a API deriva a rota da viagem aberta do motorista naquele veículo.
+ * O apontamento fiscal do abastecimento. Dois campos **não** entram no corpo: `rotaId`, que
+ * a API deriva da viagem aberta do motorista naquele veículo, e `valor`, que o servidor
+ * recalcula como `litros × valorLitro` — a tela o exibe como readonly.
  */
 export interface AbastecimentoRequest {
   veiculoId: number
@@ -374,7 +458,19 @@ export interface AbastecimentoRequest {
    * este campo e usa o usuário do token — ele não lança na conta de outro.
    */
   motoristaId?: number | null
-  valor: number
+  tipoCombustivelId: number
+  /** Posto credenciado. Item inativo do catálogo volta 422. */
+  postoId: number
+  litros: number
+  valorLitro: number
+  /**
+   * Quilometragem no momento do abastecimento. Avança a ficha do veículo quando é maior que
+   * a atual — por isso a mutation invalida `['veiculos']` e `['manutencoes']` também.
+   */
+  odometro: number
+  notaFiscal: string
+  /** Opcional: em autoatendimento não há frentista. */
+  frentista?: string | null
   dataAbastecimento: string
   observacao?: string | null
 }
@@ -383,12 +479,15 @@ export interface AbastecimentoRequest {
  * Correção de um lançamento. Sem `veiculoId` e sem `motoristaId`: trocar qualquer um dos
  * dois reescreveria a atribuição do gasto — nesse caso, exclua e lance de novo.
  */
-export type AtualizarAbastecimentoRequest = Pick<
+export type AtualizarAbastecimentoRequest = Omit<
   AbastecimentoRequest,
-  'valor' | 'dataAbastecimento' | 'observacao'
+  'veiculoId' | 'motoristaId'
 >
 
 export interface AbastecimentoFiltro {
+  /** Paginação do servidor. Sem eles a API assume página 1 com 15 itens; teto de 100. */
+  pagina?: number
+  tamanhoPagina?: number
   veiculoId?: number
   /** Só vale para a gestão; para a role `Motorista` o servidor sobrescreve com o do token. */
   motoristaId?: number
@@ -413,8 +512,292 @@ export interface AbastecimentoResponse {
   motoristaNome: string
   usuarioId: number
   usuarioNome: string
+  tipoCombustivelId: number
+  tipoCombustivelNome: string
+  postoId: number
+  postoNome: string
+  litros: number
+  valorLitro: number
+  /** `litros × valorLitro`, calculado no servidor. */
   valor: number
+  odometro: number
+  notaFiscal: string
+  frentista?: string | null
   dataAbastecimento: string
+  observacao?: string | null
+  dataInclusao: string
+}
+
+// ---------- Custo ----------
+
+/**
+ * De onde saiu um custo. Não existe tabela de custos: o valor continua sendo lançado no
+ * abastecimento e na conclusão da manutenção, e `/custo` só une as duas origens na leitura.
+ *
+ * Espelha o enum `OrigemCusto` do Domain — mexeu numa, mexa na outra. Custo avulso
+ * (pedágio, multa, IPVA) entra aqui como uma origem nova, e nada mais neste arquivo muda.
+ */
+export type OrigemCusto = 'Abastecimento' | 'Manutencao' | 'Despesa'
+
+/** Uma linha de custo, já normalizada entre as origens. */
+export interface LancamentoCustoResponse {
+  origem: OrigemCusto
+  /** Id na tabela de origem — é por ele que se volta ao registro. */
+  origemId: number
+  data: string
+  veiculoId: number
+  veiculoNome: string
+  veiculoPlaca: string
+  /** Nulo em manutenção, que não é atribuída a motorista. */
+  motoristaId?: number | null
+  motoristaNome?: string | null
+  /** "Combustível" no abastecimento; o nome do tipo na manutenção. */
+  categoria: string
+  valor: number
+  observacao?: string | null
+}
+
+export interface CustoFiltro {
+  pagina?: number
+  /** Teto de 100 no servidor; acima disso volta 400. */
+  tamanhoPagina?: number
+  veiculoId?: number
+  /**
+   * Preenchido, o resultado sai **só com abastecimentos**: manutenção não é atribuída a
+   * motorista. A tela avisa o usuário disso.
+   */
+  motoristaId?: number
+  origem?: OrigemCusto
+  /** `yyyy-MM-dd`; `ate` é inclusivo (o servidor estende até o fim do dia). */
+  de?: string
+  ate?: string
+}
+
+export interface CustoPorVeiculoResponse {
+  veiculoId: number
+  veiculoNome: string
+  veiculoPlaca: string
+  totalAbastecimento: number
+  totalManutencao: number
+  totalDespesa: number
+  total: number
+  /** Km das rotas encerradas no período. Zero quando nenhuma foi encerrada. */
+  km: number
+  /** Nulo quando `km` é zero — não há denominador. */
+  custoPorKm?: number | null
+  /** Litros do período, já sem os do primeiro abastecimento (eles pagaram o trecho anterior). */
+  litros: number
+  /**
+   * Km medido pelo **odômetro dos abastecimentos** — não é o mesmo que `km`, que vem das
+   * rotas encerradas. São duas medidas diferentes, e a tela diz qual é qual.
+   */
+  kmOdometro: number
+  /** Nulo com menos de dois abastecimentos no período, ou se o odômetro não avançou. */
+  consumoMedio?: number | null
+}
+
+export interface CustoPorMesResponse {
+  ano: number
+  /** 1 a 12. */
+  mes: number
+  totalAbastecimento: number
+  totalManutencao: number
+  totalDespesa: number
+  total: number
+}
+
+/**
+ * A primeira agregação servida pela API — os totais são somados no banco, não com `reduce`
+ * no cliente como nos KPIs do dashboard.
+ */
+export interface ResumoCustosResponse {
+  total: number
+  totalAbastecimento: number
+  totalManutencao: number
+  /** Custos avulsos: pedágio, multa, IPVA, seguro. */
+  totalDespesa: number
+  quantidadeLancamentos: number
+  kmTotal: number
+  /**
+   * Nulo quando não houve rota encerrada no período. Rota ainda aberta não tem km apurado,
+   * então o mês corrente subestima o km e superestima o R$/km.
+   */
+  custoPorKm?: number | null
+  /**
+   * Manutenções concluídas no período sem custo informado. Ficam fora de toda soma — a tela
+   * mostra a contagem para o total não mentir por omissão.
+   */
+  manutencoesSemCustoInformado: number
+  /** Litros da frota no período, já descontado o primeiro abastecimento de cada veículo. */
+  litrosTotal: number
+  /** Km pelo odômetro dos abastecimentos. **Não** é `kmTotal`, que sai das rotas encerradas. */
+  kmOdometroTotal: number
+  /**
+   * Consumo médio da frota em km/l. Soma km e litros e divide uma vez só — média das médias
+   * faria um veículo com dois abastecimentos pesar igual a um com trinta.
+   */
+  consumoMedio?: number | null
+  /** Do maior total para o menor. Inclui veículo que rodou sem custo lançado. */
+  porVeiculo: CustoPorVeiculoResponse[]
+  /** Em ordem cronológica; só os meses que tiveram lançamento. */
+  porMes: CustoPorMesResponse[]
+}
+
+// ---------- Tipo de combustível ----------
+
+/** Catálogo da empresa; alimenta o select da tela de abastecimentos. */
+export interface TipoCombustivelRequest {
+  nome: string
+}
+
+/** O PUT aceita o mesmo shape do POST mais o `ativo` — inativar é o caminho quando o DELETE dá 422. */
+export interface TipoCombustivelUpdateRequest extends TipoCombustivelRequest {
+  ativo: boolean
+}
+
+export interface TipoCombustivelResponse {
+  id: number
+  nome: string
+  ativo: boolean
+  dataInclusao: string
+}
+
+// ---------- Posto ----------
+
+/**
+ * A rede credenciada da empresa. Diferente dos outros catálogos, não há conjunto padrão
+ * semeado no provisionamento: cada empresa credencia os seus.
+ */
+export interface PostoRequest {
+  nome: string
+  /** Opcionais: nem todo posto credenciado é registrado com nota da empresa. */
+  cnpj?: string | null
+  cidade?: string | null
+}
+
+export interface PostoUpdateRequest extends PostoRequest {
+  ativo: boolean
+}
+
+export interface PostoResponse {
+  id: number
+  nome: string
+  cnpj?: string | null
+  cidade?: string | null
+  ativo: boolean
+  dataInclusao: string
+}
+
+// ---------- Tipo de despesa ----------
+
+/** Catálogo de tipos da empresa; alimenta o select da tela de despesas. */
+export interface TipoDespesaRequest {
+  nome: string
+}
+
+/** O PUT aceita o mesmo shape do POST mais o `ativo` — inativar é o caminho quando o DELETE dá 422. */
+export interface TipoDespesaUpdateRequest extends TipoDespesaRequest {
+  ativo: boolean
+}
+
+export interface TipoDespesaResponse {
+  id: number
+  nome: string
+  ativo: boolean
+  dataInclusao: string
+}
+
+// ---------- Despesa ----------
+
+/**
+ * Custo avulso: pedágio, multa, IPVA, seguro, licenciamento. É a terceira origem da tela
+ * de custos, e a única cuja tabela é fonte de verdade — as outras duas são lidas das telas
+ * de abastecimento e manutenção.
+ *
+ * Só a gestão lança, então não há aqui o par motorista/usuário do abastecimento: quem
+ * lançou fica na trilha de auditoria.
+ */
+export interface DespesaRequest {
+  /** Obrigatório — IPVA, seguro e licenciamento já são por veículo na prática. */
+  veiculoId: number
+  tipoDespesaId: number
+  /** Opcional: multa tem dono, IPVA não. */
+  motoristaId?: number | null
+  valor: number
+  dataDespesa: string
+  observacao?: string | null
+}
+
+/**
+ * O PUT altera **tudo**, inclusive veículo, tipo e motorista — diferente do abastecimento,
+ * onde só valor, data e observação são editáveis. Lá a trava existe porque a troca
+ * reatribuiria um gasto sujeito a recorte por dono; aqui não há recorte.
+ */
+export type AtualizarDespesaRequest = DespesaRequest
+
+export interface DespesaFiltro {
+  /** Paginação do servidor. Sem eles a API assume página 1 com 15 itens; teto de 100. */
+  pagina?: number
+  tamanhoPagina?: number
+  veiculoId?: number
+  motoristaId?: number
+  tipoDespesaId?: number
+  /** `yyyy-MM-dd`; `ate` é inclusivo (o servidor estende até o fim do dia). */
+  de?: string
+  ate?: string
+}
+
+/**
+ * Contagem e soma do **filtro inteiro**, servidos por `/abastecimento/resumo` e
+ * `/despesa/resumo`. É o que sustenta o rodapé "N lançamentos · Total: R$ X" depois que a
+ * lista passou a vir paginada — somar a página diria outro número a cada virada.
+ */
+export interface ResumoLancamentos {
+  quantidade: number
+  valorTotal: number
+}
+
+/**
+ * A referência da estimativa de km/l: o abastecimento de maior odômetro abaixo do digitado
+ * naquele veículo. Só data e odômetro — a consulta enxerga o histórico do veículo inteiro,
+ * inclusive lançamentos de outra pessoa, e devolver valor ou nome vazaria gasto alheio.
+ */
+export interface AbastecimentoAnteriorResponse {
+  dataAbastecimento: string
+  odometro: number
+}
+
+/** Agregados de `/rota/resumo`: rotas encerradas no período e o km que somaram. */
+export interface ResumoRotas {
+  quantidade: number
+  kmTotal: number
+}
+
+/** Filtro de `/rota` e `/rota/minhas`. */
+export interface RotaFiltro {
+  /** Paginação do servidor. Sem eles a API assume página 1 com 15 itens; teto de 100. */
+  pagina?: number
+  tamanhoPagina?: number
+  /**
+   * `true` traz só as rotas em andamento, `false` só o histórico, omitido traz tudo.
+   * É como a tela do motorista acha a rota ativa e como o dashboard conta as abertas
+   * (pedindo `tamanhoPagina: 1` e lendo o `total`).
+   */
+  ativo?: boolean
+}
+
+export interface DespesaResponse {
+  id: number
+  veiculoId: number
+  veiculoNome: string
+  veiculoPlaca: string
+  tipoDespesaId: number
+  tipoDespesaNome: string
+  /** Nulo quando a despesa não é de ninguém em particular (IPVA, seguro). */
+  motoristaId?: number | null
+  motoristaNome?: string | null
+  valor: number
+  dataDespesa: string
   observacao?: string | null
   dataInclusao: string
 }

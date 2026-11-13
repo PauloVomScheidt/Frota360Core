@@ -4,8 +4,9 @@ namespace Frota360.Domain.Common
     /// Página de uma listagem. Vai <b>dentro</b> de <c>ApiResponse&lt;T&gt;.Dados</c>, sem mexer
     /// no envelope: <c>ApiResponse&lt;ResultadoPaginado&lt;XResponse&gt;&gt;</c>.
     ///
-    /// Nasceu com a trilha de auditoria — a primeira listagem do sistema que não cabe de uma vez.
-    /// As demais continuam devolvendo a coleção inteira; use isto quando o volume crescer.
+    /// Nasceu com a trilha de auditoria — a primeira listagem do sistema que não cabe de uma vez —
+    /// e hoje serve também à lista de custos. As demais continuam devolvendo a coleção inteira;
+    /// use isto quando o volume crescer.
     /// </summary>
     public class ResultadoPaginado<T>
     {

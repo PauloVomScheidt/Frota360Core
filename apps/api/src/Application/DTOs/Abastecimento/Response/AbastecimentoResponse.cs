@@ -21,7 +21,22 @@ namespace Frota360.Application.DTOs.Abastecimento.Response
         public int UsuarioId { get; set; }
         public string UsuarioNome { get; set; } = string.Empty;
 
+        public int TipoCombustivelId { get; set; }
+        public string TipoCombustivelNome { get; set; } = string.Empty;
+
+        public int PostoId { get; set; }
+        public string PostoNome { get; set; } = string.Empty;
+
+        public decimal Litros { get; set; }
+        public decimal ValorLitro { get; set; }
+
+        /// <summary>Litros × valor do litro, calculado no servidor.</summary>
         public decimal Valor { get; set; }
+
+        public int Odometro { get; set; }
+        public string NotaFiscal { get; set; } = string.Empty;
+        public string? Frentista { get; set; }
+
         public DateTime DataAbastecimento { get; set; }
         public string? Observacao { get; set; }
         public DateTime DataInclusao { get; set; }

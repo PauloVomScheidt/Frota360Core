@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
-import { aceitarConvite } from '../api/convites'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
+import { aceitarConvite, consultarConvite } from '../api/convites'
 import { mensagensDeErro } from '../api/errors'
 import { validarSenha } from '../auth/senha'
 import { rotaInicial } from '../auth/permissions'
@@ -18,6 +19,7 @@ export function AcceptInvitePage() {
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token') ?? ''
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const [nome, setNome] = useState('')
   // Opcionais: hoje é o único lugar onde CPF e nascimento entram (não há tela de perfil).
@@ -28,9 +30,26 @@ export function AcceptInvitePage() {
   const [aceite, setAceite] = useState(false)
   const [errosLocais, setErrosLocais] = useState<string[]>([])
 
+  // Chave própria e sem retry: o token é credencial de uso único, e repetir a consulta de um
+  // convite inválido só gastaria o rate limit da rota anônima.
+  const conviteQuery = useQuery({
+    queryKey: ['convite', 'consulta', token],
+    queryFn: () => consultarConvite(token),
+    enabled: token !== '',
+    retry: false,
+    staleTime: Infinity,
+  })
+  const convite = conviteQuery.data
+  const conviteInvalido = isAxiosError(conviteQuery.error) && conviteQuery.error.response?.status === 404
+
   const aceitarMutation = useMutation({
     mutationFn: aceitarConvite,
     onSuccess: (auth) => {
+      // Mesmo motivo do LoginPage: /convite também é alcançável já autenticado (outra
+      // conta aceitando um segundo convite na mesma aba), e as chaves do React Query
+      // não carregam a empresa — sem isto, dado de outra empresa poderia sobreviver
+      // no cache até o staleTime vencer.
+      queryClient.clear()
       notificarMudancaDeSessao()
       // O papel vem do convite: motorista cai direto em "Minhas rotas".
       navigate(rotaInicial(auth.role), { replace: true })
@@ -72,6 +91,21 @@ export function AcceptInvitePage() {
     )
   }
 
+  if (conviteInvalido) {
+    return (
+      <AuthScreen>
+        <AuthHeading
+          kicker="Convite de equipe"
+          titulo="Convite indisponível"
+          descricao="Este convite é inválido, já foi utilizado ou expirou. Peça ao administrador da sua empresa para enviar um novo."
+        />
+        <Link to="/login" className="btn btn-secondary w-full justify-center" style={{ borderRadius: 0, padding: 12 }}>
+          Ir para o login
+        </Link>
+      </AuthScreen>
+    )
+  }
+
   const erros =
     errosLocais.length > 0
       ? errosLocais
@@ -84,8 +118,26 @@ export function AcceptInvitePage() {
       <AuthHeading
         kicker="Convite de equipe"
         titulo="Criar sua conta"
-        descricao="Você foi convidado para acessar o painel de frota. Defina seu nome e uma senha para continuar — sua empresa e permissão já vêm do convite."
+        descricao={
+          convite ? (
+            <>
+              Você foi convidado para acessar o painel de frota de{' '}
+              <strong style={{ color: 'var(--color-text)' }}>{convite.nomeEmpresa}</strong> como{' '}
+              <strong style={{ color: 'var(--color-text)' }}>{convite.role}</strong>. Defina seu nome e uma senha para
+              continuar.
+            </>
+          ) : (
+            'Você foi convidado para acessar o painel de frota. Defina seu nome e uma senha para continuar — sua empresa e permissão já vêm do convite.'
+          )
+        }
       />
+
+      {convite && (
+        <p className="m-0 text-[13px]" style={{ color: 'color-mix(in srgb, var(--color-text) 65%, transparent)' }}>
+          Sua conta será criada com o e-mail{' '}
+          <strong style={{ color: 'var(--color-text)' }}>{convite.email}</strong>.
+        </p>
+      )}
 
       <div className="flex flex-col gap-3.5">
         <div className="field">

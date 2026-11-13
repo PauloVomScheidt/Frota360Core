@@ -1,4 +1,5 @@
-﻿using Frota360.Domain.Entities;
+﻿using Frota360.Domain.Common;
+using Frota360.Domain.Entities;
 using Frota360.Domain.Enums;
 
 namespace Frota360.Domain.Interfaces.Repositories
@@ -13,8 +14,15 @@ namespace Frota360.Domain.Interfaces.Repositories
         /// pela <c>DataPrevista</c>, manutenção feita pela <c>DataRealizacao</c>. <c>ate</c> é
         /// inclusivo (o repositório estende até o fim do dia).
         /// </summary>
-        Task<IEnumerable<Manutencao>> GetAllAsync(int empresaId, int? veiculoId = null,
-            StatusManutencao? status = null, DateTime? de = null, DateTime? ate = null);
+        Task<(IEnumerable<Manutencao> Itens, int Total)> ConsultarAsync(int empresaId, FiltroManutencao filtro);
+
+        /// <summary>
+        /// Todas as pendentes da empresa, com veículo e tipo carregados — sem paginação, porque o
+        /// conjunto é limitado pela frota e o resumo precisa do odômetro de cada veículo para saber
+        /// o que está atrasado.
+        /// </summary>
+        Task<IEnumerable<Manutencao>> ListarPendentesAsync(int empresaId);
+
         Task<Manutencao?> GetByIdAsync(int id, int empresaId);
 
         /// <summary>Já existe manutenção pendente do mesmo tipo para o veículo na mesma quilometragem.</summary>

@@ -6,7 +6,8 @@ import type { Role, UsuarioResponse } from '../api/types'
 import { ROLES } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { ConfirmDialog, TableStates } from '../components/Table'
+import { ConfirmDialog, Paginacao, TableStates } from '../components/Table'
+import { usePaginacao } from '../lib/paginacao'
 import { formatDate } from '../lib/format'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
@@ -124,6 +125,7 @@ export function UsuariosPage() {
   }
 
   const usuarios = usuariosQuery.data ?? []
+  const p = usePaginacao(usuarios)
   const salvando = roleMutation.isPending || ativoMutation.isPending
 
   function ehEuMesmo(usuario: UsuarioResponse) {
@@ -185,7 +187,7 @@ export function UsuariosPage() {
               textoErro="Não foi possível carregar os usuários."
               textoVazio="Nenhum usuário cadastrado."
             />
-            {usuarios.map((usuario) => (
+            {p.itensDaPagina.map((usuario) => (
               <tr key={usuario.id}>
                 <td className="font-semibold">
                   {usuario.nome}
@@ -231,6 +233,8 @@ export function UsuariosPage() {
           </tbody>
         </table>
       </div>
+
+      <Paginacao {...p} pending={usuariosQuery.isFetching} />
 
       <p className="mt-4 text-[13px]" style={{ color: mutedText }}>
         A empresa precisa ter sempre ao menos um administrador ativo — a API recusa rebaixar ou

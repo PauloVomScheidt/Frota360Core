@@ -17,6 +17,7 @@ namespace Frota360.Tests.Services
     {
         private readonly IConviteRepository _conviteRepository = Substitute.For<IConviteRepository>();
         private readonly IUsuarioRepository _usuarioRepository = Substitute.For<IUsuarioRepository>();
+        private readonly IEmpresaRepository _empresaRepository = Substitute.For<IEmpresaRepository>();
         private readonly ITokenService _tokenService = Substitute.For<ITokenService>();
         private readonly IEmailService _emailService = Substitute.For<IEmailService>();
         private readonly ICurrentUserService _currentUser = Substitute.For<ICurrentUserService>();
@@ -43,7 +44,7 @@ namespace Frota360.Tests.Services
         }
 
         private ConviteService CriarServico() =>
-            new(_conviteRepository, _usuarioRepository, _tokenService, _emailService, _currentUser, _auditoria,
+            new(_conviteRepository, _usuarioRepository, _empresaRepository, _tokenService, _emailService, _currentUser, _auditoria,
                 new FrontendSettings("http://localhost:5173"), NullLogger<ConviteService>.Instance);
 
         private static string HashDe(string token) =>
@@ -245,6 +246,70 @@ namespace Frota360.Tests.Services
             Assert.Null(resposta);
         }
 
+
+        [Fact]
+        public async Task Aceitar_DeveDevolverONomeDaEmpresaDoConvite()
+        {
+            _conviteRepository.GetByTokenHashAsync(HashDe("token-convite")).Returns(ConvitePendente());
+            _empresaRepository.GetByIdAsync(1).Returns(new Empresa { Id = 1, Nome = "Transportadora Sul" });
+
+            var resposta = await CriarServico().AceitarAsync(
+                new AceitarConviteRequest { Token = "token-convite", Nome = "Ana", Senha = "SenhaForte1" });
+
+            Assert.Equal("Transportadora Sul", resposta!.NomeEmpresa);
+        }
+
+        // ----- Consulta anônima do convite, antes do aceite -----
+
+        [Fact]
+        public async Task Consultar_TokenValido_DeveDevolverEmpresaEmailEPapelSemConsumir()
+        {
+            _conviteRepository.GetByTokenHashAsync(HashDe("token-convite")).Returns(ConvitePendente());
+            _empresaRepository.GetByIdAsync(1).Returns(new Empresa { Id = 1, Nome = "Transportadora Sul" });
+
+            var resposta = await CriarServico().ConsultarAsync(new ConsultarConviteRequest { Token = "token-convite" });
+
+            Assert.NotNull(resposta);
+            Assert.Equal("Transportadora Sul", resposta!.NomeEmpresa);
+            Assert.Equal("convidada@email.com", resposta.Email);
+            Assert.Equal("Motorista", resposta.Role);
+            await _conviteRepository.DidNotReceive().UpdateAsync(Arg.Any<Convite>());
+            await _usuarioRepository.DidNotReceive().AddAsync(Arg.Any<Usuario>());
+        }
+
+        [Fact]
+        public async Task Consultar_TokenDesconhecido_DeveRetornarNull()
+        {
+            _conviteRepository.GetByTokenHashAsync(Arg.Any<string>()).Returns((Convite?)null);
+
+            var resposta = await CriarServico().ConsultarAsync(new ConsultarConviteRequest { Token = "nao-existe" });
+
+            Assert.Null(resposta);
+        }
+
+        [Fact]
+        public async Task Consultar_TokenExpirado_DeveRetornarNull()
+        {
+            var convite = ConvitePendente("expirado");
+            convite.ExpiraEm = DateTime.Now.AddMinutes(-1);
+            _conviteRepository.GetByTokenHashAsync(HashDe("expirado")).Returns(convite);
+
+            var resposta = await CriarServico().ConsultarAsync(new ConsultarConviteRequest { Token = "expirado" });
+
+            Assert.Null(resposta);
+        }
+
+        [Fact]
+        public async Task Consultar_TokenJaUtilizado_DeveRetornarNull()
+        {
+            var convite = ConvitePendente("usado");
+            convite.UtilizadoEm = DateTime.Now.AddHours(-1);
+            _conviteRepository.GetByTokenHashAsync(HashDe("usado")).Returns(convite);
+
+            var resposta = await CriarServico().ConsultarAsync(new ConsultarConviteRequest { Token = "usado" });
+
+            Assert.Null(resposta);
+        }
 
         // ----- Dados pessoais opcionais informados no aceite -----
 

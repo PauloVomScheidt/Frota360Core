@@ -3,12 +3,14 @@ using FluentValidation;
 using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.DTOs.Rota.Request;
 using Frota360.Application.DTOs.Rota.Response;
+using Frota360.Application.UseCases.Rotas.Commands.CalcularRota;
 using Frota360.Application.UseCases.Rotas.Commands.CreateRota;
 using Frota360.Application.UseCases.Rotas.Commands.DeleteRota;
 using Frota360.Application.UseCases.Rotas.Commands.EncerrarRota;
 using Frota360.Application.UseCases.Rotas.Commands.UpdateRota;
 using Frota360.Application.UseCases.Rotas.Queries.GetAllRotas;
 using Frota360.Application.UseCases.Rotas.Queries.GetMinhasRotas;
+using Frota360.Application.UseCases.Rotas.Queries.GetResumoRotas;
 using Frota360.Application.UseCases.Rotas.Queries.GetRotaById;
 using Frota360.Domain.Common;
 using Microsoft.AspNetCore.Authorization;
@@ -23,19 +25,42 @@ namespace Frota360.Api.Controllers
     public class RotaController(IDispatcher dispatcher,
                                 IValidator<CreateRotaRequest> createValidator,
                                 IValidator<UpdateRotaRequest> updateValidator,
-                                IValidator<EncerrarRotaRequest> encerrarValidator) : ControllerBase
+                                IValidator<EncerrarRotaRequest> encerrarValidator,
+                                IValidator<ConsultarRotasRequest> consultarValidator,
+                                IValidator<CalcularRotaRequest> calcularValidator) : ControllerBase
     {
         /// <summary>Retorna todas as rotas da empresa. (Admin, Supervisor, Operador)</summary>
         /// <response code="200">Lista retornada com sucesso</response>
         /// <response code="403">Sem permissão — o motorista usa GET /rota/minhas</response>
         [HttpGet]
         [Authorize(Roles = Roles.Gestao)]
-        [ProducesResponseType<ApiResponse<IEnumerable<RotaResponse>>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<ResultadoPaginado<RotaResponse>>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetAll([FromQuery] ConsultarRotasRequest request)
         {
-            var rotas = await dispatcher.SendAsync(new GetAllRotasQuery());
-            return Ok(ApiResponse<IEnumerable<RotaResponse>>.Ok(rotas));
+            var validation = await consultarValidator.ValidateAsync(request);
+            if (!validation.IsValid)
+                return BadRequest(ApiResponse<object>.Fail("Dados inválidos.",
+                    validation.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}")));
+
+            var pagina = await dispatcher.SendAsync(new GetAllRotasQuery(request));
+            return Ok(ApiResponse<ResultadoPaginado<RotaResponse>>.Ok(pagina));
+        }
+
+        /// <summary>
+        /// Quantidade e km somado das rotas <b>encerradas</b> no período (recorte por data de
+        /// fim). Alimenta o KPI "Km rodado" do dashboard e o de "Minhas rotas". Aberto a
+        /// todos os papéis: para o motorista o handler recorta pelas rotas dele.
+        /// </summary>
+        /// <response code="200">Resumo retornado com sucesso</response>
+        /// <response code="422">Data final anterior à inicial</response>
+        [HttpGet("resumo")]
+        [ProducesResponseType<ApiResponse<ResumoRotasResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status422UnprocessableEntity)]
+        public async Task<IActionResult> GetResumo([FromQuery] DateTime de, [FromQuery] DateTime ate)
+        {
+            var resumo = await dispatcher.SendAsync(new GetResumoRotasQuery(de, ate));
+            return Ok(ApiResponse<ResumoRotasResponse>.Ok(resumo));
         }
 
         /// <summary>
@@ -48,13 +73,18 @@ namespace Frota360.Api.Controllers
         /// <response code="422">Usuário sem vínculo com um cadastro de motorista</response>
         [HttpGet("minhas")]
         [Authorize(Roles = Roles.Motorista)]
-        [ProducesResponseType<ApiResponse<IEnumerable<RotaResponse>>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<ResultadoPaginado<RotaResponse>>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status422UnprocessableEntity)]
-        public async Task<IActionResult> GetMinhas()
+        public async Task<IActionResult> GetMinhas([FromQuery] ConsultarRotasRequest request)
         {
-            var rotas = await dispatcher.SendAsync(new GetMinhasRotasQuery());
-            return Ok(ApiResponse<IEnumerable<RotaResponse>>.Ok(rotas));
+            var validation = await consultarValidator.ValidateAsync(request);
+            if (!validation.IsValid)
+                return BadRequest(ApiResponse<object>.Fail("Dados inválidos.",
+                    validation.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}")));
+
+            var pagina = await dispatcher.SendAsync(new GetMinhasRotasQuery(request));
+            return Ok(ApiResponse<ResultadoPaginado<RotaResponse>>.Ok(pagina));
         }
 
         /// <summary>Retorna uma rota pelo id. (Admin, Supervisor, Operador)</summary>
@@ -99,6 +129,35 @@ namespace Frota360.Api.Controllers
             var criado = await dispatcher.SendAsync(new CreateRotaCommand(request));
             return CreatedAtAction(nameof(GetById), new { id = criado.Id },
                 ApiResponse<RotaResponse>.Ok(criado, "Rota cadastrada com sucesso."));
+        }
+
+        /// <summary>
+        /// Calcula distância, duração estimada e traçado entre duas coordenadas pela Google
+        /// Routes API. Não persiste nada: é a consulta que precede o cadastro da rota.
+        ///
+        /// Aberto a qualquer autenticado, em simetria com o POST de rota — quem pode abrir
+        /// rota precisa da estimativa para preenchê-la. O escopo de empresa vem da claim,
+        /// como em todo o resto: o corpo carrega só coordenadas.
+        /// </summary>
+        /// <response code="200">Trajeto calculado com sucesso</response>
+        /// <response code="400">Coordenadas inválidas</response>
+        /// <response code="422">Serviço de rotas indisponível ou sem trajeto entre os pontos</response>
+        [HttpPost("calcular")]
+        [ProducesResponseType<ApiResponse<CalculoRotaResponse>>(StatusCodes.Status200OK)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status422UnprocessableEntity)]
+        public async Task<IActionResult> Calcular([FromBody] CalcularRotaRequest request)
+        {
+            var validation = await calcularValidator.ValidateAsync(request);
+
+            if (!validation.IsValid)
+            {
+                var erros = validation.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}");
+                return BadRequest(ApiResponse<object>.Fail("Dados inválidos.", erros));
+            }
+
+            var calculo = await dispatcher.SendAsync(new CalcularRotaCommand(request));
+            return Ok(ApiResponse<CalculoRotaResponse>.Ok(calculo, "Trajeto calculado com sucesso."));
         }
 
         /// <summary>Atualiza os dados de uma rota. (Admin, Supervisor, Operador)</summary>
@@ -165,12 +224,12 @@ namespace Frota360.Api.Controllers
             return Ok(ApiResponse<RotaResponse>.Ok(encerrada, "Rota encerrada com sucesso."));
         }
 
-        /// <summary>Remove uma rota. (Admin)</summary>
+        /// <summary>Remove uma rota. (Admin, Supervisor)</summary>
         /// <response code="200">Removido com sucesso</response>
         /// <response code="403">Sem permissão</response>
         /// <response code="404">Rota não encontrada</response>
         [HttpDelete("{id:int}")]
-        [Authorize(Roles = Roles.Admin)]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Supervisor}")]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status200OK)]
         [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status404NotFound)]

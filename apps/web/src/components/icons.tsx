@@ -71,6 +71,15 @@ export const SearchIcon = (p: IconProps) => (
   </Icon>
 )
 
+export const EmpresaIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 21h18" />
+    <path d="M5 21V4h9v17" />
+    <path d="M14 9h5v12" />
+    <path d="M8 8h3M8 12h3M8 16h3" />
+  </Icon>
+)
+
 export const TruckIcon = (p: IconProps) => (
   <Icon {...p}>
     <rect x={1} y={9} width={15} height={8} rx={0} />
@@ -138,14 +147,6 @@ export const WhatsappIcon = (p: IconProps) => (
   </Icon>
 )
 
-export const InstagramIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <rect x={3} y={3} width={18} height={18} rx={0} />
-    <circle cx={12} cy={12} r={4.5} />
-    <circle cx={17} cy={7} r={0.7} fill="currentColor" />
-  </Icon>
-)
-
 export const PencilIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7.5 18.5 3 20l1.5-4.5 12-12Z" />
@@ -193,19 +194,30 @@ export const FuelIcon = (p: IconProps) => (
   </Icon>
 )
 
+/** Recibo com linhas — despesas avulsas. */
+export const ReciboIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 3v18l2.5-1.5L10 21l2-1.5L14 21l2.5-1.5L19 21V3z" />
+    <path d="M8.5 8h7" />
+    <path d="M8.5 12h7" />
+    <path d="M8.5 16h4" />
+  </Icon>
+)
+
+/** Cifrão em círculo — custos. */
+export const DinheiroIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 6v12" />
+    <path d="M14.5 9.5a2.5 2.5 0 0 0-2.5-1.5c-1.4 0-2.5.7-2.5 2s1.1 2 2.5 2 2.5.7 2.5 2-1.1 2-2.5 2a2.5 2.5 0 0 1-2.5-1.5" />
+  </Icon>
+)
+
 /** Relógio com seta de retorno — histórico/trilha de auditoria. */
 export const HistoricoIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
     <path d="M3 3v5h5" />
     <path d="M12 7v5l3 2" />
-  </Icon>
-)
-
-export const AlertIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <path d="M12 3 1.8 20.5h20.4L12 3Z" />
-    <path d="M12 10v4" />
-    <path d="M12 17.2v.1" />
   </Icon>
 )

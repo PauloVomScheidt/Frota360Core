@@ -1,32 +1,44 @@
-﻿using Frota360.Application.Abstractions.Messaging;
+using Frota360.Application.Abstractions.Messaging;
 using Frota360.Application.Common;
 using Frota360.Application.DTOs.Manutencao.Response;
 using Frota360.Application.Interfaces;
+using Frota360.Domain.Common;
 using Frota360.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Frota360.Application.UseCases.Manutencoes.Queries.GetAllManutencoes
 {
     public sealed class GetAllManutencoesHandler(IManutencaoRepository repository, ICurrentUserService currentUser, ILogger<GetAllManutencoesHandler> logger)
-        : IQueryHandler<GetAllManutencoesQuery, IEnumerable<ManutencaoResponse>>
+        : IQueryHandler<GetAllManutencoesQuery, ResultadoPaginado<ManutencaoResponse>>
     {
-        public async Task<IEnumerable<ManutencaoResponse>> HandleAsync(GetAllManutencoesQuery query, CancellationToken cancellationToken = default)
+        public async Task<ResultadoPaginado<ManutencaoResponse>> HandleAsync(
+            GetAllManutencoesQuery query, CancellationToken cancellationToken = default)
         {
-            logger.LogInformation("Buscando manutenções | Veículo {VeiculoId} | Status {Status} | De {De} | Até {Ate}",
-                query.VeiculoId, query.Status, query.De, query.Ate);
+            var f = query.Filtro;
 
-            // Intervalo invertido devolveria lista vazia sem explicar o porquê. Não há
-            // validator neste GET (os filtros são query string solta), então a regra
-            // segue o caminho de sempre: InvalidOperationException -> 422 com o texto.
-            if (query.De is not null && query.Ate is not null && query.Ate < query.De)
+            logger.LogInformation("Buscando manutenções | Página {Pagina} | Veículo {VeiculoId} | Status {Status} | De {De} | Até {Ate}",
+                f.Pagina, f.VeiculoId, f.Status, f.De, f.Ate);
+
+            // Intervalo invertido devolveria lista vazia sem explicar o porquê. O validator do
+            // controller já barra isso, mas a regra fica aqui também: o handler é chamado por
+            // quem não passa pelo controller (testes, e um dia outro caminho).
+            if (f.De is not null && f.Ate is not null && f.Ate < f.De)
                 throw new InvalidOperationException("A data final do período não pode ser anterior à inicial.");
 
-            var manutencoes = await repository.GetAllAsync(
-                currentUser.EmpresaId, query.VeiculoId, query.Status, query.De, query.Ate);
+            var filtro = new FiltroManutencao(f.Pagina, f.TamanhoPagina, f.VeiculoId, f.Status, f.De, f.Ate);
 
-            logger.LogInformation("Foram encontradas {QuantidadeManutencoes} manutenções", manutencoes.Count());
+            var (itens, total) = await repository.ConsultarAsync(currentUser.EmpresaId, filtro);
 
-            return manutencoes.Select(m => m.ToResponse().SemCustoParaMotorista(currentUser));
+            logger.LogInformation("Foram encontradas {Quantidade} manutenções na página, {Total} no total",
+                itens.Count(), total);
+
+            return new ResultadoPaginado<ManutencaoResponse>
+            {
+                Itens = itens.Select(m => m.ToResponse().SemCustoParaMotorista(currentUser)),
+                Pagina = f.Pagina,
+                TamanhoPagina = f.TamanhoPagina,
+                Total = total
+            };
         }
     }
 }

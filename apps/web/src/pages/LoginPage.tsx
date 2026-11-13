@@ -1,6 +1,6 @@
 import { useState, type CSSProperties, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { login } from '../api/auth'
 import { mensagensDeErro } from '../api/errors'
 import { rotaInicial } from '../auth/permissions'
@@ -18,6 +18,7 @@ const brandPanelStyle: CSSProperties = {
 export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const queryClient = useQueryClient()
   const origem = (location.state as { from?: string } | null)?.from
 
   const [email, setEmail] = useState('')
@@ -27,6 +28,11 @@ export function LoginPage() {
   const loginMutation = useMutation({
     mutationFn: login,
     onSuccess: (auth) => {
+      // `/login` não é bloqueada para quem já está autenticado — nada impede alguém de
+      // trocar de conta nesta mesma aba sem recarregar a página. Sem isto, o cache do
+      // React Query (chaves como `['veiculos']` não carregam a empresa) poderia mostrar,
+      // por até o staleTime, dado de uma empresa que não é mais a do usuário logado.
+      queryClient.clear()
       notificarMudancaDeSessao()
       // Sem uma tela de origem, o destino depende do papel: o motorista vai para as
       // rotas dele, e não para um painel de gestão que o guard devolveria.

@@ -26,10 +26,49 @@ export function formatKm(km: number): string {
   return `${km.toLocaleString('pt-BR')} km`
 }
 
+/** Volume da bomba: até 3 casas, sem zeros à direita inúteis (48,5 e não 48,500). */
+export function formatLitros(litros: number): string {
+  return litros.toLocaleString('pt-BR', { maximumFractionDigits: 3 })
+}
+
+/**
+ * km/l com uma casa. Duas dariam falsa precisão a um número que já é estimativa —
+ * abastecimento parcial e veículo flex distorcem a conta.
+ */
+export function formatConsumo(kmPorLitro: number): string {
+  return `${kmPorLitro.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km/l`
+}
+
 /** Número → R$ 1.234,50. Custo é opcional na manutenção, daí o traço. */
 export function formatMoeda(valor: number | null | undefined): string {
   if (valor === null || valor === undefined) return '—'
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+/** Número → "R$ 48,2 mil". Para KPI, onde o valor cheio não cabe; o cheio vai no `title`. */
+export function formatMoedaCompacta(valor: number): string {
+  return valor.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  })
+}
+
+/** Metros → "412 km" / "8,4 km" — abaixo de 10 km uma casa evita "8 km" para 8,4. */
+export function formatDistancia(metros: number): string {
+  const km = metros / 1000
+  const casas = km < 10 ? 1 : 0
+  return `${km.toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas })} km`
+}
+
+/** Segundos → "5 h 12 min" / "48 min". Estimativa de viagem não mostra segundos. */
+export function formatDuracao(segundos: number): string {
+  const totalMinutos = Math.round(segundos / 60)
+  const horas = Math.floor(totalMinutos / 60)
+  const minutos = totalMinutos % 60
+  if (horas === 0) return `${minutos} min`
+  return minutos === 0 ? `${horas} h` : `${horas} h ${minutos} min`
 }
 
 /** Hoje em aaaa-mm-dd, para pré-preencher `<input type="date">`. */
@@ -46,6 +85,13 @@ export function formatCpf(cpf: string): string {
 
 export function somenteDigitos(valor: string): string {
   return valor.replace(/\D/g, '')
+}
+
+/** 12345678000190 → 12.345.678/0001-90; o que não tiver 14 dígitos volta como veio. */
+export function formatCnpj(cnpj: string): string {
+  const d = somenteDigitos(cnpj)
+  if (d.length !== 14) return cnpj
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`
 }
 
 /** Máscara progressiva enquanto o usuário digita o CPF. */

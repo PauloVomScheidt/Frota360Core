@@ -1,23 +1,54 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
+import { abastecimentosApi } from '../api/abastecimentos'
 import { rotasApi } from '../api/rotas'
 import { veiculosApi } from '../api/veiculos'
 import { manutencoesApi } from '../api/manutencoes'
 import { mensagensDeErro } from '../api/errors'
-import type { AbrirMinhaRotaRequest, EncerrarRotaRequest, RotaResponse } from '../api/types'
+import type {
+  AbrirMinhaRotaRequest,
+  EncerrarRotaRequest,
+  ManutencaoResponse,
+  ResumoLancamentos,
+  ResumoRotas,
+  RotaResponse,
+  VeiculoResponse,
+} from '../api/types'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { FormDialog, InlineForm, TableStates } from '../components/Table'
-import { CheckIcon } from '../components/icons'
-import { formatDate, formatKm, hojeInputDate, paraInputDate } from '../lib/format'
-import { estaVencendo } from '../lib/manutencao'
+import { FormDialog, Paginacao, SecaoCampos, TableStates } from '../components/Table'
+import { usePaginacaoServidor } from '../lib/paginacao'
+import { CheckIcon, FuelIcon } from '../components/icons'
+import {
+  formatDate,
+  formatDistancia,
+  formatDuracao,
+  formatKm,
+  formatMoeda,
+  hojeInputDate,
+  paraInputDate,
+} from '../lib/format'
+import { badgeDaManutencao, estaVencendo, textoKmRestantes } from '../lib/manutencao'
+import { mesAteHoje } from '../lib/periodo'
 import { statusDaRota } from '../lib/rota'
+import { TrajetoRota } from '../components/TrajetoRota'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
 // Sem `codigoMotorista`: quem decide o motorista é o servidor, pela claim do JWT.
 const FORM_VAZIO = {
-  origem: '',
-  destino: '',
+  enderecoPartida: '',
+  enderecoChegada: '',
+  // `null` explícito, e não 0: (0,0) é um ponto real no Atlântico. Ausência de
+  // coordenada é o estado de quem digitou o endereço sem escolher da lista.
+  latitudePartida: null as number | null,
+  longitudePartida: null as number | null,
+  latitudeChegada: null as number | null,
+  longitudeChegada: null as number | null,
+  // Preenchidos por POST /rota/calcular quando os dois pontos têm coordenada.
+  distanciaMetros: null as number | null,
+  duracaoEstimadaSegundos: null as number | null,
+  polylineCodificada: null as string | null,
   codigoVeiculo: '',
   dataInicio: '',
   kmInicial: '',
@@ -26,6 +57,477 @@ const FORM_VAZIO = {
 const ENCERRAMENTO_VAZIO = {
   kmFinal: '',
   dataFim: '',
+}
+
+// Consultado por veículo escolhido — o escopo de um caminhão é curto, e a paginação de
+// `/manutencao` tirou a opção de baixar a frota inteira e agrupar aqui.
+const FILTRO_PENDENTES = { status: 'Pendente' as const }
+
+type FormularioMinhaRota = typeof FORM_VAZIO
+type FormularioEncerramento = typeof ENCERRAMENTO_VAZIO
+
+/** Modal de abertura — veículo, data e a pendência de manutenção do veículo escolhido. */
+function MinhaRotaFormulario({
+  form,
+  onFormChange,
+  onAplicarVeiculo,
+  onSubmit,
+  onCancelar,
+  pending,
+  erros,
+  veiculos,
+  pendenciasDoVeiculoEscolhido,
+  atrasadasDoVeiculoEscolhido,
+  vencendoDoVeiculoEscolhido,
+  corDoAlerta,
+}: {
+  form: FormularioMinhaRota
+  onFormChange: (form: FormularioMinhaRota) => void
+  onAplicarVeiculo: (codigoVeiculo: string) => void
+  onSubmit: (e: FormEvent) => void
+  onCancelar: () => void
+  pending: boolean
+  erros: string[]
+  veiculos: VeiculoResponse[]
+  pendenciasDoVeiculoEscolhido: ManutencaoResponse[]
+  atrasadasDoVeiculoEscolhido: ManutencaoResponse[]
+  vencendoDoVeiculoEscolhido: ManutencaoResponse[]
+  corDoAlerta: string
+}) {
+  return (
+    <FormDialog
+      titulo="Abrir rota"
+      textoConfirmar="Abrir rota"
+      textoPendente="Abrindo…"
+      largura={760}
+      pending={pending}
+      erros={erros}
+      onSubmit={onSubmit}
+      onCancelar={onCancelar}
+    >
+      <SecaoCampos titulo="Trajeto">
+        <TrajetoRota
+          form={form}
+          onFormChange={(trajeto) => onFormChange({ ...form, ...trajeto })}
+          autoFocus
+        />
+        <div className="field">
+          <label htmlFor="dataInicio">Início</label>
+          <input
+            id="dataInicio"
+            className="input"
+            type="date"
+            required
+            value={form.dataInicio}
+            onChange={(e) => onFormChange({ ...form, dataInicio: e.target.value })}
+          />
+        </div>
+      </SecaoCampos>
+
+      <SecaoCampos titulo="Veículo">
+        <div className="field">
+          <label htmlFor="codigoVeiculo">Veículo</label>
+          <select
+            id="codigoVeiculo"
+            className="input"
+            required
+            value={form.codigoVeiculo}
+            onChange={(e) => onAplicarVeiculo(e.target.value)}
+          >
+            <option value="">Selecione…</option>
+            {veiculos.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.placa} — {v.nomeVeiculo} ({formatKm(v.quilometragem)})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="kmInicial">Quilometragem inicial</label>
+          <input
+            id="kmInicial"
+            className="input"
+            type="number"
+            min={0}
+            max={2000000}
+            required
+            placeholder="0"
+            value={form.kmInicial}
+            onChange={(e) => onFormChange({ ...form, kmInicial: e.target.value })}
+          />
+        </div>
+        {/* A pendência do veículo escolhido, no momento em que ela decide algo:
+            antes de sair. Não bloqueia — quem decide é o motorista. */}
+        {pendenciasDoVeiculoEscolhido.length > 0 && (
+          <div
+            className="campo-largo p-3 text-[13px]"
+            style={{
+              border: `1px solid ${corDoAlerta}`,
+              background: 'var(--color-surface)',
+            }}
+          >
+            <strong>
+              {atrasadasDoVeiculoEscolhido.length > 0
+                ? 'Este veículo tem manutenção atrasada.'
+                : vencendoDoVeiculoEscolhido.length > 0
+                  ? 'Este veículo tem manutenção vencendo.'
+                  : 'Este veículo tem manutenção prevista.'}
+            </strong>
+            <ul className="mt-1 mb-0 list-none p-0">
+              {pendenciasDoVeiculoEscolhido.map((m) => (
+                <li key={m.id} style={{ color: mutedText }}>
+                  {m.tipoManutencaoNome} · prevista em {formatKm(m.quilometragemPrevista)}
+                  {m.atrasada
+                    ? ' · atrasada'
+                    : m.kmRestantes != null
+                      ? ` · faltam ${formatKm(m.kmRestantes)}`
+                      : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <p className="campo-largo m-0 text-[13px]" style={{ color: mutedText }}>
+          A quilometragem inicial já vem sugerida com o odômetro do veículo. Confira no painel
+          antes de sair: ela não pode ser menor que esse número e, se for maior, o odômetro é
+          corrigido para o valor informado.
+        </p>
+      </SecaoCampos>
+    </FormDialog>
+  )
+}
+
+/** Rota em andamento: o que o motorista precisa ver e agir primeiro. */
+function RotaAtivaCard({
+  pending,
+  error,
+  isSuccess,
+  rotaAtiva,
+  descreverVeiculo,
+  onEncerrar,
+}: {
+  pending: boolean
+  error: Error | null
+  isSuccess: boolean
+  rotaAtiva: RotaResponse | null
+  descreverVeiculo: (codigoVeiculo: number) => string
+  onEncerrar: (rota: RotaResponse) => void
+}) {
+  return (
+    <section className="mb-8">
+      <h2
+        className="mb-3 text-[11px] uppercase"
+        style={{ fontFamily: 'var(--font-heading)', letterSpacing: '0.08em', color: mutedText }}
+      >
+        Rota em andamento
+      </h2>
+
+      {pending && <p className="m-0 text-[13px]" style={{ color: mutedText }}>Carregando suas rotas…</p>}
+
+      {error && <ErrorList mensagens={mensagensDeErro(error, 'Não foi possível carregar suas rotas.')} />}
+
+      {isSuccess && !rotaAtiva && (
+        <p className="m-0 text-[13px]" style={{ color: mutedText }}>
+          Nenhuma rota aberta no momento. Use "Abrir rota" ao iniciar a viagem.
+        </p>
+      )}
+
+      {rotaAtiva && (
+        <div
+          className="flex flex-wrap items-end justify-between gap-6 p-5"
+          style={{ border: '2px solid var(--color-text)', background: 'var(--color-surface)' }}
+        >
+          <div className="min-w-[240px]">
+            <div className="mb-2 flex items-center gap-3">
+              <span className="text-lg font-bold">
+                {rotaAtiva.enderecoPartida} → {rotaAtiva.enderecoChegada}
+              </span>
+              <span className={statusDaRota(rotaAtiva).classe}>{statusDaRota(rotaAtiva).rotulo}</span>
+            </div>
+            <div className="text-[13px]" style={{ color: mutedText }}>
+              {descreverVeiculo(rotaAtiva.codigoVeiculo)} · aberta em {formatDate(rotaAtiva.dataInicio)} ·
+              saiu com {formatKm(rotaAtiva.kmInicial)}
+              {rotaAtiva.dataCalculoRota &&
+                ` · estimativa de ${formatDistancia(rotaAtiva.distanciaMetros)} em ${formatDuracao(rotaAtiva.duracaoEstimadaSegundos)}`}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link to="/abastecimentos" className="btn btn-secondary" style={{ padding: '12px 20px' }}>
+              <FuelIcon size={16} />
+              Lançar abastecimento
+            </Link>
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ padding: '12px 24px' }}
+              onClick={() => onEncerrar(rotaAtiva)}
+            >
+              <CheckIcon size={16} />
+              Encerrar rota
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function CartaoDoMes({ rotulo, children }: { rotulo: string; children: ReactNode }) {
+  return (
+    <div
+      className="flex flex-col gap-2 p-5"
+      style={{ borderRight: '1px solid var(--color-divider)', background: 'var(--color-surface)' }}
+    >
+      <span
+        className="text-[11px] uppercase"
+        style={{ letterSpacing: '0.08em', color: 'color-mix(in srgb, var(--color-text) 60%, transparent)' }}
+      >
+        {rotulo}
+      </span>
+      {children}
+    </div>
+  )
+}
+
+function ValorDoMes({ valor, detalhe }: { valor: string; detalhe: string }) {
+  return (
+    <>
+      <span className="text-[26px] leading-none font-extrabold" style={{ fontFamily: 'var(--font-heading)' }}>
+        {valor}
+      </span>
+      <span className="text-xs" style={{ color: 'var(--color-accent-700)' }}>
+        {detalhe}
+      </span>
+    </>
+  )
+}
+
+/** O mês do motorista: o km e os abastecimentos já vêm recortados por ele no servidor. */
+function MeuMes({
+  kmDoMes,
+  abastecimentosDoMes,
+  placaDaRota,
+  manutencaoDaRota,
+  manutencaoCarregada,
+}: {
+  kmDoMes?: ResumoRotas
+  abastecimentosDoMes?: ResumoLancamentos
+  placaDaRota: string | null
+  manutencaoDaRota: ManutencaoResponse | null
+  manutencaoCarregada: boolean
+}) {
+  const badge = manutencaoDaRota ? badgeDaManutencao(manutencaoDaRota) : null
+  const andamento = manutencaoDaRota ? textoKmRestantes(manutencaoDaRota.kmRestantes) : null
+
+  return (
+    <section
+      className="mb-8 grid grid-cols-1 md:grid-cols-3"
+      style={{ border: '1px solid var(--color-divider)' }}
+      aria-label="Meu mês"
+    >
+      <CartaoDoMes rotulo="Km rodado no mês">
+        <ValorDoMes
+          valor={kmDoMes ? kmDoMes.kmTotal.toLocaleString('pt-BR') : '—'}
+          detalhe={
+            kmDoMes ? `${kmDoMes.quantidade} ${kmDoMes.quantidade === 1 ? 'rota encerrada' : 'rotas encerradas'}` : ''
+          }
+        />
+      </CartaoDoMes>
+
+      <CartaoDoMes rotulo="Meus abastecimentos">
+        <ValorDoMes
+          valor={abastecimentosDoMes ? String(abastecimentosDoMes.quantidade) : '—'}
+          detalhe={abastecimentosDoMes ? `no mês · ${formatMoeda(abastecimentosDoMes.valorTotal)}` : ''}
+        />
+      </CartaoDoMes>
+
+      <CartaoDoMes rotulo={placaDaRota ? `Manutenção do ${placaDaRota}` : 'Manutenção do veículo'}>
+        {!placaDaRota && (
+          <span className="text-[13px]" style={{ color: mutedText }}>
+            Abra uma rota para ver a situação do veículo.
+          </span>
+        )}
+        {placaDaRota && manutencaoCarregada && !manutencaoDaRota && (
+          <>
+            <span>
+              <span className="tag tag-success">Em dia</span>
+            </span>
+            <span className="text-sm" style={{ color: mutedText }}>
+              Nenhuma manutenção pendente.
+            </span>
+          </>
+        )}
+        {manutencaoDaRota && badge && (
+          <>
+            <span>
+              <span className={badge.classe}>{badge.rotulo}</span>
+            </span>
+            <span className="text-sm">
+              <strong className="font-semibold">{manutencaoDaRota.tipoManutencaoNome}</strong>
+              {andamento && (
+                <span
+                  className="font-semibold"
+                  style={{
+                    color: manutencaoDaRota.atrasada
+                      ? 'var(--color-danger)'
+                      : estaVencendo(manutencaoDaRota)
+                        ? 'var(--color-warning)'
+                        : mutedText,
+                  }}
+                >
+                  {' '}
+                  · {andamento}
+                </span>
+              )}
+            </span>
+          </>
+        )}
+      </CartaoDoMes>
+    </section>
+  )
+}
+
+/** Histórico — rotas já encerradas, mais recentes primeiro (ordem que a API já devolve). */
+function HistoricoRotasTabela({
+  historico,
+  veiculoPorId,
+  pending,
+  error,
+  isSuccess,
+}: {
+  historico: RotaResponse[]
+  veiculoPorId: Map<number, VeiculoResponse>
+  pending: boolean
+  error: unknown
+  isSuccess: boolean
+}) {
+  return (
+    <>
+      <h2
+        className="mb-3 text-[11px] uppercase"
+        style={{ fontFamily: 'var(--font-heading)', letterSpacing: '0.08em', color: mutedText }}
+      >
+        Histórico
+      </h2>
+
+      <div className="overflow-x-auto">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Partida → Chegada</th>
+              <th>Veículo</th>
+              <th>Início</th>
+              <th>Fim</th>
+              <th>Quilometragem</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <TableStates
+              colSpan={6}
+              pending={pending}
+              error={error}
+              empty={isSuccess && historico.length === 0}
+              textoCarregando="Carregando suas rotas…"
+              textoErro="Não foi possível carregar suas rotas."
+              textoVazio="Você ainda não encerrou nenhuma rota."
+            />
+            {historico.map((rota) => {
+              const status = statusDaRota(rota)
+              return (
+                <tr key={rota.id}>
+                  <td className="font-semibold">
+                    {rota.enderecoPartida} → {rota.enderecoChegada}
+                  </td>
+                  <td>{veiculoPorId.get(rota.codigoVeiculo)?.placa ?? `#${rota.codigoVeiculo}`}</td>
+                  <td>{formatDate(rota.dataInicio)}</td>
+                  <td>{formatDate(rota.dataFim)}</td>
+                  <td>
+                    {/* `kmPercorrido` só existe depois do encerramento. */}
+                    <div>{rota.kmPercorrido != null ? formatKm(rota.kmPercorrido) : '—'}</div>
+                    <div className="text-[12px]" style={{ color: mutedText }}>
+                      {rota.kmFinal != null
+                        ? `${formatKm(rota.kmInicial)} → ${formatKm(rota.kmFinal)}`
+                        : `desde ${formatKm(rota.kmInicial)}`}
+                    </div>
+                  </td>
+                  <td>
+                    <span className={status.classe}>{status.rotulo}</span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  )
+}
+
+/** Diálogo de encerramento — quilometragem final e data de chegada. */
+function EncerramentoMinhaRotaFormulario({
+  paraEncerrar,
+  descricaoVeiculo,
+  form,
+  onFormChange,
+  onSubmit,
+  onCancelar,
+  pending,
+  erros,
+}: {
+  paraEncerrar: RotaResponse
+  descricaoVeiculo: string
+  form: FormularioEncerramento
+  onFormChange: (form: FormularioEncerramento) => void
+  onSubmit: (e: FormEvent) => void
+  onCancelar: () => void
+  pending: boolean
+  erros: string[]
+}) {
+  return (
+    <FormDialog
+      titulo="Encerrar rota"
+      descricao={`${paraEncerrar.enderecoPartida} → ${paraEncerrar.enderecoChegada} — ${descricaoVeiculo}, aberta em ${formatKm(paraEncerrar.kmInicial)}. Informe o odômetro na chegada: a quilometragem percorrida é a diferença, e o veículo é atualizado com esse número.`}
+      textoConfirmar="Encerrar"
+      textoPendente="Encerrando…"
+      pending={pending}
+      erros={erros}
+      onSubmit={onSubmit}
+      onCancelar={onCancelar}
+    >
+      <SecaoCampos>
+        <div className="field">
+          <label htmlFor="kmFinal">Quilometragem final</label>
+          <input
+            id="kmFinal"
+            className="input"
+            type="number"
+            // Não pode ser menor que a abertura — a API recusa com 422.
+            min={paraEncerrar.kmInicial}
+            max={2000000}
+            required
+            autoFocus
+            value={form.kmFinal}
+            onChange={(e) => onFormChange({ ...form, kmFinal: e.target.value })}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="dataFim">Data de fim (opcional)</label>
+          <input
+            id="dataFim"
+            className="input"
+            type="date"
+            // Não pode ser anterior ao início (RN06) nem futura (a API dá margem de
+            // 1 dia por causa do fuso). Em branco, a API assume "agora".
+            min={paraInputDate(paraEncerrar.dataInicio)}
+            max={hojeInputDate()}
+            value={form.dataFim}
+            onChange={(e) => onFormChange({ ...form, dataFim: e.target.value })}
+          />
+        </div>
+      </SecaoCampos>
+    </FormDialog>
+  )
 }
 
 /**
@@ -42,28 +544,60 @@ export function MinhasRotasPage() {
   const [aberto, setAberto] = useState(false)
   const [form, setForm] = useState(FORM_VAZIO)
   // Guarda a última sugestão de km para não sobrescrever um valor digitado à mão.
-  const [kmSugerido, setKmSugerido] = useState('')
+  // Nunca aparece na tela — só é lido/escrito dentro de handlers — então é ref, não
+  // state: mudar esse valor não precisa redesenhar o componente.
+  const kmSugeridoRef = useRef('')
   const [erros, setErros] = useState<string[]>([])
 
   const [paraEncerrar, setParaEncerrar] = useState<RotaResponse | null>(null)
   const [formEncerramento, setFormEncerramento] = useState(ENCERRAMENTO_VAZIO)
   const [errosEncerramento, setErrosEncerramento] = useState<string[]>([])
 
-  // Chave própria: o conteúdo é um recorte de `['rotas']`, e as duas telas nunca
-  // convivem na mesma sessão — misturá-las serviria dado errado no login seguinte.
-  const rotasQuery = useQuery({ queryKey: ['rotas', 'minhas'], queryFn: rotasApi.getMinhas })
-  const veiculosQuery = useQuery({ queryKey: ['veiculos'], queryFn: veiculosApi.getAll })
-  // Pendências da frota inteira numa consulta só, em vez de uma por veículo escolhido:
-  // a lista é curta e o cruzamento é local. Mesma chave da tela de manutenções.
-  const pendentesFiltro = { status: 'Pendente' as const }
-  const manutencoesQuery = useQuery({
-    queryKey: ['manutencoes', pendentesFiltro],
-    queryFn: () => manutencoesApi.getAll(pendentesFiltro),
+  const paginacao = usePaginacaoServidor()
+
+  /**
+   * Chave própria: o conteúdo é um recorte de `['rotas']`, e as duas telas nunca convivem na
+   * mesma sessão — misturá-las serviria dado errado no login seguinte.
+   *
+   * Duas consultas desde que `/rota/minhas` passou a paginar: a rota em andamento não pode
+   * depender de estar na página exibida do histórico.
+   */
+  const rotaAtivaQuery = useQuery({
+    queryKey: ['rotas', 'minhas', 'ativa'],
+    queryFn: () => rotasApi.getMinhas({ ativo: true, pagina: 1, tamanhoPagina: 1 }),
   })
 
-  const rotas = rotasQuery.data ?? []
+  const historicoQuery = useQuery({
+    queryKey: ['rotas', 'minhas', 'historico', paginacao.pagina, paginacao.tamanhoPagina],
+    queryFn: () =>
+      rotasApi.getMinhas({ ativo: false, pagina: paginacao.pagina, tamanhoPagina: paginacao.tamanhoPagina }),
+  })
+
+  const veiculosQuery = useQuery({ queryKey: ['veiculos'], queryFn: veiculosApi.getAll })
+
+  const mes = mesAteHoje()
+  const kmDoMesQuery = useQuery({
+    queryKey: ['rotas', 'minhas', 'resumo', mes],
+    queryFn: () => rotasApi.resumo(mes.de, mes.ate),
+  })
+  const abastecimentosDoMesQuery = useQuery({
+    queryKey: ['abastecimentos', 'resumo', mes],
+    queryFn: () => abastecimentosApi.resumo(mes),
+  })
+
+  /**
+   * Pendências **do veículo escolhido**, não da frota inteira: antes a tela baixava todas as
+   * manutenções pendentes e agrupava por veículo no cliente, o que a paginação inviabilizou.
+   * O escopo de um veículo é naturalmente pequeno — e trafega menos do que antes.
+   */
+  const manutencoesQuery = useQuery({
+    queryKey: ['manutencoes', { ...FILTRO_PENDENTES, veiculoId: Number(form.codigoVeiculo) }],
+    queryFn: () =>
+      manutencoesApi.getAll({ ...FILTRO_PENDENTES, veiculoId: Number(form.codigoVeiculo), tamanhoPagina: 50 }),
+    enabled: form.codigoVeiculo !== '',
+  })
+
   const veiculos = veiculosQuery.data ?? []
-  const manutencoes = manutencoesQuery.data ?? []
 
   // A resposta traz só o código do veículo — o cruzamento com placa/odômetro é aqui.
   const veiculoPorId = useMemo(
@@ -71,21 +605,14 @@ export function MinhasRotasPage() {
     [veiculosQuery.data],
   )
 
-  // Pendências por veículo, com as atrasadas primeiro — é a que muda a decisão de sair.
-  const pendenciasPorVeiculo = useMemo(() => {
-    const mapa = new Map<number, typeof manutencoes>()
-    for (const m of manutencoesQuery.data ?? []) {
-      const lista = mapa.get(m.veiculoId) ?? []
-      lista.push(m)
-      mapa.set(m.veiculoId, lista)
-    }
-    for (const lista of mapa.values()) {
-      lista.sort((a, b) => Number(b.atrasada) - Number(a.atrasada))
-    }
-    return mapa
-  }, [manutencoesQuery.data])
-
-  const pendenciasDoVeiculoEscolhido = pendenciasPorVeiculo.get(Number(form.codigoVeiculo)) ?? []
+  // Atrasadas primeiro — é a que muda a decisão de sair.
+  const pendenciasDoVeiculoEscolhido = useMemo(
+    () =>
+      [...(manutencoesQuery.data?.itens ?? [])].sort(
+        (a, b) => Number(b.atrasada) - Number(a.atrasada),
+      ),
+    [manutencoesQuery.data],
+  )
   const atrasadasDoVeiculoEscolhido = pendenciasDoVeiculoEscolhido.filter((m) => m.atrasada)
   const vencendoDoVeiculoEscolhido = pendenciasDoVeiculoEscolhido.filter(estaVencendo)
 
@@ -99,9 +626,25 @@ export function MinhasRotasPage() {
         : 'var(--color-divider)'
 
   // Só existe uma rota ativa por vez na prática: ela vira o destaque do topo, e o
-  // resto é histórico.
-  const rotaAtiva = rotas.find((r) => r.ativo) ?? null
-  const historico = rotas.filter((r) => !r.ativo)
+  // resto é histórico — agora cada um na sua consulta.
+  const rotaAtiva = (rotaAtivaQuery.data?.itens ?? [])[0] ?? null
+
+  const veiculoDaRota = rotaAtiva?.codigoVeiculo ?? null
+  const manutencaoDaRotaQuery = useQuery({
+    queryKey: ['manutencoes', { ...FILTRO_PENDENTES, veiculoId: veiculoDaRota }],
+    queryFn: () =>
+      manutencoesApi.getAll({ ...FILTRO_PENDENTES, veiculoId: veiculoDaRota ?? undefined, tamanhoPagina: 50 }),
+    enabled: veiculoDaRota !== null,
+  })
+  const manutencaoDaRota =
+    [...(manutencaoDaRotaQuery.data?.itens ?? [])].sort(
+      (a, b) => Number(b.atrasada) - Number(a.atrasada) || (a.kmRestantes ?? 0) - (b.kmRestantes ?? 0),
+    )[0] ?? null
+  const placaDaRota = rotaAtiva
+    ? (rotaAtiva.veiculoPlaca ?? veiculoPorId.get(rotaAtiva.codigoVeiculo)?.placa ?? null)
+    : null
+  const dadosHistorico = historicoQuery.data
+  const historico = dadosHistorico?.itens ?? []
 
   function descreverVeiculo(codigoVeiculo: number): string {
     const veiculo = veiculoPorId.get(codigoVeiculo)
@@ -116,14 +659,14 @@ export function MinhasRotasPage() {
     const veiculo = veiculoPorId.get(Number(codigoVeiculo))
     const nova = veiculo ? String(veiculo.quilometragem) : ''
     setForm((atual) => {
-      const podeSubstituir = atual.kmInicial === '' || atual.kmInicial === kmSugerido
+      const podeSubstituir = atual.kmInicial === '' || atual.kmInicial === kmSugeridoRef.current
       return {
         ...atual,
         codigoVeiculo,
         kmInicial: nova !== '' && podeSubstituir ? nova : atual.kmInicial,
       }
     })
-    if (nova !== '') setKmSugerido(nova)
+    if (nova !== '') kmSugeridoRef.current = nova
   }
 
   const abrirMutation = useMutation({
@@ -150,6 +693,9 @@ export function MinhasRotasPage() {
       // acender uma manutenção atrasada. A cadeia é rota → veículo → manutenção.
       queryClient.invalidateQueries({ queryKey: ['veiculos'] })
       queryClient.invalidateQueries({ queryKey: ['manutencoes'] })
+      // O motorista não vê `/custos`, mas apura aqui o `kmPercorrido` que a gestão divide
+      // pelo custo — e o cache é o mesmo se ela abrir a tela na sequência.
+      queryClient.invalidateQueries({ queryKey: ['custos'] })
     },
     onError: (error) =>
       setErrosEncerramento(mensagensDeErro(error, 'Não foi possível encerrar a rota.')),
@@ -158,8 +704,15 @@ export function MinhasRotasPage() {
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
     abrirMutation.mutate({
-      origem: form.origem,
-      destino: form.destino,
+      enderecoPartida: form.enderecoPartida,
+      enderecoChegada: form.enderecoChegada,
+      latitudePartida: form.latitudePartida,
+      longitudePartida: form.longitudePartida,
+      latitudeChegada: form.latitudeChegada,
+      longitudeChegada: form.longitudeChegada,
+      distanciaMetros: form.distanciaMetros,
+      duracaoEstimadaSegundos: form.duracaoEstimadaSegundos,
+      polylineCodificada: form.polylineCodificada,
       codigoVeiculo: Number(form.codigoVeiculo),
       dataInicio: form.dataInicio,
       kmInicial: Number(form.kmInicial),
@@ -181,7 +734,7 @@ export function MinhasRotasPage() {
 
   function abrirCadastro() {
     setForm({ ...FORM_VAZIO, dataInicio: hojeInputDate() })
-    setKmSugerido('')
+    kmSugeridoRef.current = ''
     setErros([])
     setAberto(true)
   }
@@ -189,7 +742,7 @@ export function MinhasRotasPage() {
   function fecharForm() {
     setAberto(false)
     setForm(FORM_VAZIO)
-    setKmSugerido('')
+    kmSugeridoRef.current = ''
     setErros([])
   }
 
@@ -227,294 +780,70 @@ export function MinhasRotasPage() {
           <button
             type="button"
             className="btn btn-primary"
-            style={{ borderRadius: 0 }}
-            onClick={aberto ? fecharForm : abrirCadastro}
-            disabled={!aberto && bloqueioNovaRota !== undefined}
+            onClick={abrirCadastro}
+            disabled={bloqueioNovaRota !== undefined}
             title={bloqueioNovaRota}
           >
-            {aberto ? 'Cancelar' : 'Abrir rota'}
+            Abrir rota
           </button>
         }
       />
 
       {aberto && (
-        <InlineForm onSubmit={handleSubmit}>
-          <div className="field min-w-[160px] flex-1">
-            <label htmlFor="origem">Origem</label>
-            <input
-              id="origem"
-              className="input"
-              type="text"
-              placeholder="Cidade de origem"
-              required
-              autoFocus
-              style={{ borderRadius: 0 }}
-              value={form.origem}
-              onChange={(e) => setForm({ ...form, origem: e.target.value })}
-            />
-          </div>
-          <div className="field min-w-[160px] flex-1">
-            <label htmlFor="destino">Destino</label>
-            <input
-              id="destino"
-              className="input"
-              type="text"
-              placeholder="Cidade de destino"
-              required
-              style={{ borderRadius: 0 }}
-              value={form.destino}
-              onChange={(e) => setForm({ ...form, destino: e.target.value })}
-            />
-          </div>
-          <div className="field w-[230px]">
-            <label htmlFor="codigoVeiculo">Veículo</label>
-            <select
-              id="codigoVeiculo"
-              className="input"
-              required
-              style={{ borderRadius: 0 }}
-              value={form.codigoVeiculo}
-              onChange={(e) => aplicarVeiculo(e.target.value)}
-            >
-              <option value="">Selecione…</option>
-              {veiculos.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.placa} — {v.nomeVeiculo} ({formatKm(v.quilometragem)})
-                </option>
-              ))}
-            </select>
-          </div>
-          {/* A pendência do veículo escolhido, no momento em que ela decide algo:
-              antes de sair. Não bloqueia — quem decide é o motorista. */}
-          {pendenciasDoVeiculoEscolhido.length > 0 && (
-            <div
-              className="w-full p-3 text-[13px]"
-              style={{
-                border: `1px solid ${corDoAlerta}`,
-                background: 'var(--color-surface)',
-              }}
-            >
-              <strong>
-                {atrasadasDoVeiculoEscolhido.length > 0
-                  ? 'Este veículo tem manutenção atrasada.'
-                  : vencendoDoVeiculoEscolhido.length > 0
-                    ? 'Este veículo tem manutenção vencendo.'
-                    : 'Este veículo tem manutenção prevista.'}
-              </strong>
-              <ul className="mt-1 mb-0 list-none p-0">
-                {pendenciasDoVeiculoEscolhido.map((m) => (
-                  <li key={m.id} style={{ color: mutedText }}>
-                    {m.tipoManutencaoNome} · prevista em {formatKm(m.quilometragemPrevista)}
-                    {m.atrasada
-                      ? ' · atrasada'
-                      : m.kmRestantes != null
-                        ? ` · faltam ${formatKm(m.kmRestantes)}`
-                        : ''}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          <div className="field w-[150px]">
-            <label htmlFor="dataInicio">Início</label>
-            <input
-              id="dataInicio"
-              className="input"
-              type="date"
-              required
-              style={{ borderRadius: 0 }}
-              value={form.dataInicio}
-              onChange={(e) => setForm({ ...form, dataInicio: e.target.value })}
-            />
-          </div>
-          <div className="field w-[190px]">
-            <label htmlFor="kmInicial">Quilometragem inicial</label>
-            <input
-              id="kmInicial"
-              className="input"
-              type="number"
-              min={0}
-              max={2000000}
-              required
-              placeholder="0"
-              style={{ borderRadius: 0 }}
-              value={form.kmInicial}
-              onChange={(e) => setForm({ ...form, kmInicial: e.target.value })}
-            />
-          </div>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            style={{ borderRadius: 0, padding: '10px 20px' }}
-            disabled={abrirMutation.isPending}
-          >
-            {abrirMutation.isPending ? 'Abrindo…' : 'Abrir rota'}
-          </button>
-          <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-            A quilometragem inicial já vem sugerida com o odômetro do veículo. Confira no painel antes
-            de sair: ela não pode ser menor que esse número e, se for maior, o odômetro é corrigido
-            para o valor informado.
-          </p>
-          <div className="w-full">
-            <ErrorList mensagens={erros} />
-          </div>
-        </InlineForm>
+        <MinhaRotaFormulario
+          form={form}
+          onFormChange={setForm}
+          onAplicarVeiculo={aplicarVeiculo}
+          onSubmit={handleSubmit}
+          onCancelar={fecharForm}
+          pending={abrirMutation.isPending}
+          erros={erros}
+          veiculos={veiculos}
+          pendenciasDoVeiculoEscolhido={pendenciasDoVeiculoEscolhido}
+          atrasadasDoVeiculoEscolhido={atrasadasDoVeiculoEscolhido}
+          vencendoDoVeiculoEscolhido={vencendoDoVeiculoEscolhido}
+          corDoAlerta={corDoAlerta}
+        />
       )}
 
-      {/* Rota em andamento: o que o motorista precisa ver e agir primeiro. */}
-      <section className="mb-8">
-        <h2
-          className="mb-3 text-[11px] uppercase"
-          style={{ fontFamily: 'var(--font-heading)', letterSpacing: '0.08em', color: mutedText }}
-        >
-          Rota em andamento
-        </h2>
+      <RotaAtivaCard
+        pending={rotaAtivaQuery.isPending}
+        error={rotaAtivaQuery.error}
+        isSuccess={rotaAtivaQuery.isSuccess}
+        rotaAtiva={rotaAtiva}
+        descreverVeiculo={descreverVeiculo}
+        onEncerrar={abrirEncerramento}
+      />
 
-        {rotasQuery.isPending && <p className="m-0 text-[13px]" style={{ color: mutedText }}>Carregando suas rotas…</p>}
+      <MeuMes
+        kmDoMes={kmDoMesQuery.data}
+        abastecimentosDoMes={abastecimentosDoMesQuery.data}
+        placaDaRota={placaDaRota}
+        manutencaoDaRota={manutencaoDaRota}
+        manutencaoCarregada={manutencaoDaRotaQuery.isSuccess}
+      />
 
-        {rotasQuery.error && (
-          <ErrorList mensagens={mensagensDeErro(rotasQuery.error, 'Não foi possível carregar suas rotas.')} />
-        )}
+      <HistoricoRotasTabela
+        historico={historico}
+        veiculoPorId={veiculoPorId}
+        pending={historicoQuery.isPending}
+        error={historicoQuery.error}
+        isSuccess={historicoQuery.isSuccess}
+      />
 
-        {rotasQuery.isSuccess && !rotaAtiva && (
-          <p className="m-0 text-[13px]" style={{ color: mutedText }}>
-            Nenhuma rota aberta no momento. Use "Abrir rota" ao iniciar a viagem.
-          </p>
-        )}
-
-        {rotaAtiva && (
-          <div
-            className="flex flex-wrap items-end justify-between gap-6 p-5"
-            style={{ border: '2px solid var(--color-text)', background: 'var(--color-surface)' }}
-          >
-            <div className="min-w-[240px]">
-              <div className="mb-2 flex items-center gap-3">
-                <span className="text-lg font-bold">
-                  {rotaAtiva.origem} → {rotaAtiva.destino}
-                </span>
-                <span className={statusDaRota(rotaAtiva).classe}>{statusDaRota(rotaAtiva).rotulo}</span>
-              </div>
-              <div className="text-[13px]" style={{ color: mutedText }}>
-                {descreverVeiculo(rotaAtiva.codigoVeiculo)} · aberta em {formatDate(rotaAtiva.dataInicio)} ·
-                saiu com {formatKm(rotaAtiva.kmInicial)}
-              </div>
-            </div>
-            <button
-              type="button"
-              className="btn btn-primary"
-              style={{ borderRadius: 0, padding: '12px 24px' }}
-              onClick={() => abrirEncerramento(rotaAtiva)}
-            >
-              <CheckIcon size={16} />
-              Encerrar rota
-            </button>
-          </div>
-        )}
-      </section>
-
-      <h2
-        className="mb-3 text-[11px] uppercase"
-        style={{ fontFamily: 'var(--font-heading)', letterSpacing: '0.08em', color: mutedText }}
-      >
-        Histórico
-      </h2>
-
-      <div className="overflow-x-auto">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Origem → Destino</th>
-              <th>Veículo</th>
-              <th>Início</th>
-              <th>Fim</th>
-              <th>Quilometragem</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            <TableStates
-              colSpan={6}
-              pending={rotasQuery.isPending}
-              error={rotasQuery.error}
-              empty={rotasQuery.isSuccess && historico.length === 0}
-              textoCarregando="Carregando suas rotas…"
-              textoErro="Não foi possível carregar suas rotas."
-              textoVazio="Você ainda não encerrou nenhuma rota."
-            />
-            {historico.map((rota) => {
-              const status = statusDaRota(rota)
-              return (
-                <tr key={rota.id}>
-                  <td className="font-semibold">
-                    {rota.origem} → {rota.destino}
-                  </td>
-                  <td>{veiculoPorId.get(rota.codigoVeiculo)?.placa ?? `#${rota.codigoVeiculo}`}</td>
-                  <td>{formatDate(rota.dataInicio)}</td>
-                  <td>{formatDate(rota.dataFim)}</td>
-                  <td>
-                    {/* `kmPercorrido` só existe depois do encerramento. */}
-                    <div>{rota.kmPercorrido != null ? formatKm(rota.kmPercorrido) : '—'}</div>
-                    <div className="text-[12px]" style={{ color: mutedText }}>
-                      {rota.kmFinal != null
-                        ? `${formatKm(rota.kmInicial)} → ${formatKm(rota.kmFinal)}`
-                        : `desde ${formatKm(rota.kmInicial)}`}
-                    </div>
-                  </td>
-                  <td>
-                    <span className={status.classe}>{status.rotulo}</span>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      <Paginacao {...paginacao.props(dadosHistorico)} pending={historicoQuery.isFetching} />
 
       {paraEncerrar && (
-        <FormDialog
-          titulo="Encerrar rota"
-          descricao={`${paraEncerrar.origem} → ${paraEncerrar.destino} — ${descreverVeiculo(
-            paraEncerrar.codigoVeiculo,
-          )}, aberta em ${formatKm(paraEncerrar.kmInicial)}. Informe o odômetro na chegada: a quilometragem percorrida é a diferença, e o veículo é atualizado com esse número.`}
-          textoConfirmar="Encerrar"
-          textoPendente="Encerrando…"
-          pending={encerrarMutation.isPending}
-          erros={errosEncerramento}
+        <EncerramentoMinhaRotaFormulario
+          paraEncerrar={paraEncerrar}
+          descricaoVeiculo={descreverVeiculo(paraEncerrar.codigoVeiculo)}
+          form={formEncerramento}
+          onFormChange={setFormEncerramento}
           onSubmit={handleEncerrar}
           onCancelar={fecharEncerramento}
-        >
-          <div className="field w-[190px]">
-            <label htmlFor="kmFinal">Quilometragem final</label>
-            <input
-              id="kmFinal"
-              className="input"
-              type="number"
-              // Não pode ser menor que a abertura — a API recusa com 422.
-              min={paraEncerrar.kmInicial}
-              max={2000000}
-              required
-              autoFocus
-              style={{ borderRadius: 0 }}
-              value={formEncerramento.kmFinal}
-              onChange={(e) => setFormEncerramento({ ...formEncerramento, kmFinal: e.target.value })}
-            />
-          </div>
-          <div className="field w-[190px]">
-            <label htmlFor="dataFim">Data de fim (opcional)</label>
-            <input
-              id="dataFim"
-              className="input"
-              type="date"
-              // Não pode ser anterior ao início (RN06) nem futura (a API dá margem de
-              // 1 dia por causa do fuso). Em branco, a API assume "agora".
-              min={paraInputDate(paraEncerrar.dataInicio)}
-              max={hojeInputDate()}
-              style={{ borderRadius: 0 }}
-              value={formEncerramento.dataFim}
-              onChange={(e) => setFormEncerramento({ ...formEncerramento, dataFim: e.target.value })}
-            />
-          </div>
-        </FormDialog>
+          pending={encerrarMutation.isPending}
+          erros={errosEncerramento}
+        />
       )}
     </AppLayout>
   )

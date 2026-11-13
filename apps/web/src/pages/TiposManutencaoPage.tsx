@@ -6,7 +6,15 @@ import type { TipoManutencaoResponse, TipoManutencaoUpdateRequest } from '../api
 import { pode } from '../auth/permissions'
 import { useSession } from '../auth/useSession'
 import { AppLayout, ErrorList, PageHeader } from '../components/AppLayout'
-import { ConfirmDialog, InlineForm, RowActions, TableStates } from '../components/Table'
+import {
+  ConfirmDialog,
+  FormDialog,
+  Paginacao,
+  RowActions,
+  SecaoCampos,
+  TableStates,
+} from '../components/Table'
+import { usePaginacao } from '../lib/paginacao'
 import { formatDate, formatKm } from '../lib/format'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
@@ -114,8 +122,6 @@ export function TiposManutencaoPage() {
     })
     setErros([])
     setAberto(true)
-    // O formulário abre acima da tabela — a linha editada pode estar fora da tela.
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function fecharForm() {
@@ -126,6 +132,7 @@ export function TiposManutencaoPage() {
   }
 
   const tipos = tiposQuery.data ?? []
+  const p = usePaginacao(tipos)
   const mostrarAcoes = podeCadastrar || podeExcluir
   const colunas = mostrarAcoes ? 5 : 4
 
@@ -139,80 +146,72 @@ export function TiposManutencaoPage() {
             <button
               type="button"
               className="btn btn-primary"
-              style={{ borderRadius: 0 }}
-              onClick={aberto ? fecharForm : abrirCadastro}
+              onClick={abrirCadastro}
             >
-              {aberto ? 'Cancelar' : 'Novo tipo'}
+              Novo tipo
             </button>
           )
         }
       />
 
       {aberto && podeCadastrar && (
-        <InlineForm onSubmit={handleSubmit}>
-          {editando && (
-            <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-              Editando <strong style={{ color: 'var(--color-text)' }}>{editando.nome}</strong>.
-            </p>
-          )}
-          <div className="field min-w-[220px] flex-1">
-            <label htmlFor="nome">Nome</label>
-            <input
-              id="nome"
-              className="input"
-              type="text"
-              placeholder="Ex.: Troca de óleo"
-              maxLength={100}
-              required
-              style={{ borderRadius: 0 }}
-              value={form.nome}
-              onChange={(e) => setForm({ ...form, nome: e.target.value })}
-            />
-          </div>
-          <div className="field w-[190px]">
-            <label htmlFor="intervaloKm">Intervalo (km, opcional)</label>
-            <input
-              id="intervaloKm"
-              className="input"
-              type="number"
-              min={1}
-              placeholder="Ex.: 10000"
-              style={{ borderRadius: 0 }}
-              value={form.intervaloKm}
-              onChange={(e) => setForm({ ...form, intervaloKm: e.target.value })}
-            />
-          </div>
-          {editando && (
-            <div className="field w-[150px]">
-              <label htmlFor="ativo">Situação</label>
-              <select
-                id="ativo"
+        <FormDialog
+          titulo={editando ? 'Editar tipo de manutenção' : 'Novo tipo de manutenção'}
+          descricao={editando ? `Editando ${editando.nome}.` : undefined}
+          textoConfirmar={editando ? 'Salvar alterações' : 'Cadastrar'}
+          textoPendente="Salvando…"
+          pending={salvarMutation.isPending}
+          erros={erros}
+          onSubmit={handleSubmit}
+          onCancelar={fecharForm}
+        >
+          <SecaoCampos>
+            <div className="field campo-largo">
+              <label htmlFor="nome">Nome</label>
+              <input
+                id="nome"
                 className="input"
-                style={{ borderRadius: 0 }}
-                value={form.ativo}
-                onChange={(e) => setForm({ ...form, ativo: e.target.value })}
-              >
-                <option value="true">Ativo</option>
-                <option value="false">Inativo</option>
-              </select>
+                type="text"
+                placeholder="Ex.: Troca de óleo"
+                maxLength={100}
+                required
+                value={form.nome}
+                onChange={(e) => setForm({ ...form, nome: e.target.value })}
+              />
             </div>
-          )}
-          <button
-            type="submit"
-            className="btn btn-primary"
-            style={{ borderRadius: 0, padding: '10px 20px' }}
-            disabled={salvarMutation.isPending}
-          >
-            {salvarMutation.isPending ? 'Salvando…' : editando ? 'Salvar alterações' : 'Cadastrar'}
-          </button>
-          <p className="m-0 w-full text-[13px]" style={{ color: mutedText }}>
-            O nome é único por empresa. O intervalo é informativo: serve para sugerir a quilometragem no
-            agendamento — a manutenção seguinte ainda não é gerada automaticamente.
-          </p>
-          <div className="w-full">
-            <ErrorList mensagens={erros} />
-          </div>
-        </InlineForm>
+            <div className="field">
+              <label htmlFor="intervaloKm">Intervalo (km, opcional)</label>
+              <input
+                id="intervaloKm"
+                className="input"
+                type="number"
+                min={1}
+                placeholder="Ex.: 10000"
+                value={form.intervaloKm}
+                onChange={(e) => setForm({ ...form, intervaloKm: e.target.value })}
+              />
+            </div>
+            {editando && (
+              <div className="field">
+                <label htmlFor="ativo">Situação</label>
+                <select
+                  id="ativo"
+                  className="input"
+                  value={form.ativo}
+                  onChange={(e) => setForm({ ...form, ativo: e.target.value })}
+                >
+                  <option value="true">Ativo</option>
+                  <option value="false">Inativo</option>
+                </select>
+              </div>
+            )}
+            <p className="campo-largo m-0 text-[13px]" style={{ color: mutedText }}>
+              O nome é único por empresa. O intervalo é informativo: serve para sugerir a
+              quilometragem no agendamento — a manutenção seguinte ainda não é gerada
+              automaticamente.
+            </p>
+          </SecaoCampos>
+        </FormDialog>
       )}
 
       <div className="mb-3">
@@ -240,7 +239,7 @@ export function TiposManutencaoPage() {
               textoErro="Não foi possível carregar os tipos de manutenção."
               textoVazio="Nenhum tipo cadastrado ainda — cadastre o primeiro para poder agendar manutenções."
             />
-            {tipos.map((tipo) => (
+            {p.itensDaPagina.map((tipo) => (
               <tr key={tipo.id} style={{ opacity: tipo.ativo ? 1 : 0.6 }}>
                 <td className="font-semibold">{tipo.nome}</td>
                 <td>{tipo.intervaloKm ? formatKm(tipo.intervaloKm) : '—'}</td>
@@ -284,6 +283,8 @@ export function TiposManutencaoPage() {
           </tbody>
         </table>
       </div>
+
+      <Paginacao {...p} pending={tiposQuery.isFetching} />
 
       {paraExcluir && (
         <ConfirmDialog

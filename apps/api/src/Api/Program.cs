@@ -5,6 +5,7 @@ using Frota360.Api.Services;
 using Frota360.Application.Common;
 using Frota360.Application.DependencyInjection;
 using Frota360.Application.Interfaces;
+using Frota360.Domain.Common;
 using Frota360.Infrastructure.Data;
 using Frota360.Infrastructure.DependencyInjection;
 using Microsoft.AspNetCore.Authorization;
@@ -108,6 +109,11 @@ builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 
 // URL do front, usada nos links de convite/reset enviados por e-mail
 builder.Services.AddSingleton(new FrontendSettings(builder.Configuration["Frontend:BaseUrl"] ?? string.Empty));
+
+// Chave de servidor da Google Routes API (cálculo de distância/duração). Vazia é estado válido
+// por enquanto: o cliente que a consome ainda não existe, e derrubar o boot por ela agora
+// quebraria o deploy antes da chave ser provisionada.
+builder.Services.AddSingleton(new GoogleRoutesSettings(builder.Configuration["GoogleRoutes:ApiKey"] ?? string.Empty));
 
 // CORS — origens permitidas vêm de Cors:AllowedOrigins (appsettings por ambiente)
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];

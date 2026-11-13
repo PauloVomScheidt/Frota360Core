@@ -73,15 +73,21 @@ Rota agora resolve motorista e veículo por `GetByIdAsync(id, currentUser.Empres
 ## Fluxos
 
 ### 1. Provisionamento (venda assistida)
-`POST /backoffice/empresa` com header `X-Backoffice-Key` → cria `Empresa`, semeia os 10 `TiposManutencaoPadrao` e dispara convite de Admin. Sem `Backoffice:ApiKey` configurada, o endpoint responde 401 sempre.
+`POST /backoffice/empresa` com header `X-Backoffice-Key` → cria `Empresa`, semeia os 10 `TiposManutencaoPadrao` e os 7 `TiposDespesaPadrao`, e dispara convite de Admin. Sem `Backoffice:ApiKey` configurada, o endpoint responde 401 sempre.
 
 ### 2. Convite → conta
-Admin cria convite (token aleatório de 64 bytes, **só o hash SHA vai ao banco**, validade 7 dias, convites pendentes anteriores do mesmo e-mail são apagados) → e-mail com link `{Frontend}/convite?token=` → `POST /convite/aceitar` (anônimo) cria o `Usuario` já com role do convite e devolve token+refresh direto, sem exigir login.
+Admin cria convite (token aleatório de 64 bytes, **só o hash SHA vai ao banco**, validade 7 dias, convites pendentes anteriores do mesmo e-mail são apagados) → e-mail com link `{Frontend}/convite?token=` → `POST /convite/aceitar` (anônimo) cria o `Usuario` já com role do convite e devolve sessão autenticada — token e refresh token via cookie (ver §3), sem exigir login.
+
+**`POST /convite/consultar`** (anônimo, 28/09/2026) lê o convite pelo token **sem consumi-lo** e devolve `ConviteConsultadoResponse` — `NomeEmpresa`, `Email`, `Role`, `ExpiraEm` — para a tela de aceite dizer de que empresa é o convite antes de a conta existir. A validade é a mesma do aceite (`BuscarConviteValidoAsync`: existe, não utilizado, não expirado); fora disso, **404** "Este convite é inválido, já foi utilizado ou expirou.". É POST, e não GET com query string, para o token — a credencial de quem ainda não tem senha — ficar fora da URL e, com ela, dos logs. Está na mesma política de rate limit `auth` (5/min) das outras rotas anônimas. A resposta não carrega id de empresa, quem convidou nem hash: só o que o dono do link precisa ver.
 
 **Convite de motorista não tem nada de especial:** é e-mail + `Role = Motorista`, como qualquer outra role. O aceite (`POST /convite/aceitar`) aceita ainda `CPF` e `DataNascimento` **opcionais**, que a própria pessoa informa. Em branco viram nulo, e não string vazia: o índice único filtrado `(EmpresaId, CPF)` depende disso para não colidir entre quem não informou. Depois do aceite, esses mesmos campos se corrigem em `PUT /usuario/perfil` (§4.2).
 
 ### 3. Auth
 Login BCrypt → JWT de 1h (claims `sub`, `email`, `name`, `jti`, `empresaId`, `role`) + refresh token de 7 dias rotacionado a cada uso (hash no banco). `esqueci-senha` responde neutro sempre (não revela se o e-mail existe), token de 30 min; redefinir senha **derruba o refresh token**. Todos esses endpoints têm rate limit de 5/min por IP.
+
+**Token e refresh token nunca chegam ao corpo da resposta nem a `localStorage`/`sessionStorage` do front** (mitiga exfiltração por XSS — era o achado do React Doctor `auth-token-in-web-storage`). `Login`, `Refresh` e `Convite.Aceitar` devolvem só `SessaoResponse` (nome/e-mail/role e, desde 28/09/2026, `NomeEmpresa` — o front o exibe no cabeçalho) no JSON; os dois segredos saem em cookie `HttpOnly; Secure; SameSite=None` (`Frota360.Api.Services.SessaoCookies`, nomes em `Domain.Common.CookiesDeSessao`), com validade espelhando a do próprio token (1h) e do refresh (7 dias). `SameSite=None` porque front e API vivem em origens diferentes (portas em dev, domínios em produção) — exige `Secure`, e as duas bindings de dev (7271/5062) e a de produção já falam HTTPS. `JwtBearerEvents.OnMessageReceived` lê o JWT do cookie quando não há header `Authorization` (que continua funcionando para Scalar/curl/clientes externos). `POST /auth/refresh` não recebe mais corpo: o refresh token vem só do cookie, que o navegador anexa sozinho — JavaScript nunca o vê. `Logout` limpa os dois cookies além de revogar o refresh token no banco.
+
+Internamente, `AuthService`/`ConviteService` continuam devolvendo o DTO `AuthResponse` (com `Token`/`RefreshToken`) como sempre — só o `AuthController`/`ConviteController` o convertem para `SessaoResponse` (`AuthResponseMappings.ToSessaoResponse()`) depois de mover os dois segredos para o cookie. Layers e testes de `AuthService`/`ConviteService` não mudaram.
 
 ### 4. Gestão de usuários (só Admin)
 Alterar role ou desativar. Ambos revogam a sessão (forçam novo login para o token refletir a mudança) e barram deixar a empresa sem admin ativo — `UsuarioService.cs`. `Motorista` é uma role como as outras: promover e rebaixar funcionam igual.
@@ -90,14 +96,16 @@ Alterar role ou desativar. Ambos revogam a sessão (forçam novo login para o to
 
 | Role | Alcance |
 |---|---|
-| `Admin` | Tudo. Único que exclui e que administra usuários/convites. |
-| `Supervisor` | Cadastra e edita veículos, rotas e manutenções. |
+| `Admin` | Tudo. Único que administra usuários, convites e auditoria. |
+| `Supervisor` | Cadastro completo — cria, edita **e exclui** veículos, rotas, manutenções, lançamentos e catálogos. Não administra usuários nem vê a auditoria. |
 | `Operador` | Visualiza a frota e opera rotas (abre, edita, encerra). |
-| `Motorista` | Opera **só as próprias rotas** (`GET /rota/minhas`, `POST /rota`, `POST /rota/{id}/encerrar`) e **lê** veículos e manutenções (`GET /veiculo`, `GET /manutencao`) — precisa saber o estado do caminhão que vai pegar. O `Custo` da manutenção é omitido para ele. Convite, promoção e rebaixamento são iguais aos das demais roles. |
+| `Motorista` | Opera **só as próprias rotas** (`GET /rota/minhas`, `POST /rota`, `POST /rota/{id}/encerrar`, e o km do mês em `GET /rota/resumo`, recortado por ele) e **lê** veículos e manutenções (`GET /veiculo`, `GET /manutencao`) — precisa saber o estado do caminhão que vai pegar. O `Custo` da manutenção é omitido para ele. Convite, promoção e rebaixamento são iguais aos das demais roles. |
 
 `Roles.Gestao` (`Admin,Supervisor,Operador`) é a constante usada nos `[Authorize]` que barram o motorista: controllers de motorista, manutenção e tipo de manutenção inteiros, e os endpoints de gestão de rota. `VeiculoController` fica de fora de propósito — leitura aberta, escrita restrita como antes.
 
 ### 4.2 Perfil — o próprio cadastro (qualquer autenticado)
+
+As duas devolvem `PerfilResponse` — o `UsuarioResponse` mais `NomeEmpresa` e `CnpjEmpresa`, só leitura, lidos por `IEmpresaRepository.GetByIdAsync` (a entidade `Usuario` não tem navegação para `Empresa`). A listagem de `/usuario` continua em `UsuarioResponse`: repetir a empresa em cada linha não diria nada.
 
 `GET /usuario/perfil` e `PUT /usuario/perfil` são as **duas únicas ações do `UsuarioController` que não são Admin** — por isso o `[Authorize(Roles = Admin)]` saiu da classe e foi para cada ação administrativa: atributos de classe e de ação combinam por **E**, e na classe ele barraria o motorista aqui também.
 
@@ -120,7 +128,7 @@ A sessão **não** é revogada (diferente da troca de papel): mudar o próprio n
 
 
 - **Placa (RN09).** Formato Mercosul (`ABC1D23`) ou antigo (`ABC1234`), nos dois validators. A comparação é **case-insensitive** e o handler grava sempre em maiúsculas (`Trim().ToUpperInvariant()`): a RN09 é regra de formato, não de caixa — recusar `abc1d23` com 422 puniria um cliente da API por algo que só o front normalizava. No update, a normalização acontece **antes** do `AlteracoesBuilder`, senão reenviar a mesma placa em caixa diferente entraria no diff como alteração fantasma.
-- **Exclusão (RN08).** Veículo com rota associada não é excluído: 422 com *"Não é possível excluir um veículo com rotas associadas. Encerre ou remova as rotas antes."* — `DeleteVeiculoHandler` consulta `IRotaRepository.ExisteComVeiculoAsync`, mesmo desenho de `DeleteTipoManutencaoHandler`. A rota guarda o histórico de quilometragem da frota e ficaria apontando para um registro inexistente.
+- **Exclusão (RN08).** Veículo com rota associada não é excluído: 422 com *"Não é possível excluir um veículo com rotas associadas. Encerre ou remova as rotas antes."* — `DeleteVeiculoHandler` consulta `IRotaRepository.ExisteComVeiculoAsync`, mesmo desenho de `DeleteTipoManutencaoHandler`. A rota guarda o histórico de quilometragem da frota e ficaria apontando para um registro inexistente. São **três** guardas hoje, na ordem rota → abastecimento → despesa (§ 8.1 e § 8.3); a primeira que bater é a que responde.
 - **A metade "motorista" da RN08 não se aplica ao modelo atual**: não há DELETE de motorista, e a FK `Restrict` de `Rota.CodigoMotorista` → `Usuario` já garante o mesmo efeito pelo banco. Usuário é desativado, nunca excluído.
 
 ### 5. Manutenção — a parte mais interessante do domínio
@@ -140,6 +148,105 @@ A rota tem `KmInicial` (obrigatório na abertura), `KmFinal` e `KmPercorrido` (n
 - **Encerrar é a única transição de estado.** `Ativo` e `DataFim` saíram de `CreateRotaRequest` e `UpdateRotaRequest`: sem isso dava para "encerrar" uma rota pelo PUT sem calcular km nem tocar no odômetro. A `RotaResponse` continua expondo os dois.
 - **Por que isso importa:** era o elo que faltava. Rodar rota é diário, concluir manutenção é eventual — sem o encerramento alimentando o odômetro, `atrasada` e `kmRestantes` das manutenções nunca acendiam.
 
+### 6.1 Rota — traçado pela Google Routes API (08/09/2026)
+
+`POST /rota/calcular` recebe `{latitudeOrigem, longitudeOrigem, latitudeDestino, longitudeDestino}`
+e devolve `{distanciaMetros, duracaoEstimadaSegundos, polylineCodificada}`. **Não persiste nada**:
+é a consulta que antecede o cadastro da rota. Aberto a **qualquer autenticado**, em simetria com
+`POST /rota` — quem abre rota precisa da estimativa para preenchê-la. O corpo carrega só
+coordenadas; a empresa vem da claim, como em todo o resto.
+
+**Seis coisas que decidem o comportamento:**
+
+**1. O cliente não lança — devolve resultado.** `GoogleRoutesClient` (Infrastructure) captura
+timeout, falha de rede, status não-2xx e JSON inesperado, e converte cada um em
+`ResultadoCalculoRota.Falha(motivo)`. Quem traduz isso para o usuário é o handler, com um
+`InvalidOperationException` de texto genérico → **422**. O motivo técnico (status HTTP da Google,
+timeout) fica **só no log**: `CalcularRotaHandlerTests` tem um teste que prova que ele não vaza
+na mensagem. Um terceiro fora do ar não pode virar 500 nosso.
+
+**2. A máscara de campos é decisão de custo, não de payload.** O header `X-Goog-FieldMask` pede
+exatamente `routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline`, e o corpo
+manda `routingPreference: TRAFFIC_UNAWARE`. Os dois juntos mantêm a chamada na faixa de SKU mais
+barata da Google — **campo a mais ou trânsito ao vivo mudam o preço**. Não amplie sem conferir.
+
+**3. Timeout de 10 s, contra os 100 s padrão do `HttpClient`.** Registrado em
+`AddHttpClient<IGoogleRoutesClient, GoogleRoutesClient>` no `InfrastructureExtensions`.
+
+**4. `200` com `routes` vazio é resposta normal**, não erro: é o que a Google devolve quando não
+há trajeto entre os pontos. Vira falha tratável com mensagem própria.
+
+**5. `duration` vem como Duration do protobuf em texto** (`"1234s"`, com fração possível), não
+como número — é parseada e arredondada para segundo inteiro.
+
+**6. A chamada é auditada** (`Rota` + `Calculou`) — ver §9.
+
+**Os campos na entidade** (migration `TracadoDeRotaGoogleRoutes`) ficam prontos para persistir o
+traçado escolhido: `EnderecoPartida`/`LatitudePartida`/`LongitudePartida`, o trio equivalente de
+chegada, `DistanciaMetros`, `DuracaoEstimadaSegundos`, `PolylineCodificada` e `DataCalculoRota`.
+
+⚠️ **`DataCalculoRota` é o discriminador do bloco.** Distância, duração e coordenadas são
+não-anuláveis, então as rotas anteriores à migration ficaram com `0` — indistinguível de uma
+distância real de zero. Nenhuma leitura pode olhar esses campos sem antes checar se a data está
+preenchida.
+
+**`EnderecoPartida`/`EnderecoChegada` SUBSTITUÍRAM `Origem`/`Destino` (08/09/2026).** A dívida dos
+dois pares de endereço convivendo durou um dia: a migration `EnderecoDeRotaSubstituiOrigemDestino`
+derruba as colunas antigas, e o par novo é a única fonte de verdade — em toda a API, nas duas telas
+de rota e no `RotaDescricao` do abastecimento. `POST /rota/calcular` continua não gravando em
+nenhum dos dois: ele é consulta.
+
+⚠️ **A migration copia antes de derrubar.** `Up` roda
+`UPDATE "Rota" SET "EnderecoPartida" = "Origem" WHERE "EnderecoPartida" = ''` (e o par de chegada)
+antes dos dois `DROP COLUMN`. Sem isso o drop apagaria o endereço de toda rota anterior à
+integração — a `TracadoDeRotaGoogleRoutes` criou as colunas novas com default `''`, então **toda**
+linha existente chega vazia. O `WHERE` deixa a operação idempotente e preserva o endereço que já
+tiver vindo do Places. O `Down` recria as colunas e devolve os valores truncados em 100/150, que é
+o tamanho que elas tinham.
+
+**O traçado entra pelo request, e não é recalculado no servidor (09/09/2026).**
+`CreateRotaRequest`/`UpdateRotaRequest` carregam `DistanciaMetros`, `DuracaoEstimadaSegundos` e
+`PolylineCodificada` (todos opcionais). O front já pagou por `POST /rota/calcular` ao montar o
+formulário; recalcular no salvamento seria **uma segunda chamada cobrada pelo mesmo trajeto**.
+Aceitar o número do cliente é seguro aqui porque **não é dado financeiro**: o R$/km sai de
+`KmPercorrido`, apurado do odômetro no encerramento, nunca daqui.
+
+⚠️ **A contrapartida de confiar no cliente é uma trava de plausibilidade (14/09/2026).**
+`RegrasDeTrajeto` (`Application/Common`) calcula a velocidade média implícita
+(`metros × 3,6 ÷ segundos`) quando distância **e** duração vêm juntas, e recusa fora de
+**5–180 km/h** — o piso pega duração absurda para a distância, o teto pega distância inflada.
+Limites folgados de propósito: a checagem existe para barrar valor forjado ou corrompido, não
+para auditar o Google. A regra **não dispara** com o par incompleto nem com distância zerada
+(zero é o valor de "sem traçado"), e distância com duração zero é recusada como velocidade
+infinita. É um `IRequestComTrajeto` + `AplicarRegrasDeTrajeto`, no mesmo arranjo de
+`IRequestPaginado`/`AplicarRegrasDePaginacao` — as regras do bloco viviam duplicadas no create
+e no update. ⚠️ Os campos usam **`OverridePropertyName`**, e não `WithName`: o controller monta
+o erro a partir de `ValidationFailure.PropertyName`, e sem isso o usuário lê
+"DuracaoEstimadaSegundos: ..." na tela.
+
+A mesma classe limita a **polyline** a `TamanhoMaximoPolyline` = **250.000** caracteres
+(28/09/2026). O teto original, de 20.000, contradizia a coluna `text` sem `HasMaxLength`
+e recusava viagem legítima: os traçados reais medem 32–35 caracteres por km, então ele
+barrava a partir de ~570 km (Joinville → Brasília, 1.504 km, gera ~52 mil). O número atual
+cobre 5.000 km a 50 caracteres/km. Continua sendo trava contra payload abusivo, não contra
+viagem longa: ao revê-lo, meça o traçado de uma rota real antes de mexer.
+
+⚠️ **`DataCalculoRota` não entra no request — quem a carimba é o handler**, e só quando
+`DistanciaMetros` de fato chega. É o que mantém o discriminador sob controle do servidor.
+⚠️ **No update, traçado só é sobrescrito quando `DistanciaMetros` vem no corpo**: uma edição que
+mexe só no motorista não pode apagar o trajeto já calculado. `RotaHandlersTests` cobre os três
+casos (sem traçado, com traçado, e a edição que não apaga).
+
+**As coordenadas são opcionais no request, os endereços não.** `CreateRotaRequest` e
+`UpdateRotaRequest` carregam `decimal?` para as quatro coordenadas: exigi-las obrigaria a digitar
+latitude e longitude à mão enquanto o autocomplete do Places não existe na tela. Ausentes, a rota
+grava `0` e `DataCalculoRota` fica nula. ⚠️ **No update, coordenada só é sobrescrita quando os dois
+valores do par vêm no corpo** — senão uma edição de texto apagaria o traçado já calculado.
+
+As faixas de latitude/longitude vivem em `RegrasDeCoordenada` (`Application/Common`), no molde do
+`AplicarRegrasDePaginacao`: três validators as aplicam (create, update e o cálculo), e repetir os
+limites em cada um os faria divergir na próxima mudança.
+
 ### 7. Rota vista pelo motorista
 
 `GET /rota/minhas` é endpoint dedicado, e não um filtro no `GET /rota`, justamente para não haver um mesmo endpoint com dois comportamentos por role — é impossível vazar a lista da frota por engano. Ele não recebe parâmetro nenhum: o motorista é o usuário do token.
@@ -151,6 +258,8 @@ Editar (`PUT`) e excluir continuam fora do alcance dele: correção de rota é d
 **Motorista rebaixado:** as rotas dele continuam apontando para o usuário (a FK é `Restrict`), mas ele some de `GET /motorista`, que lista só quem tem a role. Para que a rota continue identificável, `RotaResponse` traz **`NomeMotorista` desnormalizado** — mesma técnica de `veiculoNome`/`veiculoPlaca` em `ManutencaoResponse`. O repositório carrega por `Include(r => r.Motorista)`; nos handlers de create/update a navegação não vem preenchida (ou aponta para o dono anterior), então eles atribuem o nome à mão.
 
 ### 7.1 Filtro de período na manutenção
+
+**`GET /manutencao/resumo`** (gestão) conta as pendentes **atrasadas** e **vencendo** e devolve as mais urgentes (`Urgentes`, no máximo `RegrasDeManutencao.LimiteUrgentes` = 10: atrasadas primeiro, depois vencendo, cada grupo pelo menor `KmRestantes`). Como `Atrasada` e `KmRestantes` só existem depois do `ToResponse()` — que compara com o odômetro atual —, não há coluna para filtrar no banco: `ListarPendentesAsync` traz todas as pendentes da empresa (conjunto limitado pela frota, sem paginação) e a contagem é feita em memória. "Vencendo" é `!Atrasada && KmRestantes <= RegrasDeManutencao.FaixaAvisoKm` (500) — o mesmo corte do `FAIXA_AVISO` do front, que continua decidindo a tag na listagem. ⚠️ Mexeu numa, mexa na outra.
 
 `GET /manutencao?de=&ate=` recorta pela **data relevante do status**, não por um campo fixo: uma pendência é situada pela `DataPrevista`, uma manutenção feita pela `DataRealizacao`. Escolher uma só das duas deixaria metade da tela fora do filtro — só pendências ou só concluídas.
 
@@ -164,9 +273,22 @@ Além do odômetro, o encerramento grava `Veiculo.UltimoMotorista` e `Veiculo.Da
 
 ### 8.1 Abastecimento — o gasto com combustível
 
-**O apontamento é curto de propósito.** A primeira versão pedia litros e odômetro além de veículo, valor e data, para calcular consumo — precisão que não se paga no posto e que fazia o lançamento ser evitado. O contrato hoje é **veículo, motorista, valor, data e observação**: o dado entra sempre, e serve de base para relatório de **gasto** por veículo, por motorista, por rota e por período.
+**O apontamento virou fiscal (03/09/2026).** A versão anterior era deliberadamente curta — veículo, motorista, valor, data e observação — apostando que precisão não se paga no posto. A aposta foi revista com o stakeholder: sem litros nem odômetro, **km/l e R$/l eram impossíveis de apurar**, e é justamente o que a gestão de frota precisa medir. O contrato hoje acrescenta **combustível, posto, litros, valor do litro, odômetro e nota fiscal** (todos obrigatórios) mais **frentista** (opcional, porque autoatendimento não tem um).
 
-**O abastecimento não mexe no odômetro.** São **dois** os fluxos que o avançam — abertura/encerramento de rota e conclusão de manutenção. Não há mais consumo (km/l), preço por litro nem custo por km; a `AbastecimentoResponse` não tem campo derivado nenhum.
+**O valor total não entra no request — ele é derivado.** `Valor` é `Math.Round(litros × valorLitro, 2, MidpointRounding.AwayFromZero)`, calculado por `AbastecimentoMappings.CalcularValor` e **recalculado em toda escrita**. O `CreateAbastecimentoRequest` nem carrega o campo. A tela mostra o total num input `readOnly`, mas ele é só espelho: o servidor é a autoridade, e é isso que impede o resumo de custos de divergir do apontamento por payload manipulado ou bug de front.
+
+**O abastecimento passou a mexer no odômetro.** São agora **três** os fluxos que o avançam — abertura/encerramento de rota, conclusão de manutenção e lançamento/correção de abastecimento — e os três seguem a mesma política: comparam antes de gravar e **nunca retrocedem**. Um lançamento retroativo com km menor é aceito e não reescreve a ficha. Excluir o abastecimento também não devolve o odômetro: o carro rodou de verdade. O avanço entra no diff da auditoria como `Odômetro do veículo {placa}`, no mesmo formato de `ConcluirManutencaoHandler`.
+
+**Dois catálogos novos sustentam o apontamento**, ambos no desenho de `TipoDespesa` (nome único por empresa, `Ativo` em vez de exclusão, 422 pedindo para inativar quando em uso):
+
+| Catálogo | Campos | Seed |
+|---|---|---|
+| `TipoCombustivel` | `Nome` | `TiposCombustivelPadrao` — 7 itens, via `BackofficeService` (empresa nova) e `INSERT` no `Up` da migration (empresas existentes) |
+| `Posto` | `Nome`, `Cnpj?`, `Cidade?` | **nenhum** — rede credenciada não tem padrão, cada empresa cadastra a sua |
+
+⚠️ **Os dois controllers têm `[Authorize]` na classe, não `Roles.Gestao`.** É a diferença em relação a `TipoDespesaController`: o motorista lança abastecimento e precisa **ler** os dois catálogos para preencher o formulário. Como os atributos de classe e de ação se combinam por **E**, `Roles.Gestao` na classe barraria também o `GET`. A escrita fica nas ações — `Admin,Supervisor` para POST/PUT **e para DELETE**.
+
+Item inativo do catálogo continua nomeando o passado mas **não recebe lançamento novo**: `Create`/`UpdateAbastecimentoHandler` resolvem combustível e posto por `GetByIdAsync(id, empresaId)` — id de outra empresa "não existe" — e recusam com 422 quando `Ativo` é falso.
 
 **Duas pessoas por lançamento, e elas podem ser diferentes:**
 
@@ -189,15 +311,176 @@ A gestão escolhe o motorista, e ele é **obrigatório**: sem ele o handler recu
 
 `RotaId` **saiu do contrato de entrada**: é sempre derivado no servidor. A FK continua `SetNull` — excluir a rota não pode levar junto o gasto, que aconteceu de verdade.
 
-Escrita é aberta a **todos os papéis** (quem abastece na estrada é o motorista, no pátio é o operador); exclusão é só Admin, como no resto. Veículo, motorista e rota não entram no `PUT` — só valor, data e observação: trocar qualquer um dos três reatribuiria o gasto. Nesse caso, exclua e lance de novo.
+Escrita é aberta a **todos os papéis** (quem abastece na estrada é o motorista, no pátio é o operador); exclusão é de Admin e Supervisor, como no resto. Veículo, motorista e rota não entram no `PUT` — todo o resto do apontamento entra: trocar qualquer um dos três reatribuiria o gasto. Nesse caso, exclua e lance de novo.
 
-**RN08 estendida:** veículo com abastecimento lançado não pode ser excluído (a FK é `Restrict`, então sem a guarda o usuário veria 500 em vez da explicação).
+**RN08 estendida:** veículo com abastecimento lançado não pode ser excluído (a FK é `Restrict`, então sem a guarda o usuário veria 500 em vez da explicação). A mesma guarda vale para os catálogos: `IAbastecimentoRepository.ExisteComTipoCombustivelAsync`/`ExisteComPostoAsync` sustentam o 422 dos dois `Delete*Handler`.
+
+**A migration apagou os abastecimentos existentes.** `AbastecimentoDetalhadoECatalogos` faz `DELETE FROM "Abastecimento"` antes de criar as colunas obrigatórias: elas apontam para catálogos que ainda não existiam e não havia valor plausível para retroagir num lançamento antigo. A base só tinha dados de mock, e a decisão foi tomada junto ao stakeholder na virada.
+
+### 8.2 Custos — a visão consolidada (01/09/2026)
+
+O custo da frota nasceu espalhado em duas telas que não conversavam: `/abastecimentos` somava no cliente, `/manutencoes` nem isso. `GET /custo` e `GET /custo/resumo` unem as duas origens numa visão só, filtrável por veículo, motorista, origem e período.
+
+**Não há tabela de custos, e isso é a decisão central.** O custo são duas colunas — `Abastecimento.Valor` (`numeric(10,2)`, NOT NULL) e `Manutencao.Custo` (`numeric(10,2)`, nulável, só na conclusão). Uma tabela de custos seria um **espelho**: o valor continua editável em `PUT /abastecimento/{id}` e em `POST /manutencao/{id}/concluir`, e o espelho precisaria de sincronia em create/update/delete/concluir — cada bug de sincronia virando número errado no relatório, em silêncio. A justificativa de performance também não existe neste volume. O desenho é um **read model**: as origens são unidas na leitura, e corrigir o valor na tela de origem já corrige o relatório.
+
+O DTO carrega um discriminador `origem` desde o primeiro dia justamente para que uma origem nova entre sem mexer no contrato — ver **Evolução prevista** no fim desta seção.
+
+**`ICustoRepository` é um repositório de read model**, e por isso atravessa três tabelas (`Abastecimento`, `Manutencao` e `Rota`). É exceção consciente ao "um repositório por agregado" do resto do projeto; nada nele escreve.
+
+**O que conta como custo:**
+
+| Origem | Fonte | Data | Categoria |
+|---|---|---|---|
+| `Abastecimento` | `Valor` (derivado de litros × R$/l) | `DataAbastecimento` | literal `"Combustível"` — **não** o nome do `TipoCombustivel`, para não estilhaçar o agrupamento da tela em Diesel S10/S500/Etanol |
+| `Manutencao` | `Custo` — **só** com `Status == Realizada` e `Custo`/`DataRealizacao` preenchidos | `DataRealizacao` | nome do `TipoManutencao` |
+
+**Três armadilhas do domínio que a API expõe explicitamente**, porque sem elas o número mente:
+
+- **Manutenção não é atribuída a motorista.** Filtrar por `motoristaId` descarta a perna de manutenção inteira — deduzi-la pela rota do veículo seria um chute. O recorte impossível (`motoristaId` + `origem=Manutencao`) devolve lista vazia, não erro.
+- **O recorte por motorista distorce o consumo.** Filtrar por `motoristaId` deixa só os abastecimentos daquela pessoa, mas o odômetro continua saltando os dos outros — o km passa a cobrir trechos que ela não abasteceu, e o km/l sai **superestimado**. A tela avisa; o número não é corrigível sem atribuir cada trecho a um motorista, o que o modelo não faz.
+- **`Custo` é opcional ao concluir manutenção.** Concluída sem valor informado, ela fica fora de toda soma. Daí `ManutencoesSemCustoInformado` no resumo: a tela mostra a contagem para o total não mentir por omissão.
+- **Rota aberta não tem `KmPercorrido`.** O período corrente subestima o km e, portanto, **superestima** o R$/km.
+
+**Custo por km** sai de `Rota.KmPercorrido` das rotas **encerradas** no período, recortadas por `DataFim` (o momento em que a quilometragem foi apurada — mesmo critério do KPI do dashboard). É nulo quando o km é zero: sem denominador não existe métrica, e devolver zero afirmaria que a frota rodou de graça. A origem do custo é ignorada nessa soma — o km rodado é o mesmo, seja qual for o gasto dividido por ele.
+
+O resumo por veículo inclui **veículo que rodou sem custo lançado**, com total zero. É o caso que mais merece ser visto (ninguém lançou o abastecimento), e mantê-lo faz as colunas fecharem com os totais gerais.
+
+#### Consumo (km/l) — a segunda métrica derivada (03/09/2026)
+
+Com litros e odômetro no apontamento, o resumo passou a servir também o **consumo médio**, no
+método **tanque a tanque**: os litros de um abastecimento são os que repuseram o trecho
+percorrido desde o anterior.
+
+**O denominador é o odômetro do abastecimento, não `Rota.KmPercorrido`** — e é a única
+escolha correta aqui: combustível é queimado dentro e fora de rota, e usar o km das rotas
+encerradas subestimaria o consumo. A consequência é que a tela de custos mostra **dois "km"
+diferentes**, e por isso o detalhe de cada KPI diz de onde o seu vem ("em rotas encerradas"
+vs "pelo odômetro"). Não é inconsistência: são duas medidas de coisas diferentes.
+
+**Os litros do primeiro abastecimento do período são descontados.** Eles pagaram o trecho
+*anterior* a ele, e mantê-los infla o denominador — o km/l sairia sistematicamente baixo. Com
+`n` abastecimentos há `n − 1` intervalos, e é sobre eles que a conta roda. Menos de dois
+abastecimentos, ou odômetro que não avançou, devolve **nulo**: sem intervalo não existe
+consumo, e zero afirmaria que o veículo rodou sem gastar.
+
+**O total da frota soma km e litros antes de dividir**, uma vez só — média das médias faria
+um veículo com dois abastecimentos pesar igual a um com trinta.
+
+**`SomarConsumoPorVeiculoAsync` agrega em memória**, sobre uma projeção de cinco colunas. Não
+é preguiça: descontar o primeiro abastecimento é window function, exatamente o que o EF não
+traduz — a mesma lição que `TraducaoDeConsultaTests` guarda sobre a união das origens. O
+conjunto é limitado pelo período do filtro. A ordenação é **por odômetro, não por data**:
+lançamento retroativo é aceito pelo sistema, então a ordem cronológica não é a ordem da
+estrada, e ordenar por data produziria km negativo.
+
+**O filtro de `Origem` é ignorado**, como em `SomarKmPorVeiculoAsync` — o consumo do veículo é
+o mesmo, esteja a tela recortada em manutenção ou não. Por isso o pivot do handler inclui no
+resultado o veículo que tem consumo mas **nenhum custo no recorte**: sem isso a coluna de km/l
+sumiria e deixaria de fechar com o total da frota.
+
+**Três limitações conhecidas, e nenhuma delas é tratada no modelo:**
+
+- **Abastecimento parcial.** O método pressupõe tanques comparáveis. Quem põe R$ 50 em vez de
+  encher infla o km/l daquele lançamento e deflaciona o do seguinte. Não há flag de "tanque
+  cheio" — a tela chama o número de estimativa por causa disto.
+- **Não-combustível no catálogo.** ARLA 32 saiu de `TiposCombustivelPadrao` justamente por
+  isso (é reagente, não combustível: um lançamento dele parte o trecho em dois e estraga o
+  km/l do próximo), mas nada impede a empresa de cadastrar um à mão. Um booleano
+  `EntraNoConsumo` no catálogo resolveria; foi avaliado e deixado de fora por ora.
+- **Veículo flex ou a GNV.** Duas correntes de combustível no mesmo odômetro viram uma só, e
+  a média mistura as duas. Mesma natureza do caso acima.
+
+**A união é feita em memória, não com `Concat`.** A primeira implementação usava `UNION ALL`; o EF Core não traduz operação de conjunto depois de uma projeção com constantes — e a origem e a categoria são literais —, nem ordena por elas. `TraducaoDeConsultaTests` provou os dois erros contra o banco de verdade e é onde descobrir se um dia mudar. O custo disso é limitado e não é "trazer tudo": nenhuma linha além da `pagina × tamanhoPagina`-ésima de cada origem pode entrar na página pedida, então cada consulta lê no máximo isso — e o validator ainda limita a página a 100. Os agregados (`SomarPorVeiculoAsync`, `SomarPorMesAsync`) rodam **um `GroupBy` por tabela**, no banco; quem pivota as origens em colunas é o handler, onde a divisão do R$/km também mora — é lá que está o zero no denominador.
+
+**A ordenação desempata por origem antes do id.** Ids de tabelas diferentes colidem; sem isso a ordem é instável e a paginação repete linhas entre páginas.
+
+**Esta foi a primeira agregação servida pela API.** Até ela não havia um `Sum`/`GroupBy` em `apps/api/src` — todo KPI do dashboard era `reduce` sobre listas inteiras baixadas do servidor. Desde 28/09/2026 o dashboard consome este resumo três vezes (mês até hoje, o mesmo período do mês passado e os últimos 6 meses) e não soma nada no cliente.
+
+**`Roles.Gestao` no controller** barra o Motorista na porta, e é por isso que os handlers **não** replicam a regra de `ManutencaoVisibilidade.SemCustoParaMotorista`. Se um dia a tela abrir para a role Motorista, o recorte tem que voltar para dentro dos handlers — um total de frota vazaria sem ele.
+
+**Índice:** `(EmpresaId, DataRealizacao)` filtrado em `"DataRealizacao" IS NOT NULL` (migration `IndiceDeCustoPorPeriodo`). O índice que já existia em `Manutencao` não tem data, e pendência é a maioria das linhas.
+
+#### Evolução prevista: despesas avulsas — **implementada em 01/09/2026**
+
+Esta seção previa a entidade `Despesa` como próximo passo; ela existe desde 01/09/2026, na **§ 8.3** logo abaixo. O que o esboço acertou: `OrigemCusto` ganhou um valor, o repositório ganhou uma terceira perna, e **`LancamentoCustoResponse` não mudou** — a tela de custos absorveu a origem nova somando uma coluna, não sendo reescrita. É o que o discriminador comprou.
+
+O esboço errou em três pontos, corrigidos na implementação e explicados na § 8.3: `RotaId` e `UsuarioId` não se sustentaram, e `VeiculoId` virou obrigatório.
+
+### 8.3 Despesa — a terceira origem de custo (01/09/2026)
+
+Custos que **não têm tela própria**: pedágio, multa, IPVA, seguro, licenciamento. Antes deles, o gasto ou era lançado como "observação" em outro registro ou simplesmente não entrava no sistema.
+
+**Aqui a decisão de armazenamento se inverte em relação à § 8.2.** Abastecimento e manutenção têm tela própria, e por isso uma tabela de custos seria espelho — o argumento que sustenta o read model. `Despesa` não espelha nada: é a **fonte de verdade** de um lançamento que não existe em lugar nenhum. Por isso é entidade de escrita completa, com CRUD, validators, auditoria e tela.
+
+O read model não sabe da diferença: as três origens entram como `LancamentoCusto` e o resto do sistema as trata igual.
+
+**Modelo:**
+
+```
+TipoDespesa   Id, EmpresaId, Nome (100), Ativo, DataInclusao
+              índice único (EmpresaId, Nome) — gêmeo de TipoManutencao
+
+Despesa       Id, EmpresaId
+              VeiculoId     : int    OBRIGATÓRIO
+              TipoDespesaId : int
+              MotoristaId   : int?   nulo = não atribuível (IPVA, seguro); multa tem dono
+              Valor         : decimal(10,2)
+              DataDespesa   : DateTime
+              Observacao    : string? (500)
+              DataInclusao
+              índices (EmpresaId, VeiculoId, DataDespesa) e (EmpresaId, MotoristaId, DataDespesa)
+              FKs todas Restrict — despesa é histórico financeiro, não some em cascata
+```
+
+**Os três desvios do esboço, e por quê:**
+
+- **Sem `RotaId`.** No abastecimento ele é derivado da rota aberta *de quem está dirigindo*; com lançamento só pela gestão não existe esse gatilho, e nenhum consumidor o lê (o read model de custos ignora `RotaId`). Seria derivação sem leitor.
+- **Sem `UsuarioId` ("quem lançou").** O abastecimento o carrega porque o **recorte** do motorista depende de separar dono de digitador. Aqui não há recorte, e a auditoria já registra o autor — a coluna seria duplicata do `LogAuditoria`.
+- **`VeiculoId` obrigatório**, e não nulável para "custo da frota". IPVA, seguro e licenciamento já são por veículo na prática, então perde-se pouco; em troca, o resumo por veículo continua fechando com os totais e o R$/km funciona sem caso especial. Custo genuinamente da frota (taxa administrativa) ainda não tem lugar — quando tiver, volta a discussão da linha "Sem veículo".
+
+**Diferença que importa no filtro por motorista:** despesa **tem** motorista quando é multa, então o recorte por pessoa a inclui (filtrada pela coluna); as sem dono ficam de fora. A manutenção continua sendo a **única** origem que some inteira nesse recorte. O aviso da tela de custos diz isso.
+
+**Resolução de FK**, no molde de `CreateManutencaoHandler`: veículo, tipo e motorista passam por `GetByIdAsync(id, currentUser.EmpresaId)` antes de gravar — id de outra empresa "não existe" e cai em 422. O motorista usa `GetMotoristaByIdAsync`, que filtra empresa **e** role.
+
+**Tipo inativo:** o create recusa (422 `O tipo "X" está inativo e não aceita lançamentos novos.`); o update só recusa quando o `TipoDespesaId` **muda** — senão corrigir o valor de uma despesa antiga quebraria por causa de um tipo aposentado depois do lançamento. Tipo em uso não é excluído, é inativado: some do seletor e continua nomeando o histórico.
+
+**O `PUT` altera tudo**, inclusive veículo, tipo e motorista — divergência consciente do abastecimento, onde só valor/data/observação são editáveis. Lá a trava existe porque a troca reatribuiria um gasto sujeito a recorte por dono; aqui não há recorte, e a auditoria grava o diff campo a campo. Exigir "exclua e lance de novo" para corrigir um IPVA digitado no veículo errado seria atrito sem regra por trás.
+
+**Papéis:**
+
+| Ação | Quem |
+|---|---|
+| Ler e lançar despesa | Admin, Supervisor, Operador (`Roles.Gestao`) |
+| Excluir despesa | Admin, Supervisor |
+| Ler o catálogo | `Roles.Gestao` |
+| Criar/editar/excluir tipo | Admin, Supervisor |
+
+O Motorista recebe **403** em `/despesa` e `/tipodespesa`: o lançamento é administrativo e ele não vê valor de frota. Como em `/custo`, é isso que dispensa os handlers de replicar a regra de `ManutencaoVisibilidade.SemCustoParaMotorista`.
+
+**RN08 ganhou a terceira guarda:** veículo com despesa lançada não é excluído (422). As FKs são `Restrict`, então sem a guarda o usuário veria 500 em vez da explicação. A ordem das guardas é rota → abastecimento → despesa, e a primeira que bater é a que responde.
+
+**Catálogo semeado em dois lugares.** `BackofficeService.SemearTiposDespesaAsync` cobre empresa nova, a partir de `TiposDespesaPadrao.Itens` (Pedágio, Multa de trânsito, IPVA, Licenciamento, Seguro, Lavagem, Estacionamento). As empresas que já existiam foram semeadas por um `INSERT` no `Up` da migration `DespesasAvulsas` — sem ele, todo cliente atual abriria a tela com o seletor de tipo vazio, sem conseguir lançar nada. ⚠️ **A lista está duplicada nos dois lugares de propósito**: migration é artefato histórico e não acompanha mudanças na constante. Acrescentar um item em `TiposDespesaPadrao` vale só para empresa nova.
+
+**No read model de custos** (`CustoRepository`), a despesa é a terceira perna: `Categoria` sai de `TipoDespesa.Nome`, o período recorta por `DataDespesa`, e o desempate da ordenação (`Data` desc → `Origem` → `OrigemId` desc) agora separa **três** fontes de id colidente. `ResumoCustosResponse`, `CustoPorVeiculoResponse` e `CustoPorMesResponse` ganharam `TotalDespesa`.
 
 ### 9. Auditoria — quem alterou o quê
 
 Tabela `LogAuditoria`, **append-only**: só insert e select. Não existe endpoint de update nem de delete, nem para o Admin, e o repositório também não os expõe.
 
 **Escopo.** Administração (usuário, convite) **e** domínio (veículo, rota, manutenção, tipo de manutenção). **Login/logout ficam de fora** de propósito: seria o maior volume da tabela e o menor valor — continuam só no Serilog.
+
+**A exceção do vocabulário: `Rota` + `Calculou` (08/09/2026).** É a única linha da trilha que não
+descreve mudança de estado nosso — registra uma **chamada cobrada** à Google Routes API, para que
+exista de onde apurar custo por empresa. `EntidadeId` é nulo (a rota ainda não existe: o cálculo a
+precede) e a descrição carrega as coordenadas e a distância. `EmpresaId`, autor e data/hora saem do
+`AuditoriaService`, como em todo o resto.
+
+⚠️ **Tensão conhecida, deixada em aberto de propósito.** Pelo mesmo argumento que mantém
+login/logout fora da tabela — muito volume, pouco valor —, um cálculo por interação de mapa pode
+inundar a trilha que o Admin lê em `/auditoria`. Se o volume incomodar, o caminho é mover a
+apuração de custo para uma contagem própria (ou só para o Serilog) em vez de afinar o filtro da
+tela. **Só o sucesso é registrado**: falha de rede não é chamada faturada — mas um `200` sem
+trajeto **é** cobrado e hoje não entra, que é a lacuna conhecida da apuração.
 
 **Como é capturado.** Explicitamente, no handler/serviço, via `IAuditoriaService.RegistrarAsync` chamado ao final do caminho feliz — 20 pontos, listados abaixo. Não é um interceptor do EF: o objetivo é registrar a **intenção de negócio** ("Encerrou a rota"), que um `UPDATE Rota` não expressa, e evitar o ruído de `RefreshTokenHash` mudando a cada login.
 
@@ -210,7 +493,7 @@ Nome, e-mail e papel de quem agiu ficam **desnormalizados** na linha — o log �
 1. **Auditoria não derruba negócio.** `AuditoriaService` roda depois de o repositório já ter feito `SaveChangesAsync`, portanto fora daquela transação, e engole a exceção em log de erro. Perder uma linha de trilha é ruim; devolver 500 numa edição que já foi persistida é pior.
 2. **Nada de segredo no diff.** Ele é montado à mão, campo a campo, por `AlteracoesBuilder` — chamado **antes** de a entidade ser mutada, já que os handlers a alteram in-place. Hash de senha, refresh token, token de reset e de convite nunca entram.
 
-**Os 23 pontos de registro:**
+**Os 35 pontos de registro:**
 
 | Origem | Entidade · Ação | Diff |
 |---|---|---|
@@ -221,8 +504,12 @@ Nome, e-mail e papel de quem agiu ficam **desnormalizados** na linha — o log �
 | `DeleteRotaHandler` | Rota · Excluiu | — |
 | `Create/Update/DeleteManutencaoHandler` | Manutencao · Criou/Atualizou/Excluiu | ✅ no update |
 | `ConcluirManutencaoHandler` | Manutencao · Concluiu | ✅ status, km, custo, odômetro |
-| `Create/Update/DeleteAbastecimentoHandler` | Abastecimento · Criou/Atualizou/Excluiu | ✅ no update (valor, data, observação) |
+| `Create/Update/DeleteAbastecimentoHandler` | Abastecimento · Criou/Atualizou/Excluiu | ✅ no create (avanço do odômetro) e no update (combustível, posto, litros, R$/l, valor, odômetro, NF, frentista, data, observação) |
 | `Create/Update/DeleteTipoManutencaoHandler` | TipoManutencao · Criou/Atualizou/Excluiu | ✅ no update |
+| `Create/Update/DeleteDespesaHandler` | Despesa · Criou/Atualizou/Excluiu | ✅ no update (veículo, tipo e motorista pelo nome, não pelo id) |
+| `Create/Update/DeleteTipoDespesaHandler` | TipoDespesa · Criou/Atualizou/Excluiu | ✅ no update |
+| `Create/Update/DeleteTipoCombustivelHandler` | TipoCombustivel · Criou/Atualizou/Excluiu | ✅ no update |
+| `Create/Update/DeletePostoHandler` | Posto · Criou/Atualizou/Excluiu | ✅ no update (nome, CNPJ, cidade, ativo) |
 | `UsuarioService.AtualizarPerfilAsync` | Usuario · Atualizou | ✅ nome, CPF e nascimento — o ator é também o objeto |
 | `UsuarioService.AlterarRoleAsync` | Usuario · AlterouPermissao | ✅ papel anterior → novo |
 | `UsuarioService.DefinirAtivoAsync` | Usuario · Ativou/Desativou | — |
@@ -242,9 +529,27 @@ Dois casos fogem do padrão:
 
 ### Paginação — `ResultadoPaginado<T>`
 
-`/auditoria` é o **primeiro e único endpoint paginado** do sistema; as demais listas ainda vêm inteiras. `ResultadoPaginado<T>` (`Domain/Common`) traz `Itens`, `Pagina`, `TamanhoPagina`, `Total` e `TotalPaginas`, e vai **dentro** de `ApiResponse<T>.Dados` — o envelope não muda: `ApiResponse<ResultadoPaginado<LogAuditoriaResponse>>`.
+**Seis endpoints paginam**: `/auditoria` e `/custo` desde sempre, e desde 04/09/2026 as quatro listas que crescem sem teto com o tempo — `/abastecimento`, `/despesa`, `/manutencao` e `/rota` (mais `/rota/minhas`). As demais (veículo, motorista, usuário, convite, catálogos) **continuam vindo inteiras de propósito**: são limitadas pelo tamanho da frota e da equipe, e paginá-las obrigaria a criar um endpoint de opções para cada seletor do front.
 
-`ConsultarAuditoriaValidator` impõe teto de **100** por página. Sem ele, um `tamanhoPagina=999999` materializaria a trilha inteira da empresa em memória. Reutilize esse tipo ao paginar qualquer outra lista.
+`ResultadoPaginado<T>` (`Domain/Common`) traz `Itens`, `Pagina`, `TamanhoPagina`, `Total` e `TotalPaginas`, e vai **dentro** de `ApiResponse<T>.Dados` — o envelope não muda: `ApiResponse<ResultadoPaginado<LogAuditoriaResponse>>`.
+
+**A receita, ao paginar uma lista nova.** O request implementa `IRequestPaginado` (`Application/Common/RegrasDePaginacao.cs`) e o validator chama `this.AplicarRegrasDePaginacao()`, que impõe página > 0 e o teto de **100** por página num lugar só — sem ele, um `tamanhoPagina=999999` materializaria o histórico inteiro da empresa em memória. O filtro vira um record em `Domain/Common` (`FiltroAbastecimento`, `FiltroDespesa`, …) **sem `EmpresaId`**, que continua sendo parâmetro separado do repositório para que nenhum caminho consiga consultar sem escopo.
+
+⚠️ **Ordenação total é requisito, não capricho.** `Skip`/`Take` sobre uma ordenação ambígua faz a página 2 repetir ou pular linhas que a 1 já mostrou — todos os repositórios paginados desempatam por `Id` no fim do `OrderBy`. `TraducaoDeConsultaTests.Consultar_DevePaginarSemRepetirNemPularLinhas` prova isso contra o Postgres de verdade, com todas as linhas na mesma data.
+
+⚠️ **Recorte de segurança entra no filtro, não depois da consulta.** Em `/abastecimento` o handler sobrescreve `MotoristaId` com o `sub` do token **antes** de montar o `FiltroAbastecimento`; aplicado depois, o `COUNT` da paginação — e o `/resumo`, que sai do mesmo filtro — devolveriam ao motorista o volume da empresa inteira.
+
+### Os agregados que a paginação exigiu
+
+Com uma página só na mão, o front não consegue mais somar o que exibe. Três endpoints preenchem a lacuna, todos com **os mesmos filtros da listagem** e ignorando a paginação:
+
+| Endpoint | Devolve | Serve |
+|---|---|---|
+| `GET /abastecimento/resumo` | `{quantidade, valorTotal}` | o rodapé "N lançamentos · Total: R$ X" — ⚠️ **obedece ao mesmo recorte de motorista** da listagem |
+| `GET /despesa/resumo` | `{quantidade, valorTotal}` | idem, em `/despesas` |
+| `GET /rota/resumo?de=&ate=` | `{quantidade, kmTotal}` | o KPI "Km rodado" do dashboard e o "Km rodado no mês" de `/minhas-rotas` (rotas **encerradas** no período, recorte por `DataFim`). ⚠️ Desde 28/09/2026 é **aberto a todos os papéis** e, para o Motorista, o handler passa o `UsuarioId` do token ao repositório — ele soma só as próprias rotas |
+
+Há ainda um quarto, que não é agregado mas nasceu do mesmo problema: **`GET /abastecimento/anterior?veiculoId=&odometro=&ignorarId=`** devolve o abastecimento de maior odômetro **abaixo** do informado — a referência da estimativa de km/l, que antes o front achava baixando o histórico inteiro do veículo. Ele enxerga o histórico **do veículo**, sem recorte por motorista (o consumo é do caminhão, não de quem dirigiu), e por isso a resposta carrega **só data e odômetro**: devolver valor ou nome transformaria a correção num vazamento de gasto alheio. É o que consertou o km/l inflado que o motorista via quando o abastecimento anterior daquele caminhão tinha sido lançado por outra pessoa.
 
 ## Endpoints
 
@@ -256,20 +561,34 @@ Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou 
 | POST | `/auth/logout` | autenticado |
 | POST | `/backoffice/empresa` | `X-Backoffice-Key` |
 | GET/POST/DELETE | `/convite`, `/convite/{id}` | Admin |
+| POST | `/convite/consultar` — empresa, e-mail e papel do convite, sem consumi-lo | anônimo |
 | POST | `/convite/aceitar` | anônimo |
 | GET | `/usuario` · PUT `/usuario/{id}/role` · `/{id}/ativo` | Admin |
 | GET/PUT | `/usuario/perfil` — o próprio cadastro (nome, CPF, nascimento); alvo pelo `sub` do token | **qualquer autenticado** (inclui Motorista) |
-| GET | `/auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` — **único endpoint paginado**; somente leitura | Admin |
+| GET | `/auditoria?pagina=&tamanhoPagina=&entidade=&acao=&usuarioId=&de=&ate=` — paginado; somente leitura | Admin |
+| GET | `/abastecimento?pagina=&tamanhoPagina=&…` · `/abastecimento/resumo` · `/abastecimento/anterior` — paginado | autenticado (recorte por motorista) |
+| GET | `/despesa?pagina=&tamanhoPagina=&…` · `/despesa/resumo` — paginado | Admin, Supervisor, Operador |
+| GET | `/manutencao?pagina=&tamanhoPagina=&…` — paginado | autenticado |
+| GET | `/manutencao/resumo` — `{atrasadas, vencendo, urgentes}` para o bloco "Precisa de atenção" do dashboard | Admin, Supervisor, Operador |
+| GET | `/rota?pagina=&tamanhoPagina=&ativo=` · `/rota/minhas` — paginado | gestão / Motorista em `minhas` |
+| GET | `/rota/resumo?de=&ate=` | qualquer autenticado — o Motorista recebe só o km das rotas dele |
+| GET | `/custo?pagina=&tamanhoPagina=&veiculoId=&motoristaId=&origem=&de=&ate=` — paginado; read model das duas origens, sem tabela própria | Admin, Supervisor, Operador |
+| GET | `/custo/resumo?veiculoId=&motoristaId=&origem=&de=&ate=` — **a única agregação da API**: totais por origem, por veículo (com R$/km **e km/l**) e por mês | Admin, Supervisor, Operador |
 | GET | `/veiculo` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**) — a resposta traz `emRota` derivado |
 | GET | `/manutencao?veiculoId=&status=&de=&ate=` (+ `/{id}`) | qualquer autenticado (**inclui Motorista**, sem `custo`) |
-| GET/POST/PUT | `/abastecimento?veiculoId=&motoristaId=&de=&ate=` (+ `/{id}`) | qualquer autenticado — o Motorista só alcança o que é dele, e `motoristaId` é ignorado para ele |
+| GET/POST/PUT | `/abastecimento?veiculoId=&motoristaId=&de=&ate=` (+ `/{id}`) — apontamento fiscal; `valor` **não** entra no corpo, é derivado de litros × R$/l | qualquer autenticado — o Motorista só alcança o que é dele, e `motoristaId` é ignorado para ele |
+| GET/POST/PUT | `/despesa?veiculoId=&motoristaId=&tipoDespesaId=&de=&ate=` (+ `/{id}`) — custo avulso; DELETE Admin+Supervisor | Admin, Supervisor, Operador |
+| GET | `/tipodespesa?apenasAtivos=` (+ `/{id}`) — catálogo; POST/PUT/DELETE Admin+Supervisor | Admin, Supervisor, Operador |
+| GET | `/tipocombustivel?apenasAtivos=` (+ `/{id}`) — catálogo; POST/PUT/DELETE Admin+Supervisor | **qualquer autenticado** (inclui Motorista): ele precisa do catálogo para lançar |
+| GET | `/posto?apenasAtivos=` (+ `/{id}`) — rede credenciada; POST/PUT/DELETE Admin+Supervisor | **qualquer autenticado** (inclui Motorista) |
 | GET | `/motorista` (+ `/{id}`) — **somente leitura**: os usuários com a role Motorista | Admin, Supervisor, Operador |
 | GET | `/rota`, `/tipomanutencao?apenasAtivos=` (+ `/{id}`) | Admin, Supervisor, Operador |
 | GET | `/rota/minhas` | **Motorista** (rotas do próprio, pelo `sub` do token) |
 | POST/PUT | `/veiculo`, `/tipomanutencao`, `/manutencao`, `/manutencao/{id}/concluir` | Admin, Supervisor |
 | PUT | `/rota/{id}` | Admin, Supervisor, Operador |
 | POST | `/rota`, `/rota/{id}/encerrar` | qualquer autenticado — o Motorista só alcança as próprias rotas |
-| DELETE | `/{qualquer}/{id}` (não há DELETE de motorista) — `/veiculo/{id}` responde 422 se houver rota associada (RN08) | **Admin** (único que exclui) |
+| POST | `/rota/calcular` — distância/duração/polyline pela Google Routes API; **não persiste**, e a chamada é cobrada | qualquer autenticado |
+| DELETE | `/{qualquer}/{id}` (não há DELETE de motorista) — `/veiculo/{id}` responde 422 se houver rota associada (RN08) | **Admin, Supervisor** — exceto `/convite/{id}`, que é Admin |
 | GET | `/health`, `/health/detail`, `/scalar/v1` | aberto |
 
 ## Infra e config
@@ -311,6 +630,31 @@ proxy reverso e termina o TLS com certificado automático do Let's Encrypt, subs
 
 O roteiro de subida e as variáveis obrigatórias estão em [deploy.md](deploy.md); o modelo de
 configuração, em `.env.example` na raiz.
+
+**Como um segredo chega ao código.** Não há `IOptions<T>` no projeto: o valor sai do
+`IConfiguration` — user-secrets em desenvolvimento, variável de ambiente `Secao__Chave` em
+produção — e é lido de duas formas, conforme o caso. A integração com o Resend lê
+`configuration["Resend:ApiKey"]` direto no serviço; quando o valor é usado em mais de um lugar
+ou merece nome, vira um `sealed record` registrado como singleton no `Program.cs` — é o padrão
+de `FrontendSettings` e de `GoogleRoutesSettings` (`GoogleRoutes:ApiKey`, chave de servidor da
+Routes API, em `src/Domain/Common` porque quem a consumirá é a Infrastructure, que não enxerga
+a Application). A chave do front é outra e não se confunde com esta — ver
+`VITE_GOOGLE_MAPS_KEY` em [contexto-web.md](contexto-web.md).
+
+**`GoogleRoutes:ApiKey` fica FORA de `ValidarConfiguracaoDeProducao` — decisão revisada e
+mantida (08/09/2026).** Quando o `GoogleRoutesClient` ainda não existia, a ausência da chave era
+uma pendência a reavaliar. Com o cliente no ar, a pergunta foi reaberta e **respondida em
+definitivo: ela não entra**. A regra geral da seção acima — "configuração obrigatória em produção
+derruba o boot" — não se aplica porque o cálculo de trajeto **não é obrigatório para a aplicação
+funcionar**: é um recurso em desenvolvimento, e todo o resto do sistema (rota, abastecimento,
+manutenção, custo, auditoria) opera sem ele.
+
+O comportamento correto na falta da chave é o que já está implementado: `GoogleRoutesClient`
+devolve `ResultadoCalculoRota.Falha`, o handler converte em `InvalidOperationException` e o
+usuário recebe **422 naquela requisição** — o recurso indisponível, o sistema de pé. Derrubar o
+boot faria uma feature inacabada bloquear o deploy de tudo o mais, que é exatamente o contrário
+do que a validação de produção existe para proteger. **Não reabra sem que o cálculo de trajeto
+tenha virado caminho obrigatório de alguma tela.**
 
 **Quatro decisões que não são óbvias e têm motivo:**
 
@@ -378,7 +722,7 @@ Existe porque `dotnet test` da suíte unitária **não prova nada** sobre provid
 |---|---|
 | `PoliticaDeDataTests` | os três Kinds (`Local` do `DateTime.Now`, `Unspecified` do front, `Utc` como regressão) gravam na mesma coluna; o relógio de parede sobrevive ao round-trip e volta `Unspecified`; a coluna é mesmo `timestamp without time zone` |
 | `SchemaERestricoesTests` | as migrations criam as 9 tabelas; lookup de e-mail ignora caixa; índice filtrado `(EmpresaId, CPF)` aceita vários nulos, barra duplicata e permite o mesmo CPF em empresas diferentes; `Usuario.Email` é único **global**; `numeric(10,2)` preserva centavo |
-| `TraducaoDeConsultaTests` | filtro `de`/`ate` inclui o próprio dia final; `Status` persiste como texto e volta como enum; o `OrderBy` com condicional traz pendentes primeiro apesar do texto; `GetAllAsync` recorta pela empresa |
+| `TraducaoDeConsultaTests` | filtro `de`/`ate` inclui o próprio dia final; `Status` persiste como texto e volta como enum; o `OrderBy` com condicional traz pendentes primeiro apesar do texto; `GetAllAsync` recorta pela empresa. **Custos:** as duas origens viram uma lista só, a paginação não repete linha entre elas, o recorte por motorista descarta manutenção, o `GroupBy` com navegação na chave traz nome e placa, e as cinco consultas do read model recortam pela empresa |
 
 Dois detalhes de infraestrutura, ambos comentados no código: o **resource reaper do Testcontainers fica desligado** (no Docker Desktop em Windows ele falha ao baixar e derruba a suíte antes do primeiro teste — a fixture descarta o container por conta própria), e o gerador de valores únicos é **compartilhado entre as classes**, porque elas dividem o mesmo banco e contadores separados colidem no índice único de e-mail.
 

@@ -6,6 +6,7 @@ using Frota360.Application.UseCases.Manutencoes.Commands.CreateManutencao;
 using Frota360.Application.UseCases.Manutencoes.Commands.DeleteManutencao;
 using Frota360.Application.UseCases.Manutencoes.Commands.UpdateManutencao;
 using Frota360.Application.UseCases.Manutencoes.Queries.GetAllManutencoes;
+using Frota360.Application.UseCases.Manutencoes.Queries.GetResumoManutencoes;
 using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Enums;
@@ -264,15 +265,17 @@ namespace Frota360.Tests.UseCases.Manutencoes
         [Fact]
         public async Task GetAll_DeveRepassarFiltrosEMapear()
         {
-            _repository.GetAllAsync(1, 1, StatusManutencao.Pendente)
-                .Returns(new[] { NovaManutencao(1), NovaManutencao(2) });
+            _repository.ConsultarAsync(1, Arg.Is<FiltroManutencao>(f =>
+                    f.VeiculoId == 1 && f.Status == StatusManutencao.Pendente))
+                .Returns((new[] { NovaManutencao(1), NovaManutencao(2) }, 2));
 
             var handler = new GetAllManutencoesHandler(_repository, _currentUser, NullLogger<GetAllManutencoesHandler>.Instance);
 
-            var resposta = (await handler.HandleAsync(new GetAllManutencoesQuery(1, StatusManutencao.Pendente))).ToList();
+            var resposta = await handler.HandleAsync(new GetAllManutencoesQuery(
+                ConsultaManutencao(veiculoId: 1, status: StatusManutencao.Pendente)));
 
-            Assert.Equal(2, resposta.Count);
-            await _repository.Received(1).GetAllAsync(1, 1, StatusManutencao.Pendente);
+            Assert.Equal(2, resposta.Itens.Count());
+            Assert.Equal(2, resposta.Total);
         }
 
         [Fact]
@@ -281,14 +284,46 @@ namespace Frota360.Tests.UseCases.Manutencoes
             var de = new DateTime(2026, 8, 1);
             var ate = new DateTime(2026, 8, 11);
 
-            _repository.GetAllAsync(1, null, null, de, ate).Returns([]);
+            ConsultaManutencaoVazia();
 
             var handler = new GetAllManutencoesHandler(_repository, _currentUser, NullLogger<GetAllManutencoesHandler>.Instance);
 
-            await handler.HandleAsync(new GetAllManutencoesQuery(De: de, Ate: ate));
+            await handler.HandleAsync(new GetAllManutencoesQuery(ConsultaManutencao(de: de, ate: ate)));
 
-            await _repository.Received(1).GetAllAsync(1, null, null, de, ate);
+            await _repository.Received(1).ConsultarAsync(1,
+                Arg.Is<FiltroManutencao>(f => f.De == de && f.Ate == ate));
         }
+
+        [Fact]
+        public async Task GetAll_DeveRepassarAPaginacaoEEcoarNaResposta()
+        {
+            ConsultaManutencaoVazia();
+
+            var handler = new GetAllManutencoesHandler(_repository, _currentUser, NullLogger<GetAllManutencoesHandler>.Instance);
+
+            var pagina = await handler.HandleAsync(new GetAllManutencoesQuery(
+                ConsultaManutencao(pagina: 4, tamanhoPagina: 10)));
+
+            await _repository.Received(1).ConsultarAsync(1,
+                Arg.Is<FiltroManutencao>(f => f.Pagina == 4 && f.TamanhoPagina == 10));
+            Assert.Equal(4, pagina.Pagina);
+            Assert.Equal(10, pagina.TamanhoPagina);
+        }
+
+        private static ConsultarManutencoesRequest ConsultaManutencao(int pagina = 1, int tamanhoPagina = 15,
+            int? veiculoId = null, StatusManutencao? status = null, DateTime? de = null, DateTime? ate = null) => new()
+        {
+            Pagina = pagina,
+            TamanhoPagina = tamanhoPagina,
+            VeiculoId = veiculoId,
+            Status = status,
+            De = de,
+            Ate = ate
+        };
+
+        private void ConsultaManutencaoVazia() =>
+            _repository.ConsultarAsync(Arg.Any<int>(), Arg.Any<FiltroManutencao>())
+                .Returns((Array.Empty<Manutencao>(), 0));
 
         /// <summary>
         /// Intervalo invertido devolveria lista vazia sem explicar o porquê — vira 422 com
@@ -300,12 +335,11 @@ namespace Frota360.Tests.UseCases.Manutencoes
             var handler = new GetAllManutencoesHandler(_repository, _currentUser, NullLogger<GetAllManutencoesHandler>.Instance);
 
             var erro = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                handler.HandleAsync(new GetAllManutencoesQuery(
-                    De: new DateTime(2026, 8, 11), Ate: new DateTime(2026, 8, 1))));
+                handler.HandleAsync(new GetAllManutencoesQuery(ConsultaManutencao(
+                    de: new DateTime(2026, 8, 11), ate: new DateTime(2026, 8, 1)))));
 
             Assert.Equal("A data final do período não pode ser anterior à inicial.", erro.Message);
-            await _repository.DidNotReceive().GetAllAsync(
-                Arg.Any<int>(), Arg.Any<int?>(), Arg.Any<StatusManutencao?>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>());
+            await _repository.DidNotReceive().ConsultarAsync(Arg.Any<int>(), Arg.Any<FiltroManutencao>());
         }
 
         [Fact]
@@ -374,5 +408,70 @@ namespace Frota360.Tests.UseCases.Manutencoes
             await _auditoria.DidNotReceive().RegistrarAsync(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int?>(), Arg.Any<string>(), Arg.Any<IEnumerable<AlteracaoCampo>>());
         }
-    }
+
+        private GetResumoManutencoesHandler ResumoHandler() =>
+            new(_repository, _currentUser, NullLogger<GetResumoManutencoesHandler>.Instance);
+
+        [Fact]
+        public async Task Resumo_DeveContarAtrasadasEVencendoEscopadoNaEmpresa()
+        {
+            _repository.ListarPendentesAsync(1).Returns(
+            [
+                NovaManutencao(id: 1, quilometragemPrevista: 60_000, quilometragemVeiculo: 50_000),
+                NovaManutencao(id: 2, quilometragemPrevista: 50_400, quilometragemVeiculo: 50_000),
+                NovaManutencao(id: 3, quilometragemPrevista: 50_500, quilometragemVeiculo: 50_000),
+                NovaManutencao(id: 4, quilometragemPrevista: 49_000, quilometragemVeiculo: 50_000),
+                NovaManutencao(id: 5, quilometragemPrevista: 50_501, quilometragemVeiculo: 50_000)
+            ]);
+
+            var resumo = await ResumoHandler().HandleAsync(new GetResumoManutencoesQuery());
+
+            Assert.Equal(1, resumo.Atrasadas);
+            Assert.Equal(2, resumo.Vencendo);
+            await _repository.Received(1).ListarPendentesAsync(1);
+        }
+
+        [Fact]
+        public async Task Resumo_DeveListarAtrasadasAntesEDentroDeCadaGrupoOMaisUrgente()
+        {
+            _repository.ListarPendentesAsync(1).Returns(
+            [
+                NovaManutencao(id: 1, quilometragemPrevista: 50_300, quilometragemVeiculo: 50_000),
+                NovaManutencao(id: 2, quilometragemPrevista: 49_800, quilometragemVeiculo: 50_000),
+                NovaManutencao(id: 3, quilometragemPrevista: 50_100, quilometragemVeiculo: 50_000),
+                NovaManutencao(id: 4, quilometragemPrevista: 47_000, quilometragemVeiculo: 50_000)
+            ]);
+
+            var resumo = await ResumoHandler().HandleAsync(new GetResumoManutencoesQuery());
+
+            Assert.Equal([4, 2, 3, 1], resumo.Urgentes.Select(m => m.Id));
+        }
+
+        [Fact]
+        public async Task Resumo_DeveVencerPelaDataPrevistaMesmoComKmSobrando()
+        {
+            var vencidaPorData = NovaManutencao(id: 1, quilometragemPrevista: 90_000, quilometragemVeiculo: 50_000);
+            vencidaPorData.DataPrevista = DateTime.Now.Date.AddDays(-1);
+            _repository.ListarPendentesAsync(1).Returns([vencidaPorData]);
+
+            var resumo = await ResumoHandler().HandleAsync(new GetResumoManutencoesQuery());
+
+            Assert.Equal(1, resumo.Atrasadas);
+            Assert.Equal(0, resumo.Vencendo);
+        }
+
+        [Fact]
+        public async Task Resumo_DeveLimitarUrgentesSemLimitarAsContagens()
+        {
+            var atrasadas = Enumerable.Range(1, RegrasDeManutencao.LimiteUrgentes + 3)
+                .Select(id => NovaManutencao(id: id, quilometragemPrevista: 40_000, quilometragemVeiculo: 50_000))
+                .ToList();
+            _repository.ListarPendentesAsync(1).Returns(atrasadas);
+
+            var resumo = await ResumoHandler().HandleAsync(new GetResumoManutencoesQuery());
+
+            Assert.Equal(RegrasDeManutencao.LimiteUrgentes + 3, resumo.Atrasadas);
+            Assert.Equal(RegrasDeManutencao.LimiteUrgentes, resumo.Urgentes.Count());
+        }
+}
 }

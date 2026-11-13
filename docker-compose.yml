@@ -6,6 +6,11 @@
 #     -p 5432:5432 -v pgdata-frota360:/var/lib/postgresql/data -d postgres:17
 #
 # Os dois usam o MESMO volume nomeado, então os dados são os mesmos por qualquer caminho.
+# O compose cria o `pgdata-frota360` se ele ainda não existir (clone limpo) e reaproveita o
+# existente se já houver. O `name:` fixo na declaração é o que garante isso: sem ele, o
+# compose prefixaria o nome do projeto e criaria um volume novo e vazio. Se o volume veio do
+# `docker run`, o compose avisa "volume already exists but was not created by Docker
+# Compose" — é inofensivo.
 # Como ambos publicam a porta 5432, só um pode estar de pé: pare o `pg-frota360`
 # (`docker stop pg-frota360`) antes de `docker compose up -d`.
 #
@@ -37,4 +42,4 @@ services:
 
 volumes:
   pgdata-frota360:
-    external: true
+    name: pgdata-frota360

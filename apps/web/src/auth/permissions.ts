@@ -3,8 +3,8 @@ import type { Role } from '../api/types'
 export const ROLES: Role[] = ['Admin', 'Supervisor', 'Operador', 'Motorista']
 
 export const DESCRICAO_ROLE: Record<Role, string> = {
-  Admin: 'Acesso total: usuários, convites e exclusões.',
-  Supervisor: 'Cadastra e edita veículos, rotas e manutenções.',
+  Admin: 'Acesso total: único a administrar usuários, convites e auditoria.',
+  Supervisor: 'Cadastro completo: cria, edita e exclui veículos, rotas, manutenções e catálogos.',
   Operador: 'Visualiza a frota e gerencia rotas.',
   Motorista: 'Abre e encerra as próprias rotas; vê veículos e manutenções sem editar.',
 }
@@ -25,7 +25,11 @@ export const pode = {
   /** Trilha de auditoria (`/auditoria`): só o Admin enxerga o que a equipe alterou. */
   verAuditoria: (role?: Role) => role === 'Admin',
   editarCadastros: (role?: Role) => role === 'Admin' || role === 'Supervisor',
-  excluir: (role?: Role) => role === 'Admin',
+  /**
+   * Excluir acompanha editar: em toda tela de gestão, quem cadastra também apaga. O que
+   * segue exclusivo do Admin são as telas dele — usuários, convites e auditoria.
+   */
+  excluir: (role?: Role) => role === 'Admin' || role === 'Supervisor',
 
   // ----- Visibilidade de tela -----
   verDashboard: gestao,
@@ -43,6 +47,14 @@ export const pode = {
    * gestão recebe a frota inteira, o motorista só os próprios lançamentos.
    */
   verAbastecimentos: (role?: Role) => role !== undefined,
+  /**
+   * Tela `/custos`: a visão consolidada do que a frota gasta. Só gestão — o endpoint devolve
+   * totais da frota inteira, que é justamente o que o motorista não pode ver (a API já
+   * esconde dele o custo da manutenção).
+   */
+  verCustos: gestao,
+  /** Tela `/despesas`: custos avulsos (pedágio, multa, IPVA). Lançamento administrativo. */
+  verDespesas: gestao,
 
   // ----- Ações -----
   /** Cadastrar, editar e encerrar rota na tela de gestão (`/rotas`). */
@@ -56,6 +68,17 @@ export const pode = {
    * lançamento de outra pessoa (404 para o motorista), não esta entrada.
    */
   lancarAbastecimento: (role?: Role) => role !== undefined,
+  /** Lançar e corrigir despesa — toda a gestão, Operador incluído. */
+  lancarDespesa: gestao,
+  /** Manter o catálogo de tipos de despesa (todos da gestão apenas visualizam). */
+  editarTiposDespesa: (role?: Role) => role === 'Admin' || role === 'Supervisor',
+  /**
+   * Manter o catálogo de combustíveis e a rede credenciada. Só a **tela** é restrita: a
+   * leitura dos dois catálogos é aberta a todos os papéis na API, porque o motorista
+   * precisa deles para preencher o formulário de abastecimento.
+   */
+  editarTiposCombustivel: (role?: Role) => role === 'Admin' || role === 'Supervisor',
+  editarPostos: (role?: Role) => role === 'Admin' || role === 'Supervisor',
 }
 
 /**

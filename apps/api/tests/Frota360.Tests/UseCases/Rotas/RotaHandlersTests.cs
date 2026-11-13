@@ -7,6 +7,7 @@ using Frota360.Application.UseCases.Rotas.Commands.EncerrarRota;
 using Frota360.Application.UseCases.Rotas.Commands.UpdateRota;
 using Frota360.Application.UseCases.Rotas.Queries.GetAllRotas;
 using Frota360.Application.UseCases.Rotas.Queries.GetMinhasRotas;
+using Frota360.Application.UseCases.Rotas.Queries.GetResumoRotas;
 using Frota360.Domain.Common;
 using Frota360.Domain.Entities;
 using Frota360.Domain.Interfaces.Repositories;
@@ -45,8 +46,8 @@ namespace Frota360.Tests.UseCases.Rotas
         {
             Id = id,
             EmpresaId = 1,
-            Origem = "Curitiba",
-            Destino = "São Paulo",
+            EnderecoPartida = "Curitiba",
+            EnderecoChegada = "São Paulo",
             CodigoMotorista = codigoMotorista,
             CodigoVeiculo = codigoVeiculo,
             Ativo = dataFim is null,
@@ -83,8 +84,8 @@ namespace Frota360.Tests.UseCases.Rotas
 
         private static CreateRotaRequest NovaCreateRequest(int kmInicial = 50_000) => new()
         {
-            Origem = "Joinville",
-            Destino = "Blumenau",
+            EnderecoPartida = "Joinville",
+            EnderecoChegada = "Blumenau",
             CodigoMotorista = 2,
             CodigoVeiculo = 3,
             DataInicio = new DateTime(2025, 6, 1),
@@ -93,8 +94,8 @@ namespace Frota360.Tests.UseCases.Rotas
 
         private static UpdateRotaRequest NovaUpdateRequest() => new()
         {
-            Origem = "Curitiba",
-            Destino = "Florianópolis",
+            EnderecoPartida = "Curitiba",
+            EnderecoChegada = "Florianópolis",
             CodigoMotorista = 1,
             CodigoVeiculo = 1,
             DataInicio = new DateTime(2024, 1, 1)
@@ -120,8 +121,8 @@ namespace Frota360.Tests.UseCases.Rotas
             var resposta = await handler.HandleAsync(new CreateRotaCommand(NovaCreateRequest()));
 
             Assert.Equal(8, resposta.Id);
-            Assert.Equal("Joinville", resposta.Origem);
-            Assert.Equal("Blumenau", resposta.Destino);
+            Assert.Equal("Joinville", resposta.EnderecoPartida);
+            Assert.Equal("Blumenau", resposta.EnderecoChegada);
             Assert.Equal(50_000, resposta.KmInicial);
             Assert.Null(resposta.KmFinal);
             Assert.Null(resposta.KmPercorrido);
@@ -236,7 +237,69 @@ namespace Frota360.Tests.UseCases.Rotas
         // ----------------------------------------------------------------- Update
 
         [Fact]
-        public async Task Update_QuandoExiste_DeveAtualizarERetornarResposta()
+        public async Task Create_SemTracado_NaoDeveCarimbarDataCalculoRota()
+        {
+            _usuarioRepository.GetMotoristaByIdAsync(2, 1).Returns(NovoMotorista(2));
+            _veiculoRepository.GetByIdAsync(3, 1).Returns(NovoVeiculo(3));
+            _repository.AddAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
+
+            await CriarCreateHandler().HandleAsync(new CreateRotaCommand(NovaCreateRequest()));
+
+            // Sem a data, distância 0 continua legível como "não calculado".
+            await _repository.Received(1).AddAsync(Arg.Is<Rota>(
+                r => r.DataCalculoRota == null && r.DistanciaMetros == 0 && r.PolylineCodificada == null));
+        }
+
+        [Fact]
+        public async Task Create_ComTracado_DevePersistirECarimbarDataCalculoRota()
+        {
+            _usuarioRepository.GetMotoristaByIdAsync(2, 1).Returns(NovoMotorista(2));
+            _veiculoRepository.GetByIdAsync(3, 1).Returns(NovoVeiculo(3));
+            _repository.AddAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
+
+            var request = NovaCreateRequest();
+            request.LatitudePartida = -26.3m;
+            request.LongitudePartida = -48.8m;
+            request.LatitudeChegada = -26.9m;
+            request.LongitudeChegada = -49.0m;
+            request.DistanciaMetros = 108_000;
+            request.DuracaoEstimadaSegundos = 5_400;
+            request.PolylineCodificada = "abc123";
+
+            await CriarCreateHandler().HandleAsync(new CreateRotaCommand(request));
+
+            await _repository.Received(1).AddAsync(Arg.Is<Rota>(
+                r => r.DistanciaMetros == 108_000
+                     && r.DuracaoEstimadaSegundos == 5_400
+                     && r.PolylineCodificada == "abc123"
+                     && r.LatitudePartida == -26.3m
+                     && r.DataCalculoRota != null));
+        }
+
+        [Fact]
+        public async Task Update_SemTracadoNoCorpo_NaoDeveApagarOTracadoJaCalculado()
+        {
+            var rota = NovaRota();
+            rota.DistanciaMetros = 108_000;
+            rota.DuracaoEstimadaSegundos = 5_400;
+            rota.PolylineCodificada = "abc123";
+            rota.DataCalculoRota = new DateTime(2026, 9, 8);
+
+            _repository.GetByIdAsync(7, 1).Returns(rota);
+            _usuarioRepository.GetMotoristaByIdAsync(1, 1).Returns(NovoMotorista(1));
+            _veiculoRepository.GetByIdAsync(1, 1).Returns(NovoVeiculo(1));
+            _repository.UpdateAsync(Arg.Any<Rota>()).Returns(ci => ci.Arg<Rota>());
+
+            // Edição que mexe só no texto: o corpo não carrega distância.
+            await CriarUpdateHandler().HandleAsync(new UpdateRotaCommand(7, NovaUpdateRequest()));
+
+            Assert.Equal(108_000, rota.DistanciaMetros);
+            Assert.Equal("abc123", rota.PolylineCodificada);
+            Assert.Equal(new DateTime(2026, 9, 8), rota.DataCalculoRota);
+        }
+
+        [Fact]
+                public async Task Update_QuandoExiste_DeveAtualizarERetornarResposta()
         {
             _repository.GetByIdAsync(7, 1).Returns(NovaRota(7));
             _usuarioRepository.GetMotoristaByIdAsync(1, 1).Returns(NovoMotorista(1));
@@ -248,7 +311,7 @@ namespace Frota360.Tests.UseCases.Rotas
             var resposta = await handler.HandleAsync(new UpdateRotaCommand(7, NovaUpdateRequest()));
 
             Assert.NotNull(resposta);
-            Assert.Equal("Florianópolis", resposta!.Destino);
+            Assert.Equal("Florianópolis", resposta!.EnderecoChegada);
             await _repository.Received(1).UpdateAsync(Arg.Any<Rota>());
         }
 
@@ -506,13 +569,15 @@ namespace Frota360.Tests.UseCases.Rotas
         [Fact]
         public async Task GetAll_DeveMapearTodasAsRotas()
         {
-            _repository.GetAllAsync(1).Returns(new[] { NovaRota(1), NovaRota(2), NovaRota(3) });
+            _repository.ConsultarAsync(1, Arg.Any<FiltroRota>())
+                .Returns((new[] { NovaRota(1), NovaRota(2), NovaRota(3) }, 3));
 
             var handler = new GetAllRotasHandler(_repository, _currentUser, NullLogger<GetAllRotasHandler>.Instance);
 
-            var resposta = (await handler.HandleAsync(new GetAllRotasQuery())).ToList();
+            var resposta = await handler.HandleAsync(new GetAllRotasQuery(ConsultaRota()));
 
-            Assert.Equal(3, resposta.Count);
+            Assert.Equal(3, resposta.Itens.Count());
+            Assert.Equal(3, resposta.Total);
         }
 
         // ------------------------------------------------- Nome e ficha do veículo
@@ -534,11 +599,11 @@ namespace Frota360.Tests.UseCases.Rotas
         {
             // É o que mantém a rota identificável depois que a pessoa é rebaixada e some
             // da lista de motoristas.
-            _repository.GetAllAsync(1).Returns(new[] { NovaRota(1) });
+            _repository.ConsultarAsync(1, Arg.Any<FiltroRota>()).Returns((new[] { NovaRota(1) }, 1));
 
             var handler = new GetAllRotasHandler(_repository, _currentUser, NullLogger<GetAllRotasHandler>.Instance);
 
-            var resposta = (await handler.HandleAsync(new GetAllRotasQuery())).Single();
+            var resposta = (await handler.HandleAsync(new GetAllRotasQuery(ConsultaRota()))).Itens.Single();
 
             Assert.Equal("João da Silva", resposta.NomeMotorista);
         }
@@ -599,13 +664,15 @@ namespace Frota360.Tests.UseCases.Rotas
         public async Task GetMinhasRotas_DeveConsultarEscopadoNaEmpresaENoMotoristaDaClaim()
         {
             ComoMotorista(2);
-            _repository.GetAllByMotoristaAsync(1, 2).Returns(new[] { NovaRota(1, codigoMotorista: 2), NovaRota(2, codigoMotorista: 2) });
+            _repository.ConsultarDoMotoristaAsync(1, 2, Arg.Any<FiltroRota>())
+                .Returns((new[] { NovaRota(1, codigoMotorista: 2), NovaRota(2, codigoMotorista: 2) }, 2));
 
-            var resposta = (await CriarMinhasRotasHandler().HandleAsync(new GetMinhasRotasQuery())).ToList();
+            var resposta = await CriarMinhasRotasHandler().HandleAsync(new GetMinhasRotasQuery(ConsultaRota()));
 
-            Assert.Equal(2, resposta.Count);
-            await _repository.Received(1).GetAllByMotoristaAsync(1, 2);
-            await _repository.DidNotReceive().GetAllAsync(Arg.Any<int>());
+            Assert.Equal(2, resposta.Itens.Count());
+            await _repository.Received(1).ConsultarDoMotoristaAsync(1, 2, Arg.Any<FiltroRota>());
+            // A consulta da gestão nunca é usada aqui: o recorte do motorista não é opcional.
+            await _repository.DidNotReceive().ConsultarAsync(Arg.Any<int>(), Arg.Any<FiltroRota>());
         }
 
 
@@ -703,5 +770,62 @@ namespace Frota360.Tests.UseCases.Rotas
             await _auditoria.Received(1).RegistrarAsync(
                 EntidadesAuditadas.Rota, AcoesAuditoria.Excluiu, 5, Arg.Any<string>(), Arg.Any<IEnumerable<AlteracaoCampo>>());
         }
-    }
+        private static ConsultarRotasRequest ConsultaRota(int pagina = 1, int tamanhoPagina = 15,
+            bool? ativo = null) => new() { Pagina = pagina, TamanhoPagina = tamanhoPagina, Ativo = ativo };
+
+        [Fact]
+        public async Task GetAll_DeveRepassarOFiltroDeAtivoEAPaginacao()
+        {
+            // `ativo` é o que substituiu o `find(r => r.ativo)` do cliente — e, como o Total sai
+            // do mesmo filtro, é também a contagem de rotas abertas do dashboard.
+            _repository.ConsultarAsync(1, Arg.Any<FiltroRota>()).Returns((Array.Empty<Rota>(), 7));
+
+            var handler = new GetAllRotasHandler(_repository, _currentUser, NullLogger<GetAllRotasHandler>.Instance);
+            var resposta = await handler.HandleAsync(new GetAllRotasQuery(ConsultaRota(tamanhoPagina: 1, ativo: true)));
+
+            await _repository.Received(1).ConsultarAsync(1,
+                Arg.Is<FiltroRota>(f => f.Ativo == true && f.TamanhoPagina == 1));
+            Assert.Equal(7, resposta.Total);
+        }
+
+        private GetResumoRotasHandler CriarResumoHandler() =>
+            new(_repository, _currentUser, NullLogger<GetResumoRotasHandler>.Instance);
+
+        [Fact]
+        public async Task Resumo_ParaGestao_DeveSomarAEmpresaInteira()
+        {
+            var de = new DateTime(2026, 9, 1);
+            var ate = new DateTime(2026, 9, 28);
+            _currentUser.Role.Returns(Roles.Supervisor);
+            _repository.ResumirEncerradasAsync(1, de, ate, null).Returns(new ResumoRotas(4, 820));
+
+            var resumo = await CriarResumoHandler().HandleAsync(new GetResumoRotasQuery(de, ate));
+
+            Assert.Equal(4, resumo.Quantidade);
+            Assert.Equal(820, resumo.KmTotal);
+            await _repository.Received(1).ResumirEncerradasAsync(1, de, ate, null);
+        }
+
+        [Fact]
+        public async Task Resumo_ParaMotorista_DeveRecortarPeloUsuarioDoToken()
+        {
+            var de = new DateTime(2026, 9, 1);
+            var ate = new DateTime(2026, 9, 28);
+            _currentUser.Role.Returns(Roles.Motorista);
+            _currentUser.UsuarioId.Returns(7);
+            _repository.ResumirEncerradasAsync(1, de, ate, 7).Returns(new ResumoRotas(2, 230));
+
+            var resumo = await CriarResumoHandler().HandleAsync(new GetResumoRotasQuery(de, ate));
+
+            Assert.Equal(230, resumo.KmTotal);
+            await _repository.Received(1).ResumirEncerradasAsync(1, de, ate, 7);
+        }
+
+        [Fact]
+        public async Task Resumo_ComDataFinalAnteriorAInicial_DeveRecusar()
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                CriarResumoHandler().HandleAsync(new GetResumoRotasQuery(new DateTime(2026, 9, 10), new DateTime(2026, 9, 1))));
+        }
+}
 }

@@ -1,39 +1,45 @@
-import { useEffect, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { mensagensDeErro } from '../api/errors'
 import { ErrorList } from './AppLayout'
 import { PencilIcon, TrashIcon } from './icons'
-import { PERIODOS, type Periodo } from '../lib/periodo'
+import {
+  erroDoIntervalo,
+  filtroDePeriodo,
+  intervaloDoFiltro,
+  PERIODOS,
+  type FiltroDePeriodo,
+  type Periodo,
+} from '../lib/periodo'
+import { TAMANHOS_PAGINA, type TamanhoPagina } from '../lib/paginacao'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
-/** Fecha o diálogo no Escape — todo modal da aplicação deve ter essa saída. */
-function useFecharComEscape(onFechar: () => void) {
+/**
+ * Abre o `<dialog>` nativo assim que ele é montado (todo diálogo da aplicação já nasce
+ * montado só quando deve aparecer — `{condicao && <ConfirmDialog ... />}`). `showModal()`
+ * dá de graça o que antes era escrito à mão: trava de foco (Tab não escapa mais para
+ * trás do diálogo), Escape para fechar e o backdrop.
+ */
+function useAbrirModalAoMontar(ref: React.RefObject<HTMLDialogElement | null>) {
   useEffect(() => {
-    function aoTeclar(e: KeyboardEvent) {
-      if (e.key === 'Escape') onFechar()
-    }
-    document.addEventListener('keydown', aoTeclar)
-    return () => document.removeEventListener('keydown', aoTeclar)
-  }, [onFechar])
-}
+    const dialogo = ref.current
+    if (!dialogo) return
 
-/** Painel de cadastro que abre acima da tabela (padrão "Novo X" do design). */
-export function InlineForm({
-  onSubmit,
-  children,
-}: {
-  onSubmit: (e: FormEvent) => void
-  children: ReactNode
-}) {
-  return (
-    <form
-      onSubmit={onSubmit}
-      className="mb-8 flex flex-wrap items-end gap-4 p-5"
-      style={{ border: '1px solid var(--color-divider)', background: 'var(--color-surface)' }}
-    >
-      {children}
-    </form>
-  )
+    dialogo.showModal()
+
+    // ⚠️ Quando o formulário é longo o bastante para `.dialog-corpo` rolar, o Chrome torna
+    // o próprio contêiner de rolagem focável (é ele quem responde a PageUp/PageDown) e o
+    // `showModal()` pousa o foco ali, e não no primeiro campo: o anel de `:focus-visible`
+    // contorna o formulário inteiro e quem abre o diálogo começa sem cursor em lugar nenhum.
+    // A correção só age nesse caso exato — com o foco em qualquer outro lugar (o Cancelar
+    // do ConfirmDialog, um `autoFocus` declarado na tela), nada acontece aqui.
+    const corpo = dialogo.querySelector('.dialog-corpo')
+    if (corpo === null || document.activeElement !== corpo) return
+
+    dialogo
+      .querySelector<HTMLElement>('input:not([tabindex="-1"]), select, textarea')
+      ?.focus()
+  }, [ref])
 }
 
 /** Linha de carregando / erro / vazio dentro de um tbody. */
@@ -159,58 +165,71 @@ export function ConfirmDialog({
   onConfirmar: () => void
   onCancelar: () => void
 }) {
-  useFecharComEscape(onCancelar)
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  useAbrirModalAoMontar(dialogRef)
 
   return (
-    <div className="dialog-backdrop" role="presentation" onClick={onCancelar}>
-      <div
-        className="dialog"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="dialog-titulo"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 id="dialog-titulo" className="dialog-title">
-          {titulo}
-        </h3>
-        <p className="dialog-body">{mensagem}</p>
-        <ErrorList mensagens={erros} />
-        <div className="dialog-actions">
-          {/* O foco inicial fica em Cancelar: Enter reflexo não pode excluir. */}
-          <button
-            type="button"
-            className="btn btn-secondary"
-            style={{ borderRadius: 0, padding: '10px 18px' }}
-            onClick={onCancelar}
-            disabled={pending}
-            autoFocus
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            className={variante === 'perigo' ? 'btn btn-danger' : 'btn btn-primary'}
-            style={{ borderRadius: 0, padding: '10px 18px' }}
-            onClick={onConfirmar}
-            disabled={pending}
-          >
-            {pending ? textoPendente : textoConfirmar}
-          </button>
-        </div>
+    <dialog
+      ref={dialogRef}
+      className="dialog"
+      role="alertdialog"
+      aria-labelledby="dialog-titulo"
+      // O Escape do navegador fecha o <dialog> sozinho; isto só avisa o componente pai
+      // (dono do estado "está aberto") para ele desmontar em vez de ficar dessincronizado.
+      //
+      // Sem clique-no-backdrop-fecha de propósito: um <dialog> não pode carregar um
+      // segundo handler de clique sem ganhar um role interativo (button/link/...) que
+      // brigaria com o role real dele (alertdialog) — daí o React Doctor apontar
+      // no-noninteractive-element-interactions se ele existisse aqui. Cancelar continua
+      // com dois caminhos totalmente acessíveis por teclado: Escape e o botão abaixo.
+      onClose={onCancelar}
+    >
+      <h3 id="dialog-titulo" className="dialog-title">
+        {titulo}
+      </h3>
+      <p className="dialog-body">{mensagem}</p>
+      <ErrorList mensagens={erros} />
+      <div className="dialog-actions">
+        {/* O foco inicial fica em Cancelar: Enter reflexo não pode excluir. */}
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ borderRadius: 0, padding: '10px 18px' }}
+          onClick={onCancelar}
+          disabled={pending}
+          autoFocus
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          className={variante === 'perigo' ? 'btn btn-danger' : 'btn btn-primary'}
+          style={{ borderRadius: 0, padding: '10px 18px' }}
+          onClick={onConfirmar}
+          disabled={pending}
+        >
+          {pending ? textoPendente : textoConfirmar}
+        </button>
       </div>
-    </div>
+    </dialog>
   )
 }
 
 /**
- * Diálogo com formulário (concluir uma manutenção, encerrar uma rota). Diferente do
- * `ConfirmDialog`, que só confirma uma ação destrutiva, aqui há campos a preencher.
+ * Diálogo com formulário — todo cadastro/edição do painel e as transições de estado que
+ * pedem campos (concluir manutenção, encerrar rota). Diferente do `ConfirmDialog`, que só
+ * confirma uma ação destrutiva, aqui há campos a preencher.
+ *
+ * `largura` separa os dois usos: 520 (o default) para as transições, de dois ou três
+ * campos; 760 para os formulários de cadastro, onde o `.dialog-grid` das seções tem espaço
+ * para três colunas.
  */
 export function FormDialog({
   titulo,
   descricao,
   textoConfirmar,
   textoPendente,
+  largura = 520,
   pending,
   erros,
   onSubmit,
@@ -218,39 +237,48 @@ export function FormDialog({
   children,
 }: {
   titulo: string
-  descricao?: string
+  descricao?: ReactNode
   textoConfirmar: string
   textoPendente: string
+  largura?: number
   pending: boolean
   erros: string[]
   onSubmit: (e: FormEvent) => void
   onCancelar: () => void
   children: ReactNode
 }) {
-  useFecharComEscape(onCancelar)
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  useAbrirModalAoMontar(dialogRef)
 
   return (
-    <div className="dialog-backdrop" role="presentation" onClick={onCancelar}>
-      <form
-        className="dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="form-dialog-titulo"
-        style={{ width: 'min(520px, 100%)' }}
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={onSubmit}
-      >
+    <dialog
+      ref={dialogRef}
+      className="dialog"
+      aria-labelledby="form-dialog-titulo"
+      // `calc(100vw - 2rem)` em vez de `100%`: no celular o diálogo encostaria nas duas
+      // bordas da tela, e o backdrop deixa de se ver.
+      style={{ width: `min(${largura}px, calc(100vw - 2rem))` }}
+      // Mesmo padrão do ConfirmDialog logo acima — sem clique-no-backdrop, ver o
+      // comentário lá para o motivo (no-noninteractive-element-interactions).
+      onClose={onCancelar}
+    >
+      {/* display: contents — o form não pode ser o próprio <dialog> (só <dialog> ganha
+          showModal/backdrop nativos), mas também não pode virar uma caixa própria: o
+          layout em coluna com gap é do .dialog no pai, e os filhos precisam continuar
+          participando dele como se estivessem soltos ali. */}
+      <form onSubmit={onSubmit} style={{ display: 'contents' }}>
         <h3 id="form-dialog-titulo" className="dialog-title">
           {titulo}
         </h3>
         {descricao && <p className="dialog-body">{descricao}</p>}
-        <div className="flex flex-wrap items-end gap-4">{children}</div>
+        {/* Só os campos rolam: título e ações continuam à vista num formulário longo. */}
+        <div className="dialog-corpo">{children}</div>
         <ErrorList mensagens={erros} />
         <div className="dialog-actions">
           <button
             type="button"
             className="btn btn-secondary"
-            style={{ borderRadius: 0, padding: '10px 18px' }}
+            style={{ padding: '10px 18px' }}
             onClick={onCancelar}
             disabled={pending}
           >
@@ -259,23 +287,97 @@ export function FormDialog({
           <button
             type="submit"
             className="btn btn-primary"
-            style={{ borderRadius: 0, padding: '10px 18px' }}
+            style={{ padding: '10px 18px' }}
             disabled={pending}
           >
             {pending ? textoPendente : textoConfirmar}
           </button>
         </div>
       </form>
-    </div>
+    </dialog>
   )
 }
 
 /**
- * Rodapé de listagem paginada. Hoje só `/auditoria` usa — é a única lista que a API
- * pagina —, mas o componente nasce genérico para as próximas.
+ * Bloco de campos dentro de um `FormDialog`. O título agrupa o que pertence junto ("Dados
+ * do posto", "Veículo e motorista") — é o que impede um formulário de treze campos de virar
+ * uma fileira sem hierarquia.
  *
- * Some por completo quando cabe tudo numa página só: um rodapé de paginação em cima
- * de sete linhas é ruído.
+ * Sem `titulo`, é só o grid: o formato dos diálogos curtos, que não têm o que separar.
+ * A largura de cada campo é do grid, não do campo — quem precisa da linha inteira
+ * (observação, aviso, nota) usa a classe `campo-largo`.
+ */
+export function SecaoCampos({ titulo, children }: { titulo?: string; children: ReactNode }) {
+  return (
+    <section>
+      {titulo && <h4 className="dialog-secao-titulo">{titulo}</h4>}
+      <div className="dialog-grid">{children}</div>
+    </section>
+  )
+}
+
+/**
+ * O terceiro diálogo: só mostra conteúdo. O `ConfirmDialog` confirma uma ação e o
+ * `FormDialog` submete campos — aqui não há o que decidir nem o que enviar, então a única
+ * ação é fechar. Serve o detalhamento sob demanda, como os lançamentos de um veículo em
+ * `/custos`.
+ *
+ * Herda dos outros dois o `<dialog>` nativo e o `useAbrirModalAoMontar` — trava de foco,
+ * Escape, `::backdrop` e o reposicionamento de foco quando o corpo rola.
+ */
+export function PainelDialog({
+  titulo,
+  descricao,
+  largura = 760,
+  onFechar,
+  children,
+}: {
+  titulo: string
+  descricao?: ReactNode
+  largura?: number
+  onFechar: () => void
+  children: ReactNode
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  useAbrirModalAoMontar(dialogRef)
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="dialog"
+      aria-labelledby="painel-dialog-titulo"
+      style={{ width: `min(${largura}px, calc(100vw - 2rem))` }}
+      // Mesmo padrão dos outros dois — sem clique-no-backdrop, ver o comentário no
+      // ConfirmDialog para o motivo.
+      onClose={onFechar}
+    >
+      <h3 id="painel-dialog-titulo" className="dialog-title">
+        {titulo}
+      </h3>
+      {descricao && <p className="dialog-body">{descricao}</p>}
+      <div className="dialog-corpo">{children}</div>
+      <div className="dialog-actions">
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ padding: '10px 18px' }}
+          onClick={onFechar}
+        >
+          Fechar
+        </button>
+      </div>
+    </dialog>
+  )
+}
+
+/**
+ * Rodapé de listagem paginada — o mesmo para quem pagina no cliente (a maioria, via
+ * `usePaginacao`) e para as duas telas que paginam no servidor (`/auditoria`, `/custos`).
+ *
+ * ⚠️ **Some quando o total cabe na menor opção**, e não quando há uma página só. A regra
+ * antiga (`totalPaginas <= 1`) escondia o seletor justamente de quem tem 12 registros e
+ * queria ver 10 — e é o que permite ligar o rodapé em toda lista do painel sem encher um
+ * catálogo de cinco linhas de ruído.
  */
 export function Paginacao({
   pagina,
@@ -283,6 +385,7 @@ export function Paginacao({
   total,
   tamanhoPagina,
   onMudar,
+  onMudarTamanho,
   pending,
 }: {
   pagina: number
@@ -290,26 +393,47 @@ export function Paginacao({
   total: number
   tamanhoPagina: number
   onMudar: (pagina: number) => void
+  /** Ausente, o seletor não aparece — o rodapé fica só com a contagem e o passo a passo. */
+  onMudarTamanho?: (tamanho: TamanhoPagina) => void
   pending?: boolean
 }) {
-  if (totalPaginas <= 1) return null
+  if (total <= TAMANHOS_PAGINA[0]) return null
 
   const primeiro = (pagina - 1) * tamanhoPagina + 1
   const ultimo = Math.min(pagina * tamanhoPagina, total)
 
   return (
     <div
-      className="mt-4 flex items-center justify-between gap-4 py-3"
+      className="mt-4 flex flex-wrap items-center justify-between gap-4 py-3"
       style={{ borderTop: '1px solid var(--color-divider)' }}
     >
-      <span className="text-[13px]" style={{ color: mutedText }}>
-        {primeiro}–{ultimo} de {total}
-      </span>
+      <div className="flex items-center gap-3">
+        {onMudarTamanho && (
+          <label className="flex items-center gap-2 text-[13px]" style={{ color: mutedText }}>
+            Itens por página
+            <select
+              className="input"
+              style={{ width: 'auto', minHeight: 32, padding: '4px 8px' }}
+              value={tamanhoPagina}
+              onChange={(e) => onMudarTamanho(Number(e.target.value) as TamanhoPagina)}
+            >
+              {TAMANHOS_PAGINA.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <span className="text-[13px]" style={{ color: mutedText }}>
+          {primeiro}–{ultimo} de {total}
+        </span>
+      </div>
       <div className="flex items-center gap-2">
         <button
           type="button"
           className="btn btn-secondary"
-          style={{ borderRadius: 0, padding: '6px 14px' }}
+          style={{ padding: '6px 14px' }}
           onClick={() => onMudar(pagina - 1)}
           disabled={pagina <= 1 || pending}
         >
@@ -321,7 +445,7 @@ export function Paginacao({
         <button
           type="button"
           className="btn btn-secondary"
-          style={{ borderRadius: 0, padding: '6px 14px' }}
+          style={{ padding: '6px 14px' }}
           onClick={() => onMudar(pagina + 1)}
           disabled={pagina >= totalPaginas || pending}
         >
@@ -333,9 +457,12 @@ export function Paginacao({
 }
 
 /**
- * Filtro de período com opções prontas, no lugar de dois campos de data soltos.
- * Compartilhado por `/manutencoes` e `/abastecimentos` — dois filtros de data diferentes
- * no mesmo sistema seria a inconsistência que incomoda depois.
+ * O filtro de data do sistema inteiro: opções prontas primeiro e, em "Personalizado…", os
+ * campos De e Até. Um só componente para as telas de lançamento, `/custos` e `/auditoria` —
+ * dois filtros de data diferentes no mesmo sistema seria a inconsistência que incomoda depois.
+ *
+ * As datas digitadas ficam num rascunho local e só sobem quando o intervalo é válido: um
+ * "até" antes do "de" não chega a virar consulta (a API responderia 422).
  */
 export function FiltroPeriodo({
   valor,
@@ -343,27 +470,91 @@ export function FiltroPeriodo({
   rotulo = 'Período',
   id = 'filtroPeriodo',
 }: {
-  valor: Periodo
-  onMudar: (periodo: Periodo) => void
+  valor: FiltroDePeriodo
+  onMudar: (filtro: FiltroDePeriodo) => void
   rotulo?: string
   id?: string
 }) {
+  const [rascunho, setRascunho] = useState({ de: valor.de, ate: valor.ate })
+  const personalizado = valor.periodo === 'personalizado'
+  const erro = personalizado ? erroDoIntervalo(rascunho.de, rascunho.ate) : null
+
+  function escolher(periodo: Periodo) {
+    if (periodo !== 'personalizado') {
+      onMudar(filtroDePeriodo(periodo))
+      return
+    }
+    // Parte do intervalo que estava na tela: quem sai de "Este mês" ajusta a partir dele.
+    const atual = intervaloDoFiltro(valor)
+    const inicial = { de: atual.de ?? '', ate: atual.ate ?? '' }
+    setRascunho(inicial)
+    onMudar({ periodo, ...inicial })
+  }
+
+  function mudarData(campo: 'de' | 'ate', data: string) {
+    const novo = { ...rascunho, [campo]: data }
+    setRascunho(novo)
+    if (!erroDoIntervalo(novo.de, novo.ate)) onMudar({ periodo: 'personalizado', ...novo })
+  }
+
   return (
-    <div className="field w-[190px]">
-      <label htmlFor={id}>{rotulo}</label>
-      <select
-        id={id}
-        className="input"
-        style={{ borderRadius: 0 }}
-        value={valor}
-        onChange={(e) => onMudar(e.target.value as Periodo)}
-      >
-        {PERIODOS.map((p) => (
-          <option key={p.valor} value={p.valor}>
-            {p.rotulo}
-          </option>
-        ))}
-      </select>
+    <div className="flex flex-wrap items-end gap-3">
+      <div className="field w-[190px]">
+        <label htmlFor={id}>{rotulo}</label>
+        <select
+          id={id}
+          className="input"
+          style={{ borderRadius: 0 }}
+          value={valor.periodo}
+          onChange={(e) => escolher(e.target.value as Periodo)}
+        >
+          {PERIODOS.map((p) => (
+            <option key={p.valor} value={p.valor}>
+              {p.rotulo}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {personalizado && (
+        <div className="relative flex items-end gap-3">
+          <div className="field w-[160px]">
+            <label htmlFor={`${id}De`}>De</label>
+            <input
+              id={`${id}De`}
+              className="input"
+              type="date"
+              max={rascunho.ate || undefined}
+              value={rascunho.de}
+              aria-invalid={erro !== null}
+              onChange={(e) => mudarData('de', e.target.value)}
+            />
+          </div>
+          <div className="field w-[160px]">
+            <label htmlFor={`${id}Ate`}>Até</label>
+            <input
+              id={`${id}Ate`}
+              className="input"
+              type="date"
+              min={rascunho.de || undefined}
+              value={rascunho.ate}
+              aria-invalid={erro !== null}
+              aria-describedby={erro ? `${id}Erro` : undefined}
+              onChange={(e) => mudarData('ate', e.target.value)}
+            />
+          </div>
+          {erro && (
+            <span
+              id={`${id}Erro`}
+              role="alert"
+              className="absolute top-full left-0 mt-1 text-xs whitespace-nowrap"
+              style={{ color: 'var(--color-danger)' }}
+            >
+              {erro}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

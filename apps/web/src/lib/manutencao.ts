@@ -2,8 +2,8 @@ import type { ManutencaoResponse } from '../api/types'
 
 /**
  * Dentro desta faixa a manutenção já aparece como "vencendo" — a mesma janela que a
- * LandingPage encena. Fica aqui, e não vindo da API, porque `kmRestantes` já chega
- * calculado: é só o corte de leitura, não regra de negócio do servidor.
+ * LandingPage encena. Espelha `RegrasDeManutencao.FaixaAvisoKm` da API, que usa o mesmo
+ * corte para contar as "vencendo" do `/manutencao/resumo`: mexeu numa, mexa na outra.
  */
 export const FAIXA_AVISO = 500
 
