@@ -6,7 +6,10 @@
         <Configuration>
           <Format>opencover,cobertura</Format>
           <ExcludeByFile>**/Migrations/*.cs</ExcludeByFile>
-          <ExcludeByAttribute>GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <!-- Sem CompilerGeneratedAttribute: o corpo de todo método async e de toda lambda vive
+               numa classe marcada com ele, e excluí-lo tirava da conta metade do backend. -->
+          <ExcludeByAttribute>GeneratedCodeAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <SkipAutoProps>true</SkipAutoProps>
         </Configuration>
       </DataCollector>
     </DataCollectors>

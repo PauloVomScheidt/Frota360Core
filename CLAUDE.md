@@ -25,7 +25,7 @@ docs/
 ├── contexto-web.md        contexto profundo do front (tela a tela, cache keys, endpoints)
 ├── deploy.md              roteiro de produção (EC2 + Docker Compose) e ensaio local
 └── pendencias-tcc.md      o que falta para os obrigatórios do TCC (linha Web Apps), com problema e solução
-.github/workflows/ci.yml   CI — jobs `api`, `web` e `docker` (sem CD)
+.github/workflows/ci.yml   CI — jobs `api`, `web`, `docker` e `sonar` (SonarCloud; sem CD)
 docker-compose.yml         banco de desenvolvimento
 docker-compose.prod.yml    stack de produção (db + api + caddy)
 docker-compose.local.yml   override que ensaia a stack de produção sem domínio
@@ -127,7 +127,7 @@ O **Playwright MCP** está registrado no escopo `user` (todas as suas sessões, 
 `.github/workflows/ci.yml`, em PR e push para `main`. Três jobs — `api`, `web` e
 `docker` —, e os ids dos jobs são os nomes dos required checks. Um quarto, `sonar`, roda depois de
 `api` e `web` com os artefatos de cobertura deles e envia a análise ao SonarCloud (projeto único
-`PauloVomScheidt_Frota360Core`); não é required check. Três coisas a lembrar ao mexer:
+`PauloVomScheidt_Frota360Core`); não é required check. Quatro coisas a lembrar ao mexer:
 
 - **Não adicione filtro de path.** `on.<evento>.paths` impede o workflow de rodar, e um required
   check que nunca reporta trava o PR para sempre. Se algum dia precisar pular job, use um job de
@@ -140,6 +140,11 @@ O **Playwright MCP** está registrado no escopo `user` (todas as suas sessões, 
   caminho absoluto (igual em todo runner) e o `lcov.info` do front sai relativo à **raiz do
   monorepo** por causa do `projectRoot: '../..'` no `vite.config.ts`. Mexeu em algum dos dois?
   A cobertura some do SonarCloud em silêncio, sem quebrar job nenhum.
+- **O job `api` reprova abaixo de 75% de linhas no backend.** Quem calcula é
+  `scripts/cobertura-api.ps1 -SomenteRelatorio` (as três suítes somadas pelo ReportGenerator) —
+  o mesmo script que gera o número local, então os dois não divergem. O Sonar mede ~2 pontos
+  abaixo: ele conta como linha descoberta o inicializador de propriedade dos DTOs
+  (`= string.Empty`), que o coverlet não instrumenta.
 
 Detalhe do lado da API (por que não há `services: postgres`) em
 [docs/contexto-api.md](docs/contexto-api.md) (§ Testes).

@@ -725,9 +725,20 @@ do `Program.cs` exigiria Jwt, banco e as demais configurações de boot.
 |---|---|
 | `ExceptionMiddlewareTests` | cada exceção vira o status e a mensagem do envelope (422 e 404 repassam o texto; 400, 401 e 500 usam mensagem fixa, sem vazar detalhe interno), e sem exceção a resposta do próximo passa intacta |
 | `BackofficeControllerTests` | `X-Backoffice-Key` ausente, vazio ou errado dá 401 sem provisionar; sem `Backoffice:ApiKey` configurada é 401 até com header vazio; request inválido dá 400 com os erros; chave certa provisiona e devolve 201 |
+| `Controllers/<X>ControllerTests` e `ConsultaControllersTests` (os outros 15 controllers; o segundo junta os três só de leitura — custo, auditoria e motorista) | o contrato HTTP de cada action: validator recusando dá 400 com os erros **sem despachar nada**, `null`/`false` do handler vira 404 com a mensagem, create devolve 201 apontando para `GetById`, e o que o controller repassa ao dispatcher (id, filtro, corpo) chega intacto. `AuthControllerTests` e `ConviteControllerTests` provam também os cookies: login, refresh e aceite emitem os dois, logout os expira, e falha não emite nenhum |
+| `Services/CurrentUserServiceTests` | as claims do ASP.NET e as curtas do JWT (`sub`, `name`, `email`) são lidas; token sem `empresaId` ou com id não numérico vira 401; nome e e-mail ausentes não derrubam a requisição |
+| `Services/SessaoCookiesTests` | os dois cookies saem `HttpOnly`, `Secure`, `SameSite=None`, `Path=/`, com 1 h e 7 dias; a limpeza usa os mesmos atributos, senão o navegador não os reconhece |
+| `Composicao/InjecaoDeDependenciaTests` | a DI de `AddApplication` + `AddInfrastructure` montada como no `Program.cs` (configuração em memória, `ValidateOnBuild`) resolve **todo** serviço `Frota360.*`; sem connection string ou com `Jwt:Key` curta o boot cai dizendo o quê; em Production, o que falta é listado de uma vez; com chave do Resend o e-mail sai por ele, sem ela só é logado; `OnMessageReceived` lê o token do cookie sem sobrepor o header; `OnChallenge`/`OnForbidden` respondem 401/403 no envelope |
+| `Composicao/TokenServiceTests` | o token emitido passa na validação do **mesmo** JwtBearer que o `AddInfrastructure` configura, com as claims da sessão e validade de 1 h em UTC; assinado com outra chave é recusado; o refresh token tem 64 bytes aleatórios |
 
-O `Program.cs` fica **fora da cobertura** no SonarCloud: é a raiz de composição, e a última linha
-(`await app.RunAsync()`) não é alcançável por teste.
+O `TokenService` é da Infrastructure, mas o teste mora aqui de propósito: o que importa provar é a
+volta completa (emitir → validar), e só esta suíte enxerga as duas pontas. A `Composicao` replica
+os registros que o `Program.cs` faz fora das duas extensões (`ICurrentUserService`,
+`FrontendSettings`, `GoogleRoutesSettings`) — registrou outro lá, replique em `Composicao.Servicos`.
+
+O `Program.cs` fica **fora da cobertura**, no SonarCloud e no relatório consolidado: é a raiz de
+composição, e a última linha (`await app.RunAsync()`) não é alcançável por teste. É a única
+exclusão além das migrations — e o que nele é testável, a DI, é coberto pela `Composicao`.
 
 ### `tests/Frota360.IntegrationTests` — contra PostgreSQL de verdade
 
@@ -739,6 +750,7 @@ Existe porque `dotnet test` da suíte unitária **não prova nada** sobre provid
 |---|---|
 | `PoliticaDeDataTests` | os três Kinds (`Local` do `DateTime.Now`, `Unspecified` do front, `Utc` como regressão) gravam na mesma coluna; o relógio de parede sobrevive ao round-trip e volta `Unspecified`; a coluna é mesmo `timestamp without time zone` |
 | `SchemaERestricoesTests` | as migrations criam as 9 tabelas; lookup de e-mail ignora caixa; índice filtrado `(EmpresaId, CPF)` aceita vários nulos, barra duplicata e permite o mesmo CPF em empresas diferentes; `Usuario.Email` é único **global**; `numeric(10,2)` preserva centavo |
+| `DespesaRepositoryTests` | CRUD com as três navegações carregadas; despesa de outra empresa "não existe"; os filtros por veículo, motorista, tipo e período (com o "até" inclusivo às 23h30); paginação sem repetir linha quando todas têm a mesma data; o resumo soma **o mesmo recorte** da consulta e volta zerado sem lançamentos; `ExisteCom*` só enxerga a própria empresa |
 | `TraducaoDeConsultaTests` | filtro `de`/`ate` inclui o próprio dia final; `Status` persiste como texto e volta como enum; o `OrderBy` com condicional traz pendentes primeiro apesar do texto; `GetAllAsync` recorta pela empresa. **Custos:** as duas origens viram uma lista só, a paginação não repete linha entre elas, o recorte por motorista descarta manutenção, o `GroupBy` com navegação na chave traz nome e placa, e as cinco consultas do read model recortam pela empresa |
 
 Dois detalhes de infraestrutura, ambos comentados no código: o **resource reaper do Testcontainers fica desligado** (no Docker Desktop em Windows ele falha ao baixar e derruba a suíte antes do primeiro teste — a fixture descarta o container por conta própria), e o gerador de valores únicos é **compartilhado entre as classes**, porque elas dividem o mesmo banco e contadores separados colidem no índice único de e-mail.
@@ -753,24 +765,47 @@ para o log dizer de imediato se quebrou lógica ou banco.
 
 As três suítes coletam cobertura pelo `coverlet.collector` com o `coverlet.runsettings` da raiz do
 app, que gera **OpenCover** (o formato que o SonarCloud lê para C#) e Cobertura, e tira
-`**/Migrations/*.cs` da conta — código gerado pelo EF não é código autoral:
+`**/Migrations/*.cs` da conta — código gerado pelo EF não é código autoral. O número oficial do
+backend sai de um comando só, da raiz do monorepo:
 
 ```powershell
-dotnet test --settings coverlet.runsettings --collect:"XPlat Code Coverage" --results-directory TestResults
+./scripts/cobertura-api.ps1 -Abrir
 ```
 
-Cada suíte deixa um `TestResults/<guid>/coverage.opencover.xml` (gitignored). No CI o job `api`
-publica os três como artefato e o job `sonar` os entrega ao scanner, que soma os relatórios — é
-como a Infrastructure, coberta só pela suíte de integração, entra no número.
+Ele builda em Release, roda as três suítes (exige Docker, pela de integração), junta os três
+`TestResults/<guid>/coverage.opencover.xml` com o **ReportGenerator** — ferramenta local, fixada
+em `apps/api/dotnet-tools.json` e restaurada pelo próprio script — e abre
+`TestResults/relatorio/index.html`. O `Program.cs` sai da conta no filtro do ReportGenerator, a
+mesma exclusão do `sonar.coverage.exclusions`. Termina com código 1 abaixo de `-Minimo` (75).
+
+No CI, o job `api` roda as três suítes em passos separados e depois o **mesmo script** com
+`-SomenteRelatorio`, que só consolida o que já está em `TestResults`: o número do CI e o local são
+o mesmo cálculo. O resumo em Markdown vai para o job summary, o HTML sai como artefato
+`relatorio-cobertura-api` e o job reprova abaixo de 75%. Os OpenCover continuam saindo como
+`cobertura-api`, que o job `sonar` entrega ao scanner — é como a Infrastructure, coberta só pela
+suíte de integração, entra no número de lá.
+
+⚠️ **Até 13/11/2026 o runsettings excluía `CompilerGeneratedAttribute`**, e isso tirava da conta o
+corpo de todo método `async` e de toda lambda — o compilador os move para classes geradas. O
+relatório media só o código síncrono: 2.034 linhas cobríveis em vez de 4.437, e o
+`ExceptionMiddleware` aparecia com 100% porque só o construtor era contado. No lugar entrou
+`SkipAutoProps`, que tira só os `{ get; set; }` triviais. A medição honesta derrubou o ponto de
+partida de 68,4% para **58,8%**; os testes da camada Api, da composição, dos validators e do
+`DespesaRepository` o levaram a **82,0%** (3.639 de 4.437 linhas).
 
 O job `sonar` usa o **SonarScanner for .NET** (`begin` → `dotnet build` → `end`) a partir da raiz
 do monorepo. O C# é analisado pelo build; o TypeScript do front, o YAML e o Dockerfile entram
 pelo `sonar.scanner.scanAll`, que é o padrão do scanner. Ficam fora da análise as migrations, o
 `schema.d.ts` gerado e os testes do front.
 
-⚠️ O número do SonarCloud **não é o mesmo** do relatório local de uma suíte só: ele soma as
-quatro camadas da API — menos o `Program.cs` — ao front. Os controllers ainda sem teste em
-`Frota360.Api.Tests` entram com 0%.
+⚠️ O número do SonarCloud **não é o mesmo** do relatório consolidado, por dois motivos. O badge
+soma o front ao backend — o número do backend está em Measures → Coverage → `apps/api`. E, mesmo
+nessa pasta, o Sonar fica uns 2 pontos abaixo: para arquivo que **não aparece** no OpenCover ele
+calcula as linhas executáveis por conta própria e as dá como descobertas. São os DTOs e entidades
+cujo único código é inicializador de propriedade (`= string.Empty`, `= new List<>()`): o coverlet
+não instrumenta o construtor implícito que os executa, e o Sonar conta ~121 linhas que o
+relatório local não enxerga. Não há o que testar ali — é diferença de método, e a meta de 75% é
+cumprida nos dois com folga.
 
 ### O que continua manual
 
