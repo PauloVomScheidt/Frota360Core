@@ -1,5 +1,9 @@
 ﻿# Frota360
 
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=PauloVomScheidt_Frota360Core&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=PauloVomScheidt_Frota360Core)
+[![Cobertura](https://sonarcloud.io/api/project_badges/measure?project=PauloVomScheidt_Frota360Core&metric=coverage)](https://sonarcloud.io/component_measures?id=PauloVomScheidt_Frota360Core&metric=coverage)
+[![Vulnerabilidades](https://sonarcloud.io/api/project_badges/measure?project=PauloVomScheidt_Frota360Core&metric=vulnerabilities)](https://sonarcloud.io/project/issues?id=PauloVomScheidt_Frota360Core&impactSoftwareQualities=SECURITY&resolved=false)
+
 Monorepo do **Frota360** — gestão de frotas multi-tenant. Cada empresa cliente enxerga apenas os seus veículos, motoristas, rotas e manutenções; o isolamento é aplicado em cada acesso a dados, a partir da claim `empresaId` do JWT.
 
 | App | Stack | Documentação |
@@ -100,9 +104,16 @@ paralelo, e os três nomes abaixo são exatamente os checks obrigatórios no bra
 
 | Check | O que roda |
 |---|---|
-| `api` | `dotnet restore`/`build -c Release` da solução, depois as duas suítes em passos separados — a unitária e a de integração (que sobe um `postgres:17` via Testcontainers) |
-| `web` | `npm ci`, `npm run build` (`tsc -b && vite build`), `npm run lint` e `npm run test:cov` (Vitest + cobertura — reprova abaixo de 50% de linhas) |
+| `api` | `dotnet restore`/`build -c Release` da solução, depois as duas suítes em passos separados — a unitária e a de integração (que sobe um `postgres:17` via Testcontainers) —, com a cobertura OpenCover publicada como artefato |
+| `web` | `npm ci --ignore-scripts`, `npm run build` (`tsc -b && vite build`), `npm run lint` e `npm run test:cov` (Vitest + cobertura — reprova abaixo de 50% de linhas), com o `lcov.info` publicado como artefato |
 | `docker` | build da imagem da API **sem push**, mais a prova de que o `.dockerignore` segura os arquivos com segredo |
+
+Um quarto job, `sonar`, roda **depois** de `api` e `web` e **não** é check obrigatório: envia a
+análise estática e a cobertura dos dois apps ao [SonarCloud](https://sonarcloud.io/summary/new_code?id=PauloVomScheidt_Frota360Core)
+(projeto único `PauloVomScheidt_Frota360Core`). O quality gate aparece no PR pelo próprio Sonar e
+não reprova o CI. Depende do secret `SONAR_TOKEN` e é pulado em PR de fork e do Dependabot, que
+não o recebem. A **Automatic Analysis** do projeto fica desligada no SonarCloud — ela não importa
+cobertura e conflita com a análise feita pelo CI.
 
 Sem filtro de path de propósito: `on.<evento>.paths` impede o workflow de rodar, e um required
 check que nunca reporta deixa o PR travado esperando um status que não vem.

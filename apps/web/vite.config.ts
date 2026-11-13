@@ -27,7 +27,8 @@ export default defineConfig({
     },
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'html', 'lcov'],
+      // O SonarCloud analisa a partir da raiz do monorepo: o lcov precisa de caminhos `apps/web/src/...`.
+      reporter: ['text', 'html', ['lcov', { projectRoot: '../..' }]],
       // Sem o include, só entram no cálculo os arquivos que algum teste importa.
       include: ['src/**'],
       exclude: ['src/main.tsx', 'src/api/schema.d.ts', 'src/vite-env.d.ts', 'src/test/**'],

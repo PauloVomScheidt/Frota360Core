@@ -45,7 +45,7 @@ namespace Frota360.Api.Middlewares
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase
             });
 
-            await context.Response.WriteAsync(json);
+            await context.Response.WriteAsync(json, context.RequestAborted);
         }
     }
 }

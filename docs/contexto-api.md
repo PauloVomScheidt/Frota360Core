@@ -694,7 +694,8 @@ primeiro dado real do cliente**, não antes da defesa.
 
 Outras pendências conhecidas:
 
-- **Sem CI.** Não há `.github/workflows`; build, push e `docker compose up` são manuais por SSH.
+- **Sem CD.** O CI (`.github/workflows/ci.yml`) builda, testa e analisa, mas build da imagem,
+  push e `docker compose up` em produção ainda são manuais.
 - **Segredos em arquivo.** O `.env` na instância é o caminho da primeira fase; a migração para o
   AWS SSM Parameter Store não muda o compose — basta um script de boot que gere o mesmo arquivo.
 - **Rate limiter em memória.** Zera a cada redeploy e não é compartilhado entre réplicas. Não é
@@ -731,6 +732,28 @@ job `api` do workflow roda em `ubuntu-latest` (runner Linux, com daemon Docker) 
 um bloco `services: postgres:`. O container é gerenciado pela própria `BancoFixture`; um service
 do GitHub Actions ficaria de pé sem ninguém usar. As duas suítes são passos separados no job
 para o log dizer de imediato se quebrou lógica ou banco.
+
+### Cobertura e SonarCloud
+
+As duas suítes coletam cobertura pelo `coverlet.collector` com o `coverlet.runsettings` da raiz do
+app, que gera **OpenCover** (o formato que o SonarCloud lê para C#) e Cobertura, e tira
+`**/Migrations/*.cs` da conta — código gerado pelo EF não é código autoral:
+
+```powershell
+dotnet test --settings coverlet.runsettings --collect:"XPlat Code Coverage" --results-directory TestResults
+```
+
+Cada suíte deixa um `TestResults/<guid>/coverage.opencover.xml` (gitignored). No CI o job `api`
+publica os dois como artefato e o job `sonar` os entrega ao scanner, que soma os relatórios — é
+como a Infrastructure, coberta só pela suíte de integração, entra no número.
+
+O job `sonar` usa o **SonarScanner for .NET** (`begin` → `dotnet build` → `end`) a partir da raiz
+do monorepo. O C# é analisado pelo build; o TypeScript do front, o YAML e o Dockerfile entram
+pelo `sonar.scanner.scanAll`, que é o padrão do scanner. Ficam fora da análise as migrations, o
+`schema.d.ts` gerado e os testes do front.
+
+⚠️ O número do SonarCloud **não é o mesmo** do relatório local de uma suíte só: ele soma as
+quatro camadas da API (controllers e `Program.cs` incluídos, que nenhum teste exercita) ao front.
 
 ### O que continua manual
 

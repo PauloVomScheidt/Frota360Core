@@ -15,6 +15,7 @@ dotnet build Frota360.slnx
 dotnet test
 dotnet test --filter "FullyQualifiedName~ManutencaoHandlersTests"   # uma classe
 dotnet test --filter "DisplayName~Create_DevePersistir"             # um teste
+dotnet test --settings coverlet.runsettings --collect:"XPlat Code Coverage" --results-directory TestResults   # cobertura (OpenCover, sem migrations)
 dotnet run --project src/Api                                        # localhost:5062 → /scalar/v1
 
 dotnet ef migrations add <Nome> --project src/Infrastructure --startup-project src/Api

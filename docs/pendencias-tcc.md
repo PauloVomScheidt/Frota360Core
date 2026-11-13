@@ -13,7 +13,7 @@ obrigatórios da linha cumpridos e prova de autoria aprovada. Segunda tentativa 
 |---|---|---|---|
 | 1 | [Testes do frontend](#1-testes-do-frontend) | ✅ resolvido | **93,19%** de linhas (769 testes) — exigência 25%, meta 50%, piso de 50% no CI |
 | 2 | [Cobertura do backend](#2-cobertura-do-backend) | 🔴 reprova na prova de autoria | 77,9% (só unitários, só Application + Domain) — meta é 75% |
-| 3 | [Análise estática (SonarCloud)](#3-análise-estática-sonarcloud) | 🟠 obrigatório do núcleo comum | inexistente |
+| 3 | [Análise estática (SonarCloud)](#3-análise-estática-sonarcloud) | 🟠 obrigatório do núcleo comum | projeto criado e job `sonar` no CI; falta o `SONAR_TOKEN`, desligar a Automatic Analysis e o primeiro run |
 | 4 | [Wiki](#4-wiki) | 🟠 obrigatório do núcleo comum | Wiki do GitHub vazia |
 | 5 | [Monitoramento](#5-monitoramento-e-observabilidade) | 🟠 obrigatório do núcleo comum | Serilog + `/health`, sem ferramenta de monitoramento |
 | 6 | [Deploy em produção](#6-deploy-em-produção) | 🔴 reprovação direta | domínios não resolvem; nada no ar |
@@ -147,17 +147,42 @@ lint, não análise de segurança; o backend não tem nada.
 Gratuito para repositório público, integra com o GitHub e mostra o quality gate como check no PR.
 Além de bugs, code smells e vulnerabilidades, ele exibe a cobertura — o mesmo número da prova.
 
-### Passos
-1. Entrar no sonarcloud.io com o GitHub e importar o repositório. Criar **dois projetos**
-   (`frota360-api` e `frota360-web`) — é o jeito mais simples de lidar com o monorepo.
-2. **Desligar a "Automatic Analysis"**: ela não importa cobertura de C#. A análise roda no CI.
-3. Gerar o `SONAR_TOKEN` e cadastrar como secret do repositório.
-4. **API**: no job `api`, envolver build e testes com `dotnet-sonarscanner begin` / `end`, com a
-   cobertura do coverlet em formato **OpenCover**.
-5. **Web**: `SonarSource/sonarqube-scan-action` depois dos testes, apontando para o
-   `coverage/lcov.info` do Vitest.
-6. Tratar o que o primeiro relatório apontar como **bug** ou **vulnerabilidade**; code smells
-   ficam a critério.
+### Situação em 13/11/2026 — 🟡 em andamento
+O repositório foi importado como **projeto único** `PauloVomScheidt_Frota360Core` (organização
+`paulovomscheidt`), em vez dos dois projetos do plano original: o SonarScanner for .NET analisa
+também o TypeScript (`sonar.scanner.scanAll`), então um projeto só cobre o monorepo, com um
+quality gate e um badge.
+
+A primeira análise (automática, sem cobertura) reprovou o gate só por **duplicação em código
+novo** (4,3% contra o limite de 3%) — quase toda em migrations geradas pelo EF, que agora ficam
+fora da análise. Ela apontou 12 achados de segurança e confiabilidade:
+
+| Achado | Tratamento |
+|---|---|
+| `npm ci` sem `--ignore-scripts` no CI | ✅ corrigido |
+| `BackofficeController` lendo o header cru | ✅ corrigido — `[FromHeader(Name = "X-Backoffice-Key")]` |
+| `ExceptionMiddleware` sem `RequestAborted` | ✅ corrigido |
+| `app.Run()` síncrono no `Program.cs` | ✅ corrigido — `await app.RunAsync()` |
+| Segredo JWT "em configuração" (`TokenService`) | marcar como falso positivo: a chave vem de user-secrets/variável de ambiente, nunca de arquivo versionado |
+| Senha no `appsettings.example.json` | marcar como falso positivo: é o template, com a senha do Postgres de desenvolvimento |
+| `autoFocus` em cinco formulários de diálogo | marcar como aceito: o padrão de diálogo da WAI-ARIA manda pôr o foco no primeiro campo |
+| `tabIndex` na `Rolagem` da landing | marcar como falso positivo: região rolável **precisa** ser focável para quem navega pelo teclado |
+
+Já está no repositório:
+- `apps/api/coverlet.runsettings` — OpenCover + Cobertura, sem migrations (adianta o passo 1 do
+  item 2).
+- Jobs `api` e `web` publicam a cobertura como artefato; o job novo `sonar` (depois dos dois, não
+  obrigatório) roda `begin` → `build` → `end` e envia os dois relatórios.
+- `projectRoot: '../..'` no reporter `lcov` do Vitest, para os caminhos baterem com a raiz.
+- Badges no README.
+
+Falta, fora do código:
+1. Cadastrar o secret `SONAR_TOKEN` (SonarCloud → My Account → Security; GitHub → Settings →
+   Secrets and variables → Actions).
+2. **Desligar a Automatic Analysis** (Administration → Analysis Method) — com ela ligada, a
+   análise do CI falha.
+3. Rodar o CI na `develop` e conferir no painel que a cobertura chegou para C# **e** TypeScript.
+4. Marcar os quatro achados acima como falso positivo/aceito, com a justificativa da tabela.
 
 ### Pronto quando
 Os dois projetos aparecem no SonarCloud com cobertura importada e quality gate verde, e o badge
@@ -330,9 +355,6 @@ A release `v1.0.0` existe no GitHub, aponta para a `main` e corresponde ao que e
 ## Outras pendências
 
 Fora da lista principal, mas com prazo no mesmo 30/11.
-
-### Documentação desatualizada
-- `docs/contexto-api.md:697` diz "Sem CI. Não há `.github/workflows`" — o CI existe.
 
 ### PAC Extensionista VIII
 - **Peer review**: PRs revisados pelo squad e issues de QA abertas pelos colegas no seu

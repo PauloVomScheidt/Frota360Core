@@ -123,7 +123,9 @@ O **Playwright MCP** está registrado no escopo `user` (todas as suas sessões, 
 ## CI
 
 `.github/workflows/ci.yml`, em PR e push para `main`/`develop`. Três jobs — `api`, `web` e
-`docker` —, e os ids dos jobs são os nomes dos required checks. Duas coisas a lembrar ao mexer:
+`docker` —, e os ids dos jobs são os nomes dos required checks. Um quarto, `sonar`, roda depois de
+`api` e `web` com os artefatos de cobertura deles e envia a análise ao SonarCloud (projeto único
+`PauloVomScheidt_Frota360Core`); não é required check. Três coisas a lembrar ao mexer:
 
 - **Não adicione filtro de path.** `on.<evento>.paths` impede o workflow de rodar, e um required
   check que nunca reporta trava o PR para sempre. Se algum dia precisar pular job, use um job de
@@ -132,6 +134,10 @@ O **Playwright MCP** está registrado no escopo `user` (todas as suas sessões, 
   `.dockerignore` exclui não existem, então a verificação passaria vazia. Mexeu no
   `.dockerignore` ou no `Dockerfile`? Confira que a asserção ainda reprova quando deve — a
   receita está no README.
+- **O Sonar lê os caminhos de dentro dos relatórios de cobertura.** O OpenCover da API grava
+  caminho absoluto (igual em todo runner) e o `lcov.info` do front sai relativo à **raiz do
+  monorepo** por causa do `projectRoot: '../..'` no `vite.config.ts`. Mexeu em algum dos dois?
+  A cobertura some do SonarCloud em silêncio, sem quebrar job nenhum.
 
 Detalhe do lado da API (por que não há `services: postgres`) em
 [docs/contexto-api.md](docs/contexto-api.md) (§ Testes).
