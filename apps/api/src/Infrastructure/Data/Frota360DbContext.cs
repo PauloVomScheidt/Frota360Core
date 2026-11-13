@@ -78,6 +78,8 @@ namespace Frota360.Infrastructure.Data
                 entity.Property(v => v.UltimoMotorista).HasMaxLength(100);
                 entity.Property(v => v.DataInclusao).HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'");
 
+                entity.HasIndex(v => new { v.EmpresaId, v.Placa }).IsUnique();
+
                 entity.HasOne<Empresa>()
                       .WithMany()
                       .HasForeignKey(v => v.EmpresaId)

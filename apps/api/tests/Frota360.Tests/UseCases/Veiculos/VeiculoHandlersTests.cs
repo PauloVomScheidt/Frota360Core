@@ -126,6 +126,67 @@ namespace Frota360.Tests.UseCases.Veiculos
             Assert.Equal("ABC1D23", resposta.Placa);
         }
 
+        /// <summary>RN02 — placa repetida na empresa é recusada antes de gravar.</summary>
+        [Fact]
+        public async Task Create_ComPlacaJaCadastradaNaEmpresa_DeveLancarSemPersistir()
+        {
+            _repository.ExistePlacaAsync(1, "ABC1D23").Returns(true);
+
+            var handler = new CreateVeiculoHandler(_repository, _currentUser, _auditoria, NullLogger<CreateVeiculoHandler>.Instance);
+
+            var erro = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                handler.HandleAsync(new CreateVeiculoCommand(new CreateVeiculoRequest
+                {
+                    NomeVeiculo = "Saveiro",
+                    MarcaVeiculo = "VW",
+                    Placa = " abc1d23 ",
+                    Quilometragem = 0
+                })));
+
+            Assert.Contains("ABC1D23", erro.Message);
+            await _repository.DidNotReceive().AddAsync(Arg.Any<Veiculo>());
+        }
+
+        [Fact]
+        public async Task Update_ComPlacaDeOutroVeiculoDaEmpresa_DeveLancarSemPersistir()
+        {
+            _repository.GetByIdAsync(7, 1).Returns(NovoVeiculo(7));
+            _repository.ExistePlacaAsync(1, "XYZ9K88", 7).Returns(true);
+
+            var handler = new UpdateVeiculoHandler(_repository, _rotaRepository, _currentUser, _auditoria, NullLogger<UpdateVeiculoHandler>.Instance);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                handler.HandleAsync(new UpdateVeiculoCommand(7, new UpdateVeiculoRequest
+                {
+                    NomeVeiculo = "Strada",
+                    MarcaVeiculo = "Fiat",
+                    Placa = "xyz9k88",
+                    Quilometragem = 50_000
+                })));
+
+            await _repository.DidNotReceive().UpdateAsync(Arg.Any<Veiculo>());
+        }
+
+        [Fact]
+        public async Task Update_MantendoAPropriaPlaca_DeveConsultarIgnorandoOProprioVeiculo()
+        {
+            _repository.GetByIdAsync(7, 1).Returns(NovoVeiculo(7));
+            _repository.UpdateAsync(Arg.Any<Veiculo>()).Returns(ci => ci.Arg<Veiculo>());
+
+            var handler = new UpdateVeiculoHandler(_repository, _rotaRepository, _currentUser, _auditoria, NullLogger<UpdateVeiculoHandler>.Instance);
+
+            var resposta = await handler.HandleAsync(new UpdateVeiculoCommand(7, new UpdateVeiculoRequest
+            {
+                NomeVeiculo = "Strada",
+                MarcaVeiculo = "Fiat",
+                Placa = "ABC1D23",
+                Quilometragem = 50_000
+            }));
+
+            Assert.NotNull(resposta);
+            await _repository.Received(1).ExistePlacaAsync(1, "ABC1D23", 7);
+        }
+
         [Fact]
         public async Task Delete_QuandoExiste_DeveRemoverERetornarTrue()
         {

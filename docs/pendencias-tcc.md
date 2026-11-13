@@ -14,7 +14,7 @@ obrigatórios da linha cumpridos e prova de autoria aprovada. Segunda tentativa 
 | 1 | [Testes do frontend](#1-testes-do-frontend) | ✅ resolvido | **93,19%** de linhas (769 testes) — exigência 25%, meta 50%, piso de 50% no CI |
 | 2 | [Cobertura do backend](#2-cobertura-do-backend) | ✅ resolvido | **82,0%** de linhas no relatório consolidado (três suítes, 587 testes) — meta 75%, piso de 75% no CI. Conferir o número de `apps/api` no Sonar após o merge |
 | 3 | [Análise estática (SonarCloud)](#3-análise-estática-sonarcloud) | ✅ resolvido | quality gate verde na `main`: **81,8%** de cobertura, **2,8%** de duplicação, nota A em segurança, confiabilidade e manutenibilidade |
-| 4 | [Wiki](#4-wiki) | 🟠 obrigatório do núcleo comum | Wiki do GitHub vazia |
+| 4 | [Wiki](#4-wiki) | 🟡 pronta no repositório | 26 páginas em `wiki/` + workflow `wiki.yml`; publica no primeiro merge na `main` |
 | 5 | [Monitoramento](#5-monitoramento-e-observabilidade) | 🟠 obrigatório do núcleo comum | Serilog + `/health`, sem ferramenta de monitoramento |
 | 6 | [Deploy em produção](#6-deploy-em-produção) | 🔴 reprovação direta | domínios não resolvem; nada no ar |
 | 7 | [Pipeline de CD](#7-pipeline-de-cd) | 🔴 reprovação direta | só CI; deploy descrito como manual |
@@ -289,8 +289,54 @@ aceitos). A documentação mínima da linha Web Apps exige: **requisitos funcion
 uso ou user stories**, **diagrama de arquitetura C4** e **instruções de deploy**. O critério
 "Documentação" do Demo Day também cobra registro de decisões (RFC, ADR).
 
-Hoje a Wiki do GitHub está vazia. Há bastante conteúdo em `docs/`, mas sem requisitos, sem user
-stories e sem C4.
+Hoje a Wiki do GitHub tem só a página inicial criada pela interface.
+
+### Pré-requisito concluído em 13/11/2026 — RFC v2.0
+O RFC (`docs/RFC_Gerenciador_Frotas_V1.md`) descrevia o projeto de junho: cadastro aberto,
+`Motorista` como entidade, SQL Server, Redis, JWT de 8 h, auditoria e papéis fora do escopo. Foi
+reescrito como **v2.0** sobre o sistema real, e é a fonte das páginas de requisitos, user stories,
+C4 e modelo de dados da Wiki:
+
+- RF01–RF34 e RNF01–RNF20 renumerados por módulo; **RN01–RN11 mantêm a numeração** (o código as
+  cita) e RN12–RN20 formalizam regras que já existiam sem número.
+- Seção 2.7, "Evolução do escopo desde a v1": cada mudança com o motivo — material para a banca.
+- Diagramas em Mermaid (fluxos, ciclo de vida, C4 nos três níveis, ER com as 13 entidades) e
+  capturas reais em `docs/img/rfc/`.
+- §6.5 LGPD corrigida: Google e Resend são operadores fora do Brasil (transferência internacional,
+  Art. 33), a auditoria guarda IP, e a eliminação é desativação + anonimização sob solicitação.
+- A revisão achou um **bug**: a RN02 (placa única) nunca tinha sido implementada. Corrigida com
+  teste primeiro, checagem no handler e índice único `(EmpresaId, Placa)`.
+- Ficou registrado como lacuna: layout dedicado ao motorista no celular (RNF14 parcial).
+
+### Situação em 13/11/2026 — 🟡 pronta, falta publicar
+As páginas vivem em `wiki/` no monorepo e são publicadas na Wiki do GitHub pelo workflow
+`.github/workflows/wiki.yml` a cada push na `main` que as altere (ou à mão, por *Run workflow*).
+A documentação passa por PR e fica versionada junto com o código; as capturas de tela vêm de
+`docs/img/rfc/`, copiadas para `imagens/` na publicação.
+
+| Página sugerida | Arquivo |
+|---|---|
+| Home | `Home.md` (+ `_Sidebar.md` e `_Footer.md`) |
+| Requisitos | `Requisitos.md` — RF, RNF com situação e RN com o ponto do código que garante cada uma |
+| User stories | `User-Stories.md` — 18 histórias por papel, com critérios de aceite e RF/RN cobertos |
+| Arquitetura (C4) | `Arquitetura.md` — os três níveis, camadas, front e contrato API ↔ front |
+| Modelo de dados | `Modelo-de-Dados.md` — ER, o que é derivado, restrições e índices |
+| Decisões (ADRs) | `Decisoes-de-Arquitetura.md` + `ADR-001` a `ADR-010` |
+| Como rodar localmente | `Como-Rodar-Localmente.md` |
+| Deploy | `Deploy.md` — com as pendências de CD, rollback e backup explícitas |
+| Testes e qualidade | `Testes-e-Qualidade.md` — suítes, cobertura, CI, bugs achados |
+| Monitoramento | `Monitoramento.md` — o que existe e a estratégia planejada (item 5) |
+| Segurança e LGPD | `Seguranca-e-LGPD.md` |
+| (extra) | `Telas.md`, `Referencia-da-API.md`, `Convencoes-e-Fluxo-de-Trabalho.md` |
+
+Verificado localmente: os 102 links internos e âncoras resolvem, os 6 diagramas Mermaid
+renderizam, e uma simulação da publicação sobre um clone da Wiki produziu 26 páginas e 8 imagens.
+
+**Falta:** fazer o merge na `main` e conferir a execução do `wiki.yml` em Actions. Se o push for
+recusado com 403, crie um token fine-grained com *Contents: write* no repositório e salve-o como
+secret `WIKI_TOKEN` — o workflow passa a usá-lo no lugar do `GITHUB_TOKEN`. As páginas de
+[Monitoramento](#5-monitoramento-e-observabilidade) e [Deploy](#6-deploy-em-produção) precisam
+ser atualizadas quando os itens 5, 6 e 7 forem concluídos.
 
 ### Ferramentas recomendadas
 | Ferramenta | Papel |

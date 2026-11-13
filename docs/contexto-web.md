@@ -227,6 +227,7 @@ Cadastro completo para a gestão; **leitura para o motorista**, que chega aqui p
 - Campos do formulário: nome, marca, placa (maiúsculas automáticas) e quilometragem.
 - **Detalhe importante**: `ultimoMotorista` e `dataUltimaViagem` não estão no formulário — são preenchidos pela operação de rotas. Como o `PUT` substitui o registro inteiro, a edição reenvia esses dois campos intactos, vindos do registro carregado. Alterar isso sem cuidado apaga o histórico do veículo.
 - A placa é aceita nos dois formatos (`ABC1234` e `ABC1D23`) e o servidor a grava sempre em maiúsculas — o `text-transform` da tela é conveniência, não a regra.
+- **Placa repetida na empresa é 422** (RN02, desde 13/11/2026): *"Já existe um veículo com a placa X nesta empresa."* aparece no formulário pelo caminho comum de `mensagensDeErro()`, sem tratamento próprio na tela.
 - **Excluir veículo com rota associada é 422** (RN08): a mensagem *"Não é possível excluir um veículo com rotas associadas…"* aparece dentro do próprio `ConfirmDialog`, que recebe `erros={errosExclusao}`. É o caso mais comum de exclusão recusada nesta tela.
 
 ### 5.4 `/rotas`

@@ -36,6 +36,9 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.UpdateVeiculo
                 // caixa diferente entraria no diff como se fosse alteração.
                 var placa = request.Placa.Trim().ToUpperInvariant();
 
+                if (await repository.ExistePlacaAsync(currentUser.EmpresaId, placa, ignorarId: veiculo.Id))
+                    throw new InvalidOperationException(VeiculoMappings.MensagemPlacaDuplicada(placa));
+
                 // O diff é montado antes de a entidade ser mutada — depois disso o "antes" se perde.
                 var alteracoes = new AlteracoesBuilder()
                     .Comparar("Nome", veiculo.NomeVeiculo, request.NomeVeiculo)
@@ -65,7 +68,7 @@ namespace Frota360.Application.UseCases.Veiculos.Commands.UpdateVeiculo
 
                 return atualizado.ToResponse(emRota);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not InvalidOperationException)
             {
                 logger.LogError(ex, "Erro ao atualizar veículo Id {Id}", command.Id);
                 throw;

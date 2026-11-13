@@ -144,7 +144,7 @@ Ao escrever qualquer acesso a dados novo:
 2. Assinatura de repositório inclui `empresaId` e filtra por ele: `GetAllAsync(int empresaId)`, `GetByIdAsync(int id, int empresaId)`, `ExisteXAsync(int empresaId, ...)`. Não crie sobrecarga sem `empresaId`.
 3. No create, `EmpresaId = currentUser.EmpresaId` na entidade.
 4. **Todo id de FK vindo do request é resolvido por `GetByIdAsync(id, currentUser.EmpresaId)` antes de gravar** — assim um id de outra empresa simplesmente "não existe". `CreateManutencaoHandler` é o modelo a copiar; `CreateRotaHandler`/`UpdateRotaHandler` seguem o mesmo padrão desde a RN07. A auditoria completa da regra está em [docs/contexto-api.md](../../docs/contexto-api.md) (§ Auditoria de isolamento por EmpresaId).
-5. Índice único no `DbContext` é composto com `EmpresaId` (`(EmpresaId, CPF)`, `(EmpresaId, Nome)`). Exceção: `Usuario.Email` é único global.
+5. Índice único no `DbContext` é composto com `EmpresaId` (`(EmpresaId, CPF)`, `(EmpresaId, Nome)`, `(EmpresaId, Placa)`). Exceção: `Usuario.Email` é único global. O índice fecha a corrida; a mensagem amigável vem de uma checagem `Existe*Async` no handler antes de gravar.
 
 Não há query filter global no EF — o filtro é responsabilidade de cada método de repositório.
 

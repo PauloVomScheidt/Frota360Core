@@ -23,5 +23,8 @@ namespace Frota360.Application.UseCases.Veiculos
             DataUltimaViagem = v.DataUltimaViagem,
             DataInclusao = v.DataInclusao
         };
+
+        public static string MensagemPlacaDuplicada(string placa)
+            => $"Já existe um veículo com a placa {placa} nesta empresa.";
     }
 }

@@ -1,0 +1,1 @@
+Esta Wiki é gerada a partir da pasta [`wiki/`](https://github.com/PauloVomScheidt/Frota360Core/tree/main/wiki) do repositório. Edições feitas direto aqui são sobrescritas na próxima publicação: altere pelo repositório, via pull request.

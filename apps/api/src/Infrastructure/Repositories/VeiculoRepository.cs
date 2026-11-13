@@ -34,5 +34,10 @@ namespace Frota360.Infrastructure.Repositories
             await context.SaveChangesAsync();
             return veiculo;
         }
+
+        public async Task<bool> ExistePlacaAsync(int empresaId, string placa, int? ignorarId = null)
+            => await context.Veiculos.AnyAsync(v => v.EmpresaId == empresaId
+                && v.Placa == placa
+                && (ignorarId == null || v.Id != ignorarId));
     }
 }
