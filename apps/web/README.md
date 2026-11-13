@@ -8,6 +8,7 @@ Front-end React da API [Frota360](../api) (`apps/api`, mesmo repositório) — g
 - Tailwind CSS 4 + design system "Modernist" (`src/styles/design-system.css`)
 - React Router 7
 - TanStack Query 5 + Axios (Bearer + refresh automático com lock)
+- Vitest + jsdom + Testing Library + MSW (testes e cobertura)
 
 ## Como rodar
 
@@ -32,6 +33,9 @@ A URL da API vem de `VITE_API_URL` (`.env.development` / `.env.production`).
 | `npm run dev` | Servidor de desenvolvimento |
 | `npm run build` | Type-check + build de produção |
 | `npm run lint` | Lint (oxlint) |
+| `npm run test` | Testes (Vitest), uma passada |
+| `npm run test:watch` | Testes em modo watch |
+| `npm run test:cov` | Testes + relatório de cobertura em `coverage/` (abra `coverage/index.html`). Reprova abaixo de 50% de linhas — hoje em 93% |
 | `npm run gen:api` | Gera `src/api/schema.d.ts` a partir do OpenAPI da API (precisa da API rodando) |
 
 ## Rotas
@@ -85,7 +89,18 @@ src/
 │   └── senha.ts        # regras de senha compartilhadas
 ├── components/     # AppLayout (sidebar+topbar), Table, AuthScreen, Logo, RequireAuth/RequireAdmin, icons
 ├── lib/            # queryClient do TanStack Query, format.ts (datas, km, CPF)
-└── pages/          # telas
+├── pages/          # telas (o teste de cada uma fica ao lado: LoginPage.test.tsx)
+└── test/           # infraestrutura de testes
+    ├── setup.ts            # jest-dom, ciclo de vida do MSW, cleanup, localStorage e polyfill do <dialog>
+    ├── renderizar.tsx      # QueryClient novo + MemoryRouter + usuário logado por papel
+    ├── fabricas.ts         # dados falsos dos *Response e o envelope ApiResponse
+    ├── servidor.ts         # servidor MSW com os catálogos padrão
+    ├── capturar.ts         # handler MSW que guarda params e corpo de cada chamada
+    ├── consultas.ts        # matcher de texto completo e normalização de espaços
+    ├── RotaAtual.tsx       # sonda de navegação: para onde a tela mandou o usuário
+    ├── suiteCatalogo.tsx   # bateria compartilhada dos quatro catálogos
+    ├── googleMapsFalso.ts  # substituto de lib/googleMaps (sem SDK)
+    └── mapaFalso.tsx       # CampoEndereco e MapaRota falsos
 ```
 
 ## Convenções da API

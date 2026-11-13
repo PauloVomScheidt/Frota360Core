@@ -23,7 +23,8 @@ apps/
 docs/
 ├── contexto-api.md        contexto profundo do backend
 ├── contexto-web.md        contexto profundo do front (tela a tela, cache keys, endpoints)
-└── deploy.md              roteiro de produção (EC2 + Docker Compose) e ensaio local
+├── deploy.md              roteiro de produção (EC2 + Docker Compose) e ensaio local
+└── pendencias-tcc.md      o que falta para os obrigatórios do TCC (linha Web Apps), com problema e solução
 .github/workflows/ci.yml   CI — jobs `api`, `web` e `docker` (sem CD)
 docker-compose.yml         banco de desenvolvimento
 docker-compose.prod.yml    stack de produção (db + api + caddy)

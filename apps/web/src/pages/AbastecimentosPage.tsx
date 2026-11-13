@@ -40,6 +40,7 @@ import {
   paraInputDate,
 } from '../lib/format'
 import { filtroDePeriodo, intervaloDoFiltro, type FiltroDePeriodo } from '../lib/periodo'
+import { valorTotalAbastecimento } from '../lib/abastecimento'
 
 const mutedText = 'color-mix(in srgb, var(--color-text) 55%, transparent)'
 
@@ -757,7 +758,7 @@ export function AbastecimentosPage() {
     const litros = Number(form.litros)
     const preco = Number(form.valorLitro)
     if (!Number.isFinite(litros) || !Number.isFinite(preco)) return 0
-    return Math.round(litros * preco * 100) / 100
+    return valorTotalAbastecimento(litros, preco)
   }, [form.litros, form.valorLitro])
 
   const salvarMutation = useMutation({
