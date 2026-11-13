@@ -13,7 +13,7 @@ obrigatórios da linha cumpridos e prova de autoria aprovada. Segunda tentativa 
 |---|---|---|---|
 | 1 | [Testes do frontend](#1-testes-do-frontend) | ✅ resolvido | **93,19%** de linhas (769 testes) — exigência 25%, meta 50%, piso de 50% no CI |
 | 2 | [Cobertura do backend](#2-cobertura-do-backend) | 🔴 reprova na prova de autoria | 77,9% (só unitários, só Application + Domain) — meta é 75% |
-| 3 | [Análise estática (SonarCloud)](#3-análise-estática-sonarcloud) | 🟠 obrigatório do núcleo comum | job `sonar` no CI, cobertura importada (83,5% no PR #22); falta o gate verde no PR e marcar os falsos positivos |
+| 3 | [Análise estática (SonarCloud)](#3-análise-estática-sonarcloud) | 🟠 obrigatório do núcleo comum | job `sonar` no CI, cobertura importada (84,7% na `main`); gate da `main` reprovado por duplicação (3,55%), corrigida na branch `fix-duplicacao-catalogos`; falta marcar os falsos positivos |
 | 4 | [Wiki](#4-wiki) | 🟠 obrigatório do núcleo comum | Wiki do GitHub vazia |
 | 5 | [Monitoramento](#5-monitoramento-e-observabilidade) | 🟠 obrigatório do núcleo comum | Serilog + `/health`, sem ferramenta de monitoramento |
 | 6 | [Deploy em produção](#6-deploy-em-produção) | 🔴 reprovação direta | domínios não resolvem; nada no ar |
@@ -185,8 +185,15 @@ mesmo run trouxe quatro avisos do compilador, também corrigidos: `KnownNetworks
 obsoletos no `Program.cs` (agora `KnownIPNetworks` com `System.Net.IPNetwork.Parse`) e um
 `JsonSerializerOptions` criado a cada erro no `ExceptionMiddleware`.
 
+Depois do merge do PR #22, a análise da `main` reprovou por **duplicação em código novo: 3,55%**
+(890 de 25.078 linhas, limite de 3%). Todo o código conta como novo porque o squash do "Release
+13/11" (#21) datou todas as linhas daquele dia. A maior fonte era real: `TiposCombustivelPage` e
+`TiposDespesaPage` eram cópias com os textos trocados (125 linhas duplicadas cada). As duas viraram
+configuração de um componente só, `CatalogoSimples`, o que tira ~250 linhas duplicadas e deve
+deixar a densidade perto de 2,6%.
+
 Falta, fora do código:
-1. Conferir o gate verde no próximo run do PR.
+1. Conferir o gate verde na `main` depois do merge da `fix-duplicacao-catalogos`.
 2. Marcar os quatro achados da tabela como falso positivo/aceito, com a justificativa dela.
 
 ### Pronto quando
