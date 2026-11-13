@@ -315,12 +315,21 @@ dotnet test --filter "FullyQualifiedName~ManutencaoHandlersTests"   # uma classe
 dotnet test --filter "DisplayName~Create_DevePersistir"             # um teste
 ```
 
-Duas suítes:
+Três suítes:
 
 - **`tests/Frota360.Tests`** — xUnit + NSubstitute, **sem banco**. Referencia apenas Application e Domain; cobre handlers, mappings, validators e services. Roda em ~1 s, sem Docker.
+- **`tests/Frota360.Api.Tests`** — a camada HTTP sem subir a aplicação: controllers com dispatcher e validator substituídos, middlewares sobre `DefaultHttpContext`, e a **composição** (a DI de `AddApplication` + `AddInfrastructure` montada sobre configuração em memória, o JwtBearer e o `TokenService`).
 - **`tests/Frota360.IntegrationTests`** — sobe um `postgres:17` descartável com **Testcontainers**, aplica as migrations reais e exercita os repositórios. Cobre o que só o banco prova: política de `DateTimeKind`, collation de e-mail, índices únicos filtrados, precisão decimal e tradução de consulta. **Exige Docker no ar.**
 
-`dotnet test` roda as duas.
+`dotnet test` roda as três.
+
+### Cobertura
+
+```powershell
+./scripts/cobertura-api.ps1 -Abrir     # da raiz do monorepo; exige Docker
+```
+
+Roda as três suítes com o `coverlet.runsettings` e junta tudo com o ReportGenerator (ferramenta local, em `dotnet-tools.json`) em `TestResults/relatorio/index.html`. Termina com erro abaixo de 75% de linhas — o mesmo piso do CI, que chama o script com `-SomenteRelatorio`.
 
 Nomes em português, no padrão `Metodo_Cenario_DeveResultado`. Todo handler tem ao menos um teste que prova o escopo por empresa.
 

@@ -12,8 +12,8 @@ obrigatórios da linha cumpridos e prova de autoria aprovada. Segunda tentativa 
 | # | Pendência | Gravidade | Situação hoje |
 |---|---|---|---|
 | 1 | [Testes do frontend](#1-testes-do-frontend) | ✅ resolvido | **93,19%** de linhas (769 testes) — exigência 25%, meta 50%, piso de 50% no CI |
-| 2 | [Cobertura do backend](#2-cobertura-do-backend) | 🔴 reprova na prova de autoria | 77,9% (só unitários, só Application + Domain) — meta é 75% |
-| 3 | [Análise estática (SonarCloud)](#3-análise-estática-sonarcloud) | 🟠 obrigatório do núcleo comum | job `sonar` no CI, cobertura importada (84,7% na `main`); gate da `main` reprovado por duplicação (3,55%), corrigida na branch `fix-duplicacao-catalogos`; falta marcar os falsos positivos |
+| 2 | [Cobertura do backend](#2-cobertura-do-backend) | ✅ resolvido | **82,0%** de linhas no relatório consolidado (três suítes, 587 testes) — meta 75%, piso de 75% no CI. Conferir o número de `apps/api` no Sonar após o merge |
+| 3 | [Análise estática (SonarCloud)](#3-análise-estática-sonarcloud) | ✅ resolvido | quality gate verde na `main`: **81,8%** de cobertura, **2,8%** de duplicação, nota A em segurança, confiabilidade e manutenibilidade |
 | 4 | [Wiki](#4-wiki) | 🟠 obrigatório do núcleo comum | Wiki do GitHub vazia |
 | 5 | [Monitoramento](#5-monitoramento-e-observabilidade) | 🟠 obrigatório do núcleo comum | Serilog + `/health`, sem ferramenta de monitoramento |
 | 6 | [Deploy em produção](#6-deploy-em-produção) | 🔴 reprovação direta | domínios não resolvem; nada no ar |
@@ -105,35 +105,105 @@ de cada tipo (função pura, tela com MSW).
 ## 2. Cobertura do backend
 
 ### O problema
-A meta é **75%** e o número medido é **77,9%** de linhas (349 testes unitários; Application
-77,1%, Domain 85,7%). Desde 13/11/2026 há uma terceira suíte, `Frota360.Api.Tests`, para a camada
-HTTP, e o SonarCloud soma as três. Está acima, mas com folga pequena, e o número tem dois pontos cegos:
+A meta é **75% de linhas no backend**. O número antigo deste documento (77,9%) estava errado: em
+13/11/2026 a suíte unitária sozinha mede **71,4%** (Application 70,6%, Domain 77,5%), e o
+SonarCloud, que soma as três suítes e enxerga as quatro camadas, mede **63,9%** na pasta
+`apps/api` — 785 de 2.177 linhas sem teste.
 
-- O projeto `Frota360.Tests` só referencia **Application** e **Domain** — Infrastructure e Api
-  não aparecem no relatório dos unitários.
-- Os testes de integração (`Frota360.IntegrationTests`, Testcontainers) cobrem Infrastructure,
-  mas geram um relatório separado e exigem Docker rodando.
+| Camada (SonarCloud, `main` em `3d90b6a`) | Cobertura de linhas |
+|---|---|
+| Domain | 67,6% |
+| Application | 66,1% |
+| Infrastructure | 69,7% |
+| Api | 6,5% |
 
-Na prova, o professor vai olhar **um** relatório. Se ele for gerado de outro jeito do que o seu,
-o número pode cair abaixo de 75%.
+O número separado do backend está no painel: Measures → Coverage → `apps/api`. O 81,8% do badge
+é o projeto inteiro, com o front (94,4%) puxando para cima.
 
-### Ferramentas recomendadas
+Os zeros são reais — conferidos no relatório local, não é efeito da soma do Sonar. Os maiores
+buracos:
+
+| Onde | Linhas sem teste | Como cobrir |
+|---|---|---|
+| `InfrastructureExtensions` + `ApplicationExtensions` (DI) | ~120 | Um teste que monta o `ServiceCollection` com `IConfiguration` em memória e resolve os serviços registrados — prova a ligação de DI de uma vez |
+| Validators sem teste: `UpdateAbastecimentoValidator`, `AceitarConviteValidator`, `CreateManutencaoValidator`, `ConcluirManutencaoValidator`, `AtualizarPerfilValidator`, `ValidatorHelpers` | ~110 | `*ValidatorTests` no padrão dos que já existem em `Frota360.Tests` |
+| `TokenService` (Infrastructure), `CurrentUserService` e `SessaoCookies` (Api) | ~65 | Unitários com configuração em memória e `DefaultHttpContext` |
+| `MigracaoDeBanco` (Api), `DespesaRepository` (Infrastructure) | ~40 | `DespesaRepository` na suíte de integração; `MigracaoDeBanco` avaliar |
+
+Para chegar a 75% faltam ~240 linhas cobertas; as três primeiras linhas da tabela somam ~295
+(≈ 77%).
+
+Preferir **testar** a **excluir**: o `Program.cs` saiu da conta porque a última linha não é
+alcançável por teste, mas o código de DI é testável, e uma exclusão é algo que o professor pode
+pedir para justificar.
+
+### Situação em 13/11/2026 — ✅ concluído
+**82,0%** de linhas (3.639 de 4.437) no relatório consolidado, com as três suítes somadas — 401
+unitários, 47 de integração e 139 da camada Api. Branches em 77,5%.
+
+**Na prova:** `./scripts/cobertura-api.ps1 -Abrir` na raiz do repositório (com o Docker no ar)
+roda tudo e abre o HTML; no CI, o job `api` publica o mesmo relatório como artefato
+`relatorio-cobertura-api`, mostra o resumo no job summary e reprova abaixo de 75%.
+
+**A medição estava errada, e para baixo do que parecia.** O `coverlet.runsettings` excluía
+`CompilerGeneratedAttribute`, e o compilador move para classes geradas o corpo de todo método
+`async` e de toda lambda: o relatório contava 2.034 linhas em vez de 4.437 — só o código síncrono.
+O `ExceptionMiddleware` aparecia com 100% porque só o construtor entrava na conta. Sem a exclusão
+(e com `SkipAutoProps`, que tira só os `{ get; set; }`), o ponto de partida real era **58,8%**, e
+não os 68,4% que o mesmo relatório mostrava antes da correção.
+
+| Etapa | Linhas | Cobertura |
+|---|---|---|
+| Ponto de partida, medição antiga (sem os `async`) | 1.392 / 2.034 | 68,4% |
+| Ponto de partida, medição corrigida | 2.613 / 4.438 | 58,8% |
+| DI: `InjecaoDeDependenciaTests` (Application + Infrastructure) | 2.960 / 4.438 | 66,6% |
+| Validators: `UpdateAbastecimento`, `AceitarConvite`, `CreateManutencao`, `ConcluirManutencao`, `AtualizarPerfil` (e o CPF do `ValidatorHelpers`) | 2.981 / 4.437 | 67,1% |
+| `TokenService`, `CurrentUserService`, `SessaoCookies` + `DespesaRepository` (integração) | 3.095 / 4.437 | 69,7% |
+| Os 15 controllers restantes, em `Frota360.Api.Tests` | 3.639 / 4.437 | **82,0%** |
+
+A tabela original terminava em ~69,7% com a medição corrigida, e por isso entraram os controllers
+— o maior buraco que sobrava (a camada Api estava em 12,7%; foi a 96%). O ganho em linhas dos
+validators é pequeno porque a resolução de todo serviço pela DI já executa o construtor deles,
+onde as regras são declaradas; os testes novos são os que de fato exercitam as regras. O
+`ValidatorHelpers.Is18YearsOld` não era chamado em lugar nenhum e foi removido em vez de testado.
+
+| Camada | Cobertura |
+|---|---|
+| Api | 96,0% |
+| Application | 86,2% |
+| Infrastructure | 67,4% |
+| Domain | 57,3% |
+
+**O Sonar deve mostrar uns 2 pontos a menos em `apps/api`** (estimativa: ~79,8%). Para arquivo
+ausente do OpenCover ele calcula as linhas executáveis sozinho e as conta como descobertas — são
+~121 linhas de inicializador de propriedade em DTOs e entidades (`= string.Empty`), que o coverlet
+não instrumenta. Não há teste que as alcance; está explicado em `docs/contexto-api.md` (§ Testes).
+
+O que sobrou sem teste, se valer reforçar: `BackofficeService` (61 linhas, o provisionamento de
+empresa), `GoogleRoutesClient` (53) e `ResendEmailService` (26), os handlers de
+`TipoManutencao` (~80) e os repositórios de catálogo na integração (~130). `MigracaoDeBanco` (26)
+continua a avaliar: só roda em Production/Staging contra um banco de verdade.
+
+### Ferramentas
 | Ferramenta | Papel |
 |---|---|
-| **coverlet** (já instalado) | Coleta a cobertura de cada projeto de teste |
-| **ReportGenerator** (`dotnet-reportgenerator-globaltool`) | Junta os relatórios de unitários e integração num só, em HTML e Cobertura |
-| **`coverlet.runsettings`** | Exclui o que não é código autoral: `Migrations/**`, código gerado |
+| **coverlet** + `apps/api/coverlet.runsettings` (já existem) | Cobertura de cada suíte em OpenCover e Cobertura, sem as migrations |
+| **ReportGenerator** (`dotnet-reportgenerator-globaltool` 5.5.12, ferramenta local em `apps/api/dotnet-tools.json`) | Junta os relatórios das três suítes num HTML só, com o número consolidado do backend |
+| **SonarCloud** (já integrado) | Mesmo número por pasta; o job `sonar` já recebe as três suítes |
 
 ### Passos
-1. Criar o `coverlet.runsettings` com as exclusões e gerar a cobertura nos dois projetos.
-2. Consolidar com o ReportGenerator e anotar o número real do backend inteiro.
-3. Se ficar abaixo de ~80%, testar os handlers e services menos cobertos (o relatório HTML aponta
-   linha a linha).
-4. Publicar o relatório como artefato do CI e, opcionalmente, falhar o job abaixo de 75%.
+1. ✅ `coverlet.runsettings` com OpenCover e as migrations fora (feito no item 3).
+2. ✅ Terceira suíte, `Frota360.Api.Tests`, para a camada HTTP (feito no item 3).
+3. ✅ Relatório consolidado: `scripts/cobertura-api.ps1` roda as três suítes e gera o HTML do
+   ReportGenerator; no CI, o mesmo script (`-SomenteRelatorio`) publica o relatório como artefato,
+   o resumo no job summary e reprova o job `api` abaixo de 75%.
+4. ✅ Testes na ordem da tabela acima, mais os controllers, conferindo o número a cada etapa.
+5. ✅ Este item, `docs/contexto-api.md` (§ Testes), `apps/api/CLAUDE.md` e os READMEs.
+6. Depois do merge: conferir `apps/api` em Measures → Coverage no SonarCloud.
 
 ### Pronto quando
-Um comando gera um relatório único do backend com ≥ 75% (ideal: ~80% de margem), e você sabe
-reproduzi-lo na frente do professor.
+Um comando gera um relatório único do backend com ≥ 75% (ideal: ~80% de margem), o SonarCloud
+mostra o mesmo patamar em `apps/api`, e você sabe reproduzi-lo na frente do professor.
 
 ---
 
@@ -148,7 +218,16 @@ lint, não análise de segurança; o backend não tem nada.
 Gratuito para repositório público, integra com o GitHub e mostra o quality gate como check no PR.
 Além de bugs, code smells e vulnerabilidades, ele exibe a cobertura — o mesmo número da prova.
 
-### Situação em 13/11/2026 — 🟡 em andamento
+### Situação em 13/11/2026 — ✅ concluído
+Quality gate **verde** na `main` (análise do `3d90b6a`, PR #23). Código geral: **81,8%** de
+cobertura, **2,8%** de duplicação, 0 bugs, 0 vulnerabilidades e nota **A** em segurança,
+confiabilidade e manutenibilidade. Os achados que não eram defeito foram triados no painel com
+justificativa (tabela abaixo). Badges no README.
+
+**Na prova:** o painel é
+[sonarcloud.io/summary/new_code?id=PauloVomScheidt_Frota360Core](https://sonarcloud.io/summary/new_code?id=PauloVomScheidt_Frota360Core);
+a aba *Overall Code* traz o número geral, e *Activity* mostra o histórico das análises.
+
 O repositório foi importado como **projeto único** `PauloVomScheidt_Frota360Core` (organização
 `paulovomscheidt`), em vez dos dois projetos do plano original: o SonarScanner for .NET analisa
 também o TypeScript (`sonar.scanner.scanAll`), então um projeto só cobre o monorepo, com um
@@ -192,9 +271,9 @@ Depois do merge do PR #22, a análise da `main` reprovou por **duplicação em c
 configuração de um componente só, `CatalogoSimples`, o que tira ~250 linhas duplicadas e deve
 deixar a densidade perto de 2,6%.
 
-Falta, fora do código:
-1. Conferir o gate verde na `main` depois do merge da `fix-duplicacao-catalogos`.
-2. Marcar os quatro achados da tabela como falso positivo/aceito, com a justificativa dela.
+Depois do merge (#23), o gate da `main` passou com 2,5% de duplicação no código novo. A triagem
+no painel zerou os achados abertos de segurança e confiabilidade, e a nota de segurança, que
+estava em **E** por causa do falso positivo do `TokenService`, foi para **A**.
 
 ### Pronto quando
 Os dois projetos aparecem no SonarCloud com cobertura importada e quality gate verde, e o badge

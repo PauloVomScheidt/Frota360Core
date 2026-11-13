@@ -15,7 +15,8 @@ dotnet build Frota360.slnx
 dotnet test
 dotnet test --filter "FullyQualifiedName~ManutencaoHandlersTests"   # uma classe
 dotnet test --filter "DisplayName~Create_DevePersistir"             # um teste
-dotnet test --settings coverlet.runsettings --collect:"XPlat Code Coverage" --results-directory TestResults   # cobertura (OpenCover, sem migrations)
+dotnet test --settings coverlet.runsettings --collect:"XPlat Code Coverage" --results-directory TestResults   # cobertura de uma suíte
+../../scripts/cobertura-api.ps1 -Abrir                              # as três suítes num relatório só, piso de 75% (exige Docker)
 dotnet run --project src/Api                                        # localhost:5062 → /scalar/v1
 
 dotnet ef migrations add <Nome> --project src/Infrastructure --startup-project src/Api
@@ -155,9 +156,13 @@ Três suítes, com papéis distintos — veja [docs/contexto-api.md](../../docs/
 
 **`tests/Frota360.Tests/`** — unitários, espelhando a Application: `UseCases/<Agregado>/<Agregado>HandlersTests.cs`, `<Agregado>MappingsTests.cs`, `<X>ValidatorTests.cs`; `Services/<Servico>Tests.cs`; `Abstractions/DispatcherTests.cs`. Referencia Application e Domain — **não referencia Infrastructure nem a API**. É aqui que vai teste de handler, mapping, validator e service.
 
-**`tests/Frota360.Api.Tests/`** — controllers e middlewares, sem subir a aplicação: o controller é instanciado com dependências substituídas e o middleware roda sobre um `DefaultHttpContext`. Espelha `src/Api` (`Controllers/<X>ControllerTests.cs`, `Middlewares/<X>Tests.cs`) e é aqui que vai o que é responsabilidade da camada HTTP — status, envelope, header. Mesmo padrão xUnit + NSubstitute dos unitários.
+**`tests/Frota360.Api.Tests/`** — controllers e middlewares, sem subir a aplicação: o controller é instanciado com dependências substituídas e o middleware roda sobre um `DefaultHttpContext`. Espelha `src/Api` (`Controllers/<X>ControllerTests.cs`, `Middlewares/<X>Tests.cs`, `Services/<X>Tests.cs`) e é aqui que vai o que é responsabilidade da camada HTTP — status, envelope, header, cookie. `Controllers/Apoio.cs` tem os validators prontos (`Validacao.Aceita<T>()`/`Recusa<T>()`) e as asserções do envelope (`Resposta.Ok`, `Criado`, `Invalido`, `NaoEncontrado`). Mesmo padrão xUnit + NSubstitute dos unitários.
+
+`Composicao/` é a outra metade: por ser a única suíte que enxerga Application **e** Infrastructure, monta a mesma DI do `Program.cs` sobre configuração em memória (`Composicao.Provedor()`) e prova que todo serviço `Frota360.*` resolve, que `AddInfrastructure` recusa configuração faltando e que o token do `TokenService` passa no JwtBearer configurado. **Registrou serviço novo no `Program.cs` fora de `AddApplication`/`AddInfrastructure`? Replique em `Composicao.Servicos`**, senão o teste de resolução quebra.
 
 **`tests/Frota360.IntegrationTests/`** — o único que referencia Infrastructure diretamente. Sobe um `postgres:17` descartável com Testcontainers e roda os repositórios de verdade. É aqui que vai o que só o banco prova: mapeamento de tipo, `DateTimeKind`, collation, índice, tradução de query. Exige Docker no ar. **Mexeu em `Frota360DbContext`, migration ou provider? O teste vai neste projeto.**
+
+**Cobertura**: o número oficial é o do `scripts/cobertura-api.ps1` — as três suítes somadas, sem migrations e sem `Program.cs` —, e o job `api` do CI reprova abaixo de **75%** de linhas. ⚠️ Não devolva `CompilerGeneratedAttribute` ao `ExcludeByAttribute` do `coverlet.runsettings`: o corpo de todo método `async` e de toda lambda é código gerado, e com ele lá o relatório deixava de medir metade do backend. Teste novo vai na suíte que o código pede; exclusão de cobertura só com justificativa escrita.
 
 Padrão dos unitários: xUnit + NSubstitute, sem banco.
 

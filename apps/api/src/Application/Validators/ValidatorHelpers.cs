@@ -2,10 +2,6 @@
 {
     internal static class ValidatorHelpers
     {
-
-        public static bool Is18YearsOld(DateTime dataNascimento)
-            => dataNascimento <= DateTime.Today.AddYears(-18);
-
         public static bool IsValidCPF(string cpf)
         {
             if (string.IsNullOrWhiteSpace(cpf) || cpf.Length != 11)
