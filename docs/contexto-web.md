@@ -425,7 +425,7 @@ Cache: `['despesas', filtro]`. Toda mutação invalida também `['custos']` (§6
 
 ### 5.9.4 `/tipos-despesa` (Admin / Supervisor)
 
-Gêmeo de `/tipos-manutencao`, sem o campo de intervalo em km. Catálogo por empresa, com nome único, semeado no provisionamento (Pedágio, Multa de trânsito, IPVA, Licenciamento, Seguro, Lavagem, Estacionamento) — as empresas que já existiam foram semeadas pela migration, então a tela nunca abre vazia num cliente antigo.
+Gêmeo de `/tipos-manutencao`, sem o campo de intervalo em km. Desde 13/11/2026 a tela é só configuração do componente `CatalogoSimples` (`src/components/CatalogoSimples.tsx`), que ela divide com `/tipos-combustivel`: os dois arquivos eram cópias com textos trocados, e a duplicação reprovava o quality gate do SonarCloud. Muda um, muda o outro — a diferença entre eles fica nas props (API, chaves a invalidar, permissão e textos). Catálogo por empresa, com nome único, semeado no provisionamento (Pedágio, Multa de trânsito, IPVA, Licenciamento, Seguro, Lavagem, Estacionamento) — as empresas que já existiam foram semeadas pela migration, então a tela nunca abre vazia num cliente antigo.
 
 - **Inativar é o caminho, não excluir**: o atalho na linha tira o tipo do seletor de lançamento sem apagar o histórico. O DELETE de um tipo em uso devolve 422 dizendo exatamente isso, exibido dentro do `ConfirmDialog`.
 - ⚠️ Renomear um tipo muda o que **três** telas exibem: o catálogo, a lista de despesas (que desnormaliza o nome) e a coluna Categoria de `/custos`. Por isso a mutação invalida as três chaves (§6.4).
