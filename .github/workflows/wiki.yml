@@ -1,0 +1,53 @@
+name: wiki
+
+# Publica a pasta wiki/ na Wiki do GitHub. Não é check obrigatório, por isso o filtro de
+# caminho é permitido aqui (no ci.yml ele travaria o PR).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'wiki/**'
+      - 'docs/img/rfc/**'
+      - '.github/workflows/wiki.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      # WIKI_TOKEN (PAT com Contents: write) só é necessário se o GITHUB_TOKEN for recusado no push.
+      - name: Clonar o repositório da Wiki
+        env:
+          TOKEN: ${{ secrets.WIKI_TOKEN || secrets.GITHUB_TOKEN }}
+        run: git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki-publicada
+
+      # A Wiki espelha a pasta: página apagada aqui some de lá. As imagens vêm das capturas
+      # usadas no RFC, para não versionar os mesmos PNGs duas vezes.
+      - name: Espelhar páginas e imagens
+        run: |
+          rsync -a --delete --exclude '.git/' --exclude 'README.md' wiki/ wiki-publicada/
+          mkdir -p wiki-publicada/imagens
+          cp docs/img/rfc/*.png wiki-publicada/imagens/
+
+      - name: Publicar
+        working-directory: wiki-publicada
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "A Wiki já está atualizada."
+            exit 0
+          fi
+          git commit -m "Publica a Wiki a partir de ${GITHUB_SHA::7}"
+          git push
+          echo "Publicado: $(git diff --stat HEAD~1 | tail -1)" >> "$GITHUB_STEP_SUMMARY"

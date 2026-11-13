@@ -11,6 +11,8 @@ Monorepo do **Frota360** — gestão de frotas multi-tenant. Cada empresa client
 | [`apps/api`](apps/api) — API REST | .NET 10, EF Core, PostgreSQL, JWT | [README](apps/api/README.md) · [CLAUDE.md](apps/api/CLAUDE.md) · [contexto-api.md](docs/contexto-api.md) |
 | [`apps/web`](apps/web) — front-end | React 19, Vite, TanStack Query, Tailwind | [README](apps/web/README.md) · [CLAUDE.md](apps/web/CLAUDE.md) · [contexto-web.md](docs/contexto-web.md) |
 
+📖 **[Wiki do projeto](https://github.com/PauloVomScheidt/Frota360Core/wiki)** — requisitos, user stories, arquitetura C4, modelo de dados, decisões de arquitetura (ADRs), deploy, testes, monitoramento e LGPD.
+
 Cada app é **autocontido**: tem sua própria solution/`package.json`, seus comandos e seu `CLAUDE.md`. O que é transversal aos dois — a regra do português, a documentação de contexto e o **contrato entre API e front** — está em [CLAUDE.md](CLAUDE.md) na raiz.
 
 ---
@@ -28,8 +30,13 @@ apps/
     ├── package.json
     └── src/{api,auth,components,pages,styles,lib}
 docs/
+├── RFC_Gerenciador_Frotas_V1.md  RFC do projeto (v2.0): requisitos, regras de negócio, C4, modelo de dados, LGPD
+├── img/rfc/               capturas de tela usadas no RFC
 ├── contexto-api.md        contexto profundo do backend
-└── contexto-web.md        contexto profundo do front
+├── contexto-web.md        contexto profundo do front
+├── deploy.md              roteiro de produção
+└── pendencias-tcc.md      o que falta para a entrega do TCC
+wiki/                      fonte da Wiki do GitHub, publicada pelo workflow wiki.yml
 ```
 
 Este repositório substitui os antigos `Frota360`/`Rota360` (API) e `Frota360Web` (front) — o histórico de commits dos dois foi preservado aqui.
@@ -125,6 +132,11 @@ O job `docker` planta iscas (`appsettings.Development.json` e `.env` com um text
 antes do build, porque num clone limpo esses arquivos não existem e a verificação passaria
 vazia. Depois confere que eles **não** entraram na imagem e que o `appsettings.json` base
 **entrou** — ele é versionado e a aplicação depende dele para `Jwt:Issuer`/`Audience`.
+
+Um segundo workflow, `.github/workflows/wiki.yml`, publica a pasta `wiki/` na
+[Wiki](https://github.com/PauloVomScheidt/Frota360Core/wiki) a cada push na `main` que a altere
+(ou à mão, por *Run workflow*). Ele não é check obrigatório, e por isso pode ter filtro de path.
+A Wiki espelha a pasta: edite sempre pelo repositório, nunca pela interface da Wiki.
 
 Ainda não há CD: nada de AWS, ECR ou deploy. O roteiro de produção continua manual, em
 [docs/deploy.md](docs/deploy.md).

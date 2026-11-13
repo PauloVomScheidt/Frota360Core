@@ -147,6 +147,51 @@ namespace Frota360.IntegrationTests
             await Assert.ThrowsAsync<DbUpdateException>(() => contexto.SaveChangesAsync());
         }
 
+        private static Veiculo NovoVeiculo(int empresaId, string placa) => new()
+        {
+            EmpresaId = empresaId,
+            NomeVeiculo = "Strada",
+            MarcaVeiculo = "Fiat",
+            Placa = placa,
+            DataInclusao = DateTime.Now
+        };
+
+        [Fact]
+        public async Task IndiceDePlaca_DeveBarrarDuplicataNaMesmaEmpresaEPermitirEmOutra()
+        {
+            // RN02: a verificação do handler não fecha a corrida entre dois cadastros
+            // simultâneos — quem fecha é o índice.
+            await using var contexto = fixture.CriarContexto();
+            var primeira = await NovaEmpresaAsync(contexto);
+            var segunda = await NovaEmpresaAsync(contexto);
+            var placa = Unicos.Placa();
+
+            contexto.Veiculos.AddRange(NovoVeiculo(primeira.Id, placa), NovoVeiculo(segunda.Id, placa));
+            await contexto.SaveChangesAsync();
+
+            contexto.Veiculos.Add(NovoVeiculo(primeira.Id, placa));
+
+            await Assert.ThrowsAsync<DbUpdateException>(() => contexto.SaveChangesAsync());
+        }
+
+        [Fact]
+        public async Task ExistePlaca_DeveEscoparPelaEmpresaEIgnorarOProprioVeiculo()
+        {
+            await using var contexto = fixture.CriarContexto();
+            var empresa = await NovaEmpresaAsync(contexto);
+            var outra = await NovaEmpresaAsync(contexto);
+            var placa = Unicos.Placa();
+            var veiculo = NovoVeiculo(empresa.Id, placa);
+            contexto.Veiculos.Add(veiculo);
+            await contexto.SaveChangesAsync();
+
+            var repositorio = new VeiculoRepository(contexto);
+
+            Assert.True(await repositorio.ExistePlacaAsync(empresa.Id, placa));
+            Assert.False(await repositorio.ExistePlacaAsync(empresa.Id, placa, ignorarId: veiculo.Id));
+            Assert.False(await repositorio.ExistePlacaAsync(outra.Id, placa));
+        }
+
         [Fact]
         public async Task Decimal_DevePreservarDuasCasas()
         {

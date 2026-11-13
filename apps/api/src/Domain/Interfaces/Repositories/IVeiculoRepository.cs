@@ -8,6 +8,7 @@ namespace Frota360.Domain.Interfaces.Repositories
         Task<Veiculo> AddAsync(Veiculo veiculo);
         Task<Veiculo?> GetByIdAsync(int id, int empresaId);
         Task<Veiculo> UpdateAsync(Veiculo veiculo);
-        Task DeleteAsync(Veiculo veiculo); 
+        Task DeleteAsync(Veiculo veiculo);
+        Task<bool> ExistePlacaAsync(int empresaId, string placa, int? ignorarId = null);
     }
 }

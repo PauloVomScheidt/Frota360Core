@@ -740,7 +740,8 @@ namespace Frota360.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("EmpresaId");
+                    b.HasIndex("EmpresaId", "Placa")
+                        .IsUnique();
 
                     b.ToTable("Veiculo", (string)null);
                 });

@@ -21,11 +21,15 @@ apps/
     ├── package.json
     └── src/
 docs/
+├── RFC_Gerenciador_Frotas_V1.md  RFC (v2.0, 13/11/2026) — requisitos RF/RNF, regras RN01–RN20, C4, ER, LGPD; o código cita as RN pelo número
+├── img/rfc/               capturas de tela do RFC (refazer com Playwright quando a tela mudar)
 ├── contexto-api.md        contexto profundo do backend
 ├── contexto-web.md        contexto profundo do front (tela a tela, cache keys, endpoints)
 ├── deploy.md              roteiro de produção (EC2 + Docker Compose) e ensaio local
 └── pendencias-tcc.md      o que falta para os obrigatórios do TCC (linha Web Apps), com problema e solução
+wiki/                      fonte da Wiki do GitHub — uma página por .md, publicada pelo wiki.yml
 .github/workflows/ci.yml   CI — jobs `api`, `web`, `docker` e `sonar` (SonarCloud; sem CD)
+.github/workflows/wiki.yml publica wiki/ (+ docs/img/rfc → imagens/) na Wiki a cada push na main
 docker-compose.yml         banco de desenvolvimento
 docker-compose.prod.yml    stack de produção (db + api + caddy)
 docker-compose.local.yml   override que ensaia a stack de produção sem domínio
@@ -59,6 +63,8 @@ Vale para os dois apps.
 Após todas as alterações realizadas, atualizar as documentações de contexto, `CLAUDE.md` e README para refletir as mudanças. Documentação de contexto é obrigatória para qualquer alteração estrutural, regra de negócio ou endpoint novo.
 
 O aprofundamento vive em `docs/contexto-api.md` e `docs/contexto-web.md` — atualize o lado correspondente, e **os dois** quando a mudança atravessa a fronteira (endpoint, envelope, papel, regra de negócio visível na tela).
+
+**A Wiki é a visão para fora** (banca, parceiro, quem chega ao projeto) e vive em `wiki/`: mudou requisito, regra numerada, endpoint, decisão de arquitetura ou o processo de deploy/testes, atualize a página correspondente no mesmo PR. Decisão nova vira um ADR (`wiki/ADR-0NN-*.md` + linha em `Decisoes-de-Arquitetura.md`). **Nunca edite pela interface da Wiki** — o `wiki.yml` espelha a pasta e apaga o que não estiver nela. Regras de formato em `wiki/README.md`.
 
 ## O contrato entre API e front
 
