@@ -36,7 +36,7 @@ const FORM_VAZIO = {
   tipoDespesaId: '',
   motoristaId: '',
   valor: '',
-  dataDespesa: hojeInputDate(),
+  dataDespesa: '',
   observacao: '',
 }
 
@@ -399,7 +399,8 @@ export function DespesasPage() {
 
   function abrirCadastro() {
     setEditando(null)
-    setForm(FORM_VAZIO)
+    // "Hoje" de quando o formulário abre, não de quando a tela carregou.
+    setForm({ ...FORM_VAZIO, dataDespesa: hojeInputDate() })
     setErros([])
     setAberto(true)
   }

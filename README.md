@@ -87,7 +87,7 @@ Detalhes de configuração, endpoints, papéis e regras de negócio: [`apps/api/
 | | `apps/api` | `apps/web` |
 |---|---|---|
 | Build | `dotnet build Frota360.slnx` | `npm run build` |
-| Testes | `dotnet test` | — (sem suíte) |
+| Testes | `dotnet test` | `npm run test` / `npm run test:cov` |
 | Lint | — | `npm run lint` |
 | Dev | `dotnet run --project src/Api` | `npm run dev` |
 
@@ -101,7 +101,7 @@ paralelo, e os três nomes abaixo são exatamente os checks obrigatórios no bra
 | Check | O que roda |
 |---|---|
 | `api` | `dotnet restore`/`build -c Release` da solução, depois as duas suítes em passos separados — a unitária e a de integração (que sobe um `postgres:17` via Testcontainers) |
-| `web` | `npm ci`, `npm run build` (`tsc -b && vite build`) e `npm run lint` |
+| `web` | `npm ci`, `npm run build` (`tsc -b && vite build`), `npm run lint` e `npm run test:cov` (Vitest + cobertura — reprova abaixo de 50% de linhas) |
 | `docker` | build da imagem da API **sem push**, mais a prova de que o `.dockerignore` segura os arquivos com segredo |
 
 Sem filtro de path de propósito: `on.<evento>.paths` impede o workflow de rodar, e um required

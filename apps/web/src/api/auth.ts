@@ -17,12 +17,13 @@ export async function login(body: LoginRequest): Promise<SessaoResponse> {
   return sessao
 }
 
+/**
+ * Sair não depende do servidor: com a API fora do ar o erro é engolido e a sessão local sai do
+ * mesmo jeito — propagá-lo deixaria quem chama (o `AppLayout`) parado antes de ir para /login.
+ */
 export async function logout(): Promise<void> {
-  try {
-    await http.post('/auth/logout')
-  } finally {
-    tokenStorage.clear()
-  }
+  await http.post('/auth/logout').catch(() => undefined)
+  tokenStorage.clear()
 }
 
 /** A API sempre responde 200 neutro — nunca revela se o e-mail existe. */

@@ -8,7 +8,7 @@ A raiz do repositório tem seu próprio [CLAUDE.md](../../CLAUDE.md), que cobre 
 
 **Todos os comandos abaixo rodam a partir de `apps/web/`.**
 
-A referência detalhada e autoritativa de comportamento tela a tela, convenções de API e cache keys do React Query é [docs/contexto-web.md](../../docs/contexto-web.md) — documento único de contexto do front (carrega também o mapa de endpoints em §6.5 e as inconsistências conhecidas em §10). Leia antes de qualquer mudança não trivial numa página. Este arquivo cobre só comandos e arquitetura transversal, para não duplicar aquele documento.
+A referência detalhada e autoritativa de comportamento tela a tela, convenções de API e cache keys do React Query é [docs/contexto-web.md](../../docs/contexto-web.md) — documento único de contexto do front (carrega também o mapa de endpoints em §6.5, as inconsistências conhecidas em §10 e a infraestrutura de testes em §11). Leia antes de qualquer mudança não trivial numa página. Este arquivo cobre só comandos e arquitetura transversal, para não duplicar aquele documento.
 
 ## Comandos
 
@@ -16,14 +16,35 @@ A referência detalhada e autoritativa de comportamento tela a tela, convençõe
 npm run dev      # Vite em http://localhost:5173 (porta fixa — é a origem liberada no CORS da API)
 npm run build    # tsc -b (type-check) + vite build
 npm run lint     # oxlint
+npm run test     # Vitest, uma passada (jsdom + Testing Library + MSW)
+npm run test:watch                      # Vitest em modo watch
+npm run test:cov # Vitest + cobertura v8 → coverage/ (text, html, lcov); reprova abaixo de 50% de linhas
 npm run gen:api  # regenera src/api/schema.d.ts a partir do OpenAPI — exige a API rodando localmente
 ```
 
-Não há suíte de testes no front. Também não há atalho de lint/typecheck por arquivo além dos comandos completos — nem o oxlint nem o `tsc -b` têm modo single-file útil aqui.
+Um arquivo só: `npx vitest run src/pages/LoginPage.test.tsx` (ou um trecho do nome). Não há atalho de lint/typecheck por arquivo — nem o oxlint nem o `tsc -b` têm modo single-file útil aqui. Os testes estão dentro de `src/`, então o `tsc -b` do build também os type-checa.
+
+### Testes — Vitest
+
+A infraestrutura vive em `src/test/` e o detalhe está em [docs/contexto-web.md §11](../../docs/contexto-web.md). O essencial:
+
+- Teste fica **ao lado do arquivo testado** (`LoginPage.test.tsx` junto de `LoginPage.tsx`) e importa `describe`/`it`/`expect` de `vitest` explicitamente — não há `globals`.
+- Tela se renderiza com **`renderizar(ui, { rota, papel })`** de `src/test/renderizar.tsx`: `QueryClient` novo por teste (`retry: false`), `MemoryRouter` e, com `papel`, a sessão gravada pelo `tokenStorage.setSession` de verdade. Devolve também o `user` do user-event.
+- **HTTP é sempre MSW**, nunca `vi.mock` do axios — assim `http.ts`, `unwrap()` e os interceptors entram no teste. Os catálogos (veículos, motoristas, tipos de combustível/manutenção/despesa, postos) já têm handler padrão em `src/test/servidor.ts`; o resto se declara com **`capturar(metodo, caminho, responder)`** de `src/test/capturar.ts`, que devolve as chamadas recebidas (`params` e `corpo` já lidos) para o teste conferir o que a tela enviou. ⚠️ Request sem handler **reprova o teste** (`onUnhandledFrame: 'error'` — no MSW 3 a opção perdeu o nome antigo `onUnhandledRequest`). ⚠️ O **último** handler registrado vence: sobrescrever o que o `montar()` do teste já registrou exige registrar depois dele.
+- O `setup.ts` faz polyfill de `showModal`/`close` do `<dialog>` (o jsdom não tem) — `FormDialog` e `ConfirmDialog` funcionam nos testes e se buscam por `getByRole('dialog' | 'alertdialog', { name })`.
+- Google Maps se substitui com `vi.mock('../lib/googleMaps', () => import('../test/googleMapsFalso'))`, e `CampoEndereco`/`MapaRota` com `../test/mapaFalso` — o `TrajetoRota` roda de verdade, com `POST /rota/calcular` no MSW.
+- Navegação se confere com a sonda `RotaAtual` (`src/test/RotaAtual.tsx`) posta como rota `*` ao lado da tela. `renderizar` aceita `rota: { pathname, state }` (chegada por redirecionamento) e `roteador: false` (para o `App`, que tem o próprio `BrowserRouter`).
+- Dados falsos saem das fábricas de `src/test/fabricas.ts` (`fabricarVeiculo({ placa: 'XYZ' })` etc.), não de objeto literal montado no teste.
+- `VITE_API_URL` dos testes é fixa no `vite.config.ts` (`http://localhost:3000/api/v1`) — o modo `test` não lê `.env.development`. ⚠️ É a **mesma origem** da página do jsdom de propósito: o jsdom aplica CORS ao XHR, e com `withCredentials` uma resposta do MSW sem `Access-Control-*` chega ao axios como "Network Error". Não aponte para outro host.
+- O fuso dos testes é fixo em `America/Sao_Paulo` (`TZ` no mesmo `env`), o da API (§10 do contexto). Teste que depende de "hoje" congela o relógio com `vi.useFakeTimers({ toFake: ['Date'] })` + `vi.setSystemTime(...)`, com datas montadas em hora local (`new Date(2026, 10, 12, 23, 30)`).
+- Bug achado por teste **não se corrige no mesmo passo**: o teste fica como `it.fails` com um comentário `// BUG:` explicando. Quando o código é corrigido, o `it.fails` reprova e lembra de virar `it`.
+- A cobertura conta **todo** `src/**` (arquivo sem teste entra com 0%), menos `main.tsx`, `schema.d.ts`, `vite-env.d.ts` e o próprio `src/test/`. **Está em 93,19% de linhas** (12/11/2026), com `coverage.thresholds.lines = 50`: abaixo disso `npm run test:cov` sai com erro e o job `web` do CI reprova. O relatório navegável é `coverage/index.html`, gerado pelo mesmo comando.
+- Tela nova de catálogo (nome + ativo, inativar pela linha) usa a suíte `testarCatalogo` de `src/test/suiteCatalogo.tsx` em vez de reescrever a bateria.
+- ⚠️ No **Git Bash** (`cd /c/...`) o Vitest falha com "failed to find the runner": o drive em minúsculo faz o módulo carregar duas vezes. Rode do PowerShell ou de um caminho `C:\`.
 
 ### Verificação visual — Playwright
 
-Não havendo testes, **`npm run build` + `npm run lint` não provam que a tela ficou certa**: nada aqui detecta um modal fora do lugar, um grid que não colapsa ou um anel de foco no elemento errado. Para isso há o **Playwright MCP**, registrado neste repositório:
+**Os testes rodam em jsdom, que não calcula layout — `npm run test`, `build` e `lint` não provam que a tela ficou certa**: nada aqui detecta um modal fora do lugar, um grid que não colapsa ou um anel de foco no elemento errado. Para isso há o **Playwright MCP**, registrado neste repositório:
 
 ```powershell
 claude mcp list          # confere se `playwright` aparece Connected
@@ -55,8 +76,8 @@ Exige a API do Frota360 rodando localmente; ela vive neste mesmo repo: `dotnet r
 
 ### Camada de API (`src/api/`)
 
-- `http.ts` — instância única do axios (`http`), com `withCredentials: true`: token e refresh token viajam em cookie `HttpOnly; Secure; SameSite=None` setado pelo servidor, nunca em header `Authorization` nem em storage acessível a JS (mitiga exfiltração por XSS). O interceptor de response: em **401**, tenta exatamente um `/auth/refresh` sem corpo — o refresh token vai no cookie, anexado sozinho pelo navegador — (protegido por um lock de promise em voo, já que a rotação do refresh token invalida o anterior — dois refreshes paralelos quebrariam o segundo), repete a request original uma vez e, em caso de falha, limpa a sessão e redireciona para `/login`. Uma lista fixa de rotas anônimas (`/auth/login`, `/auth/refresh`, `/auth/esqueci-senha`, `/auth/redefinir-senha`, `/convite/aceitar`) está isenta — um 401 ali significa credencial inválida, não sessão expirada.
-- Toda resposta da API vem embrulhada no envelope `{ sucesso, mensagem, dados, erros }`, inclusive as de erro (401/403/422/429). O `unwrap()` em `http.ts` desempacota `dados` e lança `ApiError` (com `erros: string[]`) quando `sucesso` é falso. Os módulos por recurso (`motoristas.ts`, `veiculos.ts`, `rotas.ts`, `manutencoes.ts`, `tiposManutencao.ts`, `usuarios.ts`, `convites.ts`, `auth.ts`) chamam `http` e `unwrap()`.
+- `http.ts` — instância única do axios (`http`), com `withCredentials: true`: token e refresh token viajam em cookie `HttpOnly; Secure; SameSite=None` setado pelo servidor, nunca em header `Authorization` nem em storage acessível a JS (mitiga exfiltração por XSS). O interceptor de response: em **401**, tenta exatamente um `/auth/refresh` sem corpo — o refresh token vai no cookie, anexado sozinho pelo navegador — (protegido por um lock de promise em voo, já que a rotação do refresh token invalida o anterior — dois refreshes paralelos quebrariam o segundo), repete a request original uma vez e, em caso de falha, limpa a sessão e redireciona para `/login`. Uma lista fixa de rotas anônimas (`/auth/login`, `/auth/refresh`, `/auth/esqueci-senha`, `/auth/redefinir-senha`, `/convite/consultar`, `/convite/aceitar`) está isenta — um 401 ali significa credencial inválida, não sessão expirada.
+- Toda resposta da API vem embrulhada no envelope `{ sucesso, mensagem, dados, erros }`, inclusive as de erro (401/403/422/429). O `unwrap()` em `http.ts` desempacota `dados` e lança `ApiError` (com `erros: string[]`) quando `sucesso` é falso — só ele decide: `dados: null` com sucesso volta como `null`. Os módulos por recurso (`motoristas.ts`, `veiculos.ts`, `rotas.ts`, `manutencoes.ts`, `tiposManutencao.ts`, `usuarios.ts`, `convites.ts`, `auth.ts`) chamam `http` e `unwrap()`.
 - `errors.ts` — `mensagensDeErro()` transforma qualquer falha (envelope da API, erro de rede etc.) em `string[]` para exibição pelo componente compartilhado `ErrorList`.
 - `types.ts` — o tipo do envelope, `Role` e os DTOs (mantidos em sincronia com a API **à mão**; o `gen:api` só regenera `schema.d.ts`).
 - `tokenStorage.ts` — persiste só `frota360.user` (nome/email/papel) no `localStorage`, para a UI. Token e refresh token não passam pelo front: chegam do servidor em cookie `HttpOnly`, e nenhum código aqui os lê ou escreve.

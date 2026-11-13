@@ -81,6 +81,11 @@ function RotaFormulario({
   motoristas: MotoristaResponse[]
   veiculos: VeiculoResponse[]
 }) {
+  // Motorista rebaixado some de GET /motorista, mas a rota continua sendo dele: sem esta opção
+  // o select cairia em "Selecione…" e só salvaria reatribuindo o histórico a outra pessoa.
+  const motoristaForaDaLista =
+    editando && !motoristas.some((m) => m.id === editando.codigoMotorista) ? editando : null
+
   return (
     <FormDialog
       titulo={editando ? 'Editar rota' : 'Nova rota'}
@@ -124,6 +129,12 @@ function RotaFormulario({
             onChange={(e) => onFormChange({ ...form, codigoMotorista: e.target.value })}
           >
             <option value="">Selecione…</option>
+            {motoristaForaDaLista && (
+              <option value={motoristaForaDaLista.codigoMotorista}>
+                {motoristaForaDaLista.nomeMotorista ?? `#${motoristaForaDaLista.codigoMotorista}`} (não é mais
+                motorista)
+              </option>
+            )}
             {motoristas.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.nome}

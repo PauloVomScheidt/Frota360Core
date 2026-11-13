@@ -77,12 +77,16 @@ http.interceptors.response.use(
   },
 )
 
-/** Desembrulha o envelope da API, lançando erro amigável quando sucesso=false. */
+/**
+ * Desembrulha o envelope da API, lançando erro amigável quando sucesso=false. Quem decide se
+ * o resultado é uma falha é só o `sucesso`: `dados: null` com sucesso é resposta legítima
+ * (ex.: `GET /abastecimento/anterior` de um veículo sem histórico).
+ */
 export function unwrap<T>(response: ApiResponse<T>): T {
-  if (!response.sucesso || response.dados === null) {
+  if (!response.sucesso) {
     throw new ApiError(response.mensagem, response.erros ?? [])
   }
-  return response.dados
+  return response.dados as T
 }
 
 export class ApiError extends Error {

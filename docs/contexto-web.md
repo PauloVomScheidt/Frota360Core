@@ -11,7 +11,7 @@
 
 ## 1. Visão geral
 
-SPA React 19 + Vite 8 + TypeScript, front-end da API Frota360 — gestão de frota **multi-tenant** (motoristas, veículos, rotas, manutenção preventiva). Sem suíte de testes.
+SPA React 19 + Vite 8 + TypeScript, front-end da API Frota360 — gestão de frota **multi-tenant** (motoristas, veículos, rotas, manutenção preventiva). Testes com Vitest (§11).
 
 | Aspecto | Escolha |
 |---|---|
@@ -21,12 +21,16 @@ SPA React 19 + Vite 8 + TypeScript, front-end da API Frota360 — gestão de fro
 | HTTP | axios com interceptors (Bearer + refresh) |
 | Estilo | Tailwind 4 + design system próprio (`apps/web/src/styles/design-system.css`) |
 | Lint | oxlint |
+| Testes | Vitest + jsdom + Testing Library + MSW, cobertura v8 (§11) |
 | Sessão | `localStorage` (token, refreshToken, identidade) |
 
 ```bash
 npm run dev      # Vite em http://localhost:5173
 npm run build    # tsc -b + vite build
 npm run lint     # oxlint
+npm run test     # Vitest, uma passada
+npm run test:watch
+npm run test:cov # Vitest + cobertura → coverage/
 npm run gen:api  # regenera tipos do OpenAPI (API precisa estar no ar)
 ```
 
@@ -125,8 +129,9 @@ Seções, na ordem: nav flutuante em pílula (âncoras, "Entrar", CTA de WhatsAp
 Divide a tela em painel de marca (escondido abaixo de `md`) e formulário.
 
 - Campos: e-mail e senha, com botão de mostrar/ocultar senha.
-- `POST /auth/login` → token e refreshToken chegam em cookie `HttpOnly` (o front nunca os lê); `tokenStorage.setSession` grava só a identidade; navega para `location.state.from` ou `/dashboard`.
-- Erros da API aparecem acima do botão; link para "Esqueci minha senha".
+- `POST /auth/login` → token e refreshToken chegam em cookie `HttpOnly` (o front nunca os lê); `tokenStorage.setSession` grava só a identidade, o cache do React Query é limpo (trocar de conta na mesma aba não pode mostrar dado da empresa anterior) e a tela navega para `location.state.from` — a tela de onde o guarda tirou a pessoa — ou `rotaInicial(role)`.
+- Erros da API aparecem acima do botão, com a mensagem literal (credencial inválida, 429 do rate limit, API fora do ar); link para "Esqueci minha senha". `/auth/login` é rota anônima no `http.ts`: um 401 ali não dispara refresh.
+- Campos vazios ou e-mail sem formato não chegam à API — a validação é a nativa do `required`/`type="email"`.
 - A logo do painel esquerdo é um link para a landing page.
 - Não existe link de cadastro: contas nascem por convite.
 
@@ -144,13 +149,13 @@ Três estados:
 
 ### 3.5 `/convite?token=…`
 
-Além de nome e senha, o formulário tem **CPF e data de nascimento opcionais** — hoje é o único ponto de entrada desses dados, já que não existe tela de perfil (§9). Em branco viram `undefined` no corpo, para o back gravar nulo em vez de string vazia. O CPF usa `mascaraCpf` na digitação e vai só com os 11 dígitos.
+Além de nome e senha, o formulário tem **CPF e data de nascimento opcionais** — a pessoa pode informá-los já no aceite, e depois corrigi-los em `/perfil` (§5.11). Em branco viram `undefined` no corpo, para o back gravar nulo em vez de string vazia. O CPF usa `mascaraCpf` na digitação e vai só com os 11 dígitos.
 
 Destino do link enviado pelo admin. Sem token, mostra "Convite inválido".
 
 **Antes de o formulário existir, a tela consulta o convite** (`POST /convite/consultar`, anônimo, desde 28/09/2026) e diz de que empresa ele é: "Você foi convidado para acessar o painel de frota de **Transportadora X** como **Motorista**", mais o e-mail com que a conta será criada. Convite inválido, já utilizado ou expirado (404) troca a tela inteira por **"Convite indisponível"** com o link para o login — a pessoa descobre isso antes de preencher, e não ao enviar. Qualquer outra falha (rede, 429 do rate limit) cai no texto genérico e o formulário segue funcionando: a consulta é informativa, o aceite continua sendo quem valida. Chave `['convite', 'consulta', token]`, sem retry e com `staleTime: Infinity`.
 
-Formulário: nome, senha, confirmação e checkbox de termos (obrigatório, validado só no cliente). `POST /convite/aceitar` já devolve a sessão autenticada — o usuário cai direto em `/dashboard`, sem passar pelo login. Empresa e permissão vêm do convite, não do formulário.
+Formulário: nome, senha, confirmação e checkbox de termos (obrigatório, validado só no cliente). `POST /convite/aceitar` já devolve a sessão autenticada — o usuário cai direto em `rotaInicial(role)` (o motorista em `/minhas-rotas`), sem passar pelo login, e o cache do React Query é limpo como no login. Empresa e permissão vêm do convite, não do formulário.
 
 ---
 
@@ -164,7 +169,7 @@ Todas as telas autenticadas são embrulhadas por `AppLayout` ([`apps/web/src/com
   - **"Controle"** (só Admin) — Usuários, Convites, Auditoria.
 
   ⚠️ A categoria de parametrização é gated por **um** predicado (`pode.editarTiposManutencao`), e não por um por item, porque os quatro coincidem hoje em Admin/Supervisor. Se algum divergir, ele passa a precisar de guarda própria na lista e o gate vira um OR — está anotado no código.
-- Para a role **Motorista** a sidebar tem **duas** categorias: "Operação" (Minhas rotas, Abastecimentos — o que ele **faz**) e "Visualização" (Veículos, Manutenções — o que ele só **consulta**). A separação é por escrita vs. leitura, não por assunto: misturar as quatro sugeria que ele pudesse editar veículo e manutenção. Ele não tem painel de frota: esconder os itens acompanha o guarda `RequireGestao`, não o substitui.
+- Para a role **Motorista** a sidebar tem **duas** categorias: "Operação" (Minhas rotas, Abastecimentos — o que ele **faz**) e "Visualização" (Veículos, Manutenções — o que ele só **consulta**). A separação é por escrita vs. leitura, não por assunto: misturar as quatro sugeria que ele pudesse editar veículo e manutenção. Ele não tem painel de frota: esconder os itens acompanha o `RequirePode` de cada rota, não o substitui. O menu de cada papel é **exatamente** o conjunto de telas do §2 que ele alcança — `AppLayout.test.tsx` confere isso para os quatro papéis contra aquela tabela.
 - **Header** com o **nome da empresa** à esquerda (ícone de prédio, `nomeEmpresa` da sessão, truncado com o nome inteiro no `title`), o avatar de iniciais, nome e papel do usuário — o bloco inteiro é o link para `/perfil` — e o botão de sair (`POST /auth/logout` → limpa tokens, limpa o cache do React Query, vai para `/login`). Abaixo de `sm` o nome e o papel do usuário somem (fica o avatar), para a empresa caber. Sessão gravada antes de 28/09/2026 não tem `nomeEmpresa`: o bloco não aparece até o próximo refresh de token, sem erro.
 - `PageHeader` padroniza título, subtítulo e o botão de ação da página.
 
@@ -211,7 +216,7 @@ As sete consultas e suas chaves: `['veiculos']`, `['rotas', {ativo: true, tamanh
 | Trocar perfil / desativar | `/usuarios` |
 
 - Colunas: nome, e-mail, CPF, nascimento, **status** (Ativo/Inativo, que é o do usuário) e desde quando.
-- **CPF e nascimento são opcionais** e mostram `—` quando vazios: a pessoa os informa ao aceitar o convite, e não há outro ponto de entrada hoje (§9).
+- **CPF e nascimento são opcionais** e mostram `—` quando vazios: a pessoa os informa ao aceitar o convite e os corrige depois em `/perfil` (§5.11).
 - Cadastrar aqui recriaria a duplicação que o modelo eliminou — uma pessoa existindo como `Motorista` **e** como `Usuario`, com um vínculo frágil entre os dois.
 
 ### 5.3 `/veiculos`
@@ -244,6 +249,7 @@ A rota tem um ciclo de vida: nasce **ativa** com o hodômetro de abertura e é *
 - A `RotaResponse` é flat (só traz as FKs), então a tela cruza `codigoMotorista`/`codigoVeiculo` com as listas de motoristas e veículos para exibir nome e placa; sem correspondência, mostra `#id`. O mapa de veículos serve também à sugestão de km.
 - A coluna **Quilometragem** mostra `kmPercorrido` (que vem persistido da API — não é recalculado aqui) e, abaixo, o intervalo `kmInicial → kmFinal`; nas rotas ativas, só o km de abertura.
 - O status é **derivado**, não vem da API: `ativo` → "Ativa"; senão com `dataFim` → "Encerrada"; senão → "Inativa". A função vive em `src/lib/rota.ts` (`statusDaRota`), compartilhada com `/minhas-rotas` para que as duas telas nomeiem o mesmo estado do mesmo jeito.
+- **Editar a rota de um motorista rebaixado preserva o motorista.** Ele some de `GET /motorista`, mas o select da edição ganha uma opção só para ele ("Fulano (não é mais motorista)"), montada com o `nomeMotorista` desnormalizado. Sem ela o `<select required>` caía em "Selecione…" e a rota só salvava reatribuída a outra pessoa.
 - Excluir um veículo invalida também o cache de rotas, porque a lista exibe a placa dele. O **nome do motorista não precisa de cruzamento**: vem desnormalizado em `rota.nomeMotorista`, o que mantém a rota identificável mesmo depois que a pessoa é rebaixada e some da lista de motoristas.
 
 ### 5.5 `/manutencoes`
@@ -320,7 +326,7 @@ Layout pensado para uso rápido, não para auditoria:
 2. **Abrir rota** no cabeçalho, desabilitado enquanto houver rota ativa (com o motivo no `title`) ou se não houver veículo cadastrado. O formulário **não tem seletor de motorista**: o `POST /rota` sai sem `codigoMotorista` (`AbrirMinhaRotaRequest`), porque a API grava o id do usuário logado e ignora o corpo. A sugestão de quilometragem pelo veículo escolhido é a mesma de `/rotas`; `dataInicio` já vem com hoje.
 3. **Histórico** — tabela das rotas encerradas, com km percorrido e o intervalo de odômetro.
 
-**Aviso de manutenção.** Ao escolher o veículo no formulário de abrir rota, as pendências daquele veículo aparecem logo abaixo do seletor — contorno vermelho quando há alguma atrasada. Vem de `GET /manutencao?status=Pendente` numa consulta só para a frota (a lista é curta e o cruzamento é local, em vez de uma consulta por veículo selecionado). **Não bloqueia a abertura**: informa no momento em que a informação decide algo, e quem decide é o motorista.
+**Aviso de manutenção.** Ao escolher o veículo no formulário de abrir rota, as pendências daquele veículo aparecem logo abaixo do seletor — contorno vermelho quando há alguma atrasada. Vem de `GET /manutencao?status=Pendente&veiculoId=` — **uma consulta por veículo escolhido** (a mesma chave do cartão de manutenção do "Meu mês"); a versão antiga baixava as pendências da frota inteira e agrupava no cliente, o que a paginação de `/manutencao` inviabilizou. **Não bloqueia a abertura**: informa no momento em que a informação decide algo, e quem decide é o motorista.
 
 Cache: chave própria **`['rotas', 'minhas']`** — o conteúdo é um recorte de `['rotas']`, e as duas telas nunca convivem na mesma sessão. O km do mês usa `['rotas', 'minhas', 'resumo', mes]`, os abastecimentos `['abastecimentos', 'resumo', mes]` e a manutenção do veículo `['manutencoes', {status, veiculoId}]` — a mesma chave do aviso do formulário de abertura. Abrir e encerrar invalidam `['rotas','minhas']` (que alcança o km do mês), `['veiculos']` e `['manutencoes']`; encerrar também `['custos']` (§6.4).
 
@@ -346,7 +352,7 @@ São treze campos, o maior formulário do app — e por isso o modal os divide e
 - **O campo motorista muda de natureza pelo papel**: para a gestão é um `<select required>` alimentado por `['motoristas']`; para a role Motorista é um `input disabled` com o próprio nome, e o corpo nem leva o campo — a API o resolve pelo token. O `useQuery` de motoristas é `enabled: !motorista`, porque `GET /motorista` é restrito à gestão e devolveria **403** para ele.
 - **Trava de veículo por rota aberta**: tendo o motorista uma rota ativa (`['rotas','minhas']`, `r.ativo` — a mesma derivação de `/minhas-rotas`), o select mostra **só o veículo da rota**, já pré-selecionado, e o formulário diz com qual carro ele está. Sem rota aberta, a lista completa. **A trava não é só visual**: mandar outro veículo devolve **422** do servidor.
 - O filtro de período é o mesmo `FiltroPeriodo` de `/manutencoes`, com o personalizado; ao lado dele, a gestão filtra por veículo e por motorista.
-- ⚠️ **O valor total é readonly e não vai no corpo.** A tela calcula `litros × valor do litro` para o usuário conferir na hora, mas quem grava é o servidor, que recalcula e ignora qualquer `valor` recebido. O input é `readOnly` com `tabIndex={-1}` — espelho, não entrada.
+- ⚠️ **O valor total é readonly e não vai no corpo.** A tela calcula `litros × valor do litro` para o usuário conferir na hora, mas quem grava é o servidor, que recalcula e ignora qualquer `valor` recebido. O input é `readOnly` com `tabIndex={-1}` — espelho, não entrada. ⚠️ **O espelho arredonda como a API**: `valorTotalAbastecimento` (`lib/abastecimento.ts`) faz a conta em inteiros e leva o meio centavo para longe do zero, igual ao `decimal` + `MidpointRounding.AwayFromZero` do servidor. Em `double` puro, 20,5 L × R$ 5,39 mostrava R$ 110,49 contra os R$ 110,50 gravados.
 - ⚠️ **O abastecimento passou a mexer no odômetro do veículo.** É o **terceiro** caminho que o avança, ao lado de rota e manutenção, e como eles só anda para frente: um lançamento retroativo com km menor é aceito e não retrocede a ficha. Por isso a mutation invalida **quatro** chaves — `['abastecimentos']`, `['custos']`, `['veiculos']` e `['manutencoes']` (§6.4).
 - **Odômetro menor que a ficha do veículo dispara um aviso, não um erro.** O servidor aceita (pode ser lançamento retroativo — o caminhão rodou desde a data do abastecimento) e apenas não retrocede a quilometragem. Mas o mesmo formato tem cara de erro de digitação, e um número furado envenena o km/l daquele veículo depois — então a tela compara com `['veiculos']` e avisa em `var(--color-warning)`, **sem bloquear o envio**. Bloquear com 422 no servidor foi descartado: mataria o lançamento retroativo, que é caso comum e não exceção.
 - **A tela estima o km/l enquanto a pessoa digita.** Assim que odômetro e litros fecham, aparece uma linha dizendo desde qual abastecimento a conta parte: `Desde o abastecimento de 28/08 (152.340 km): 500 km ÷ 48,5 L ≈ 10,3 km/l`. É o método tanque a tanque — os litros de agora repõem o que foi queimado no trecho. A referência é o abastecimento de **maior odômetro abaixo do digitado** (ordenar por odômetro e não por data é o que impede lançamento retroativo de virar km negativo), e em modo de correção o próprio registro fica de fora. Some no primeiro abastecimento do veículo, onde não há de onde partir.
@@ -408,6 +414,7 @@ Onde entra o custo que não tinha lugar nenhum: pedágio, multa, IPVA, seguro, l
 
 Mesmo formato de `/abastecimentos`: cadastro em `FormDialog`, filtros, e rodapé com o total **do que está filtrado**. Duas seções no modal — **Despesa** (veículo, tipo, motorista) e **Lançamento** (valor, data, observação). As diferenças:
 
+- **A data abre com o dia de hoje calculado ao abrir o formulário** — não no carregamento da tela, senão uma aba aberta de um dia para o outro sugeriria a data de ontem.
 - **O motorista é opcional** e o select abre em "Não atribuída". Multa tem dono; IPVA e seguro não. É esse campo que faz o filtro por motorista de `/custos` alcançar a despesa.
 - **O veículo é obrigatório** — sem ele o resumo por veículo não fecharia com os totais.
 - **A correção alcança todos os campos**, inclusive veículo, tipo e motorista. Em `/abastecimentos` a tela diz "exclua e lance de novo" porque a troca reatribuiria um gasto sujeito a recorte por dono; aqui não há recorte, e a auditoria grava o diff campo a campo.
@@ -446,7 +453,7 @@ Trilha do que a equipe alterou. **Somente leitura** — não há botão "Novo" n
 - A cor da tag sinaliza **consequência, não entidade** (§8.1): `tag-danger` para Excluiu/Desativou, `tag-warning` para AlterouPermissao/Cancelou, `tag-accent` para Criou, `tag-success` para Concluiu/Encerrou/Ativou/Aceitou. `Atualizou` fica neutro **de propósito** — é a ação mais comum da trilha, e colori-la afogaria o resto. ⚠️ `Calculou` (chamada cobrada à Routes API, desde 08/09/2026) entrou na união `AcaoAuditoria` e recebeu o rótulo "Calculou rota" em `ROTULO_ACAO` — **obrigatório, não opcional**: o `Record<AcaoAuditoria, string>` é exaustivo, e uma união ampliada sem a chave correspondente quebra o `tsc -b`. Cor própria ela não tem: cai no `tag-neutral`, como `Atualizou`. Numa tabela longa, colorir por entidade viraria arco-íris.
 - **Linha expansível** quando há diff: clicar abre uma sublinha com `campo · de → para`, mais o IP de origem. Sem diff (criação, exclusão) a seta nem aparece — não há o que abrir.
 - Os valores do diff chegam em cultura invariante, de propósito: o histórico não depende de quem o escreveu. A tela converte datas ISO para pt-BR na leitura; o resto passa direto.
-- Rodapé com o componente `Paginacao` (25 por página, teto de 100 no servidor) e botão **Atualizar** no cabeçalho.
+- Rodapé com o componente `Paginacao` (o tamanho é a preferência do painel inteiro — 10/15/20, padrão 15 —, teto de 100 no servidor) e botão **Atualizar** no cabeçalho.
 
 Cache: **`['auditoria', filtro]`**, no padrão de `['manutencoes', filtro]`. **Sem cross-invalidation** — ver §6.4.
 
@@ -470,7 +477,7 @@ Formulário único, sem tabela: **nome, CPF e data de nascimento** do próprio u
 - `baseURL` = `VITE_API_URL`; `withCredentials: true` — o JWT e o refresh token viajam em cookie `HttpOnly; Secure; SameSite=None` setado pelo servidor, nunca em `localStorage`/header `Authorization`. Sem `withCredentials` o navegador não anexaria o cookie numa chamada cross-origin (front e API vivem em portas/domínios diferentes).
 - Interceptor de response: em **401**, dispara um único refresh (`refreshInFlight` como lock — a rotação do refresh token invalida o anterior, então dois refreshes paralelos quebrariam o segundo), refaz a requisição original uma vez e, se o refresh falhar, limpa a sessão e força `/login`. `POST /auth/refresh` não leva corpo: o refresh token vai no cookie, anexado sozinho pelo navegador — o refresh renova esse mesmo cookie, e a requisição original é só repetida.
 - Rotas anônimas (`/auth/login`, `/auth/refresh`, `/auth/esqueci-senha`, `/auth/redefinir-senha`, `/convite/consultar`, `/convite/aceitar`) são isentas: 401 ali é credencial inválida, não sessão expirada.
-- `unwrap()` desembrulha o envelope `{ sucesso, mensagem, dados, erros }` e lança `ApiError` quando `sucesso: false`.
+- `unwrap()` desembrulha o envelope `{ sucesso, mensagem, dados, erros }` e lança `ApiError` quando `sucesso: false`. **Só o `sucesso` decide**: `dados: null` com sucesso é devolvido como `null` — é a resposta legítima de `GET /abastecimento/anterior` para veículo sem histórico.
 
 ### 6.2 Erros
 
@@ -750,7 +757,7 @@ campos. Composto por `CampoEndereco` (×2), `MapaRota` e o resumo de distância/
 - **Biblioteca de gráfico**: não há nenhuma no `package.json`. O único gráfico do app, o `PainelCustoMensal` do dashboard, é feito com divs e altura em pixels — uma dependência nova não se paga por três barras empilhadas.
 - **Toasts globais**: erros e sucessos são exibidos no local da ação, não há notificação central.
 - **Tratamento específico de 429**: a mensagem do rate limit chega como erro comum.
-- **Testes**: não há suíte no front.
+- ~~Cobertura de testes~~ — **resolvido em 12/11/2026**: 93,19% de linhas, com piso de 50% no CI (§11).
 - Sino de notificações e os links do rodapé/termos de uso são placeholders.
 - A landing usa dados fictícios no mock do painel — nada ali reflete a base real.
 - **Cancelar manutenção**: a API ainda não expõe `POST /manutencao/{id}/cancelar`, então descartar um agendamento passa pelo DELETE (Admin, Supervisor) e o filtro "Cancelada" nem é oferecido.
@@ -767,6 +774,7 @@ campos. Composto por `CampoEndereco` (×2), `MapaRota` e o resumo de distância/
 
 - `npm run gen:api` aponta para `http://localhost:5062/openapi/v1.json` ([package.json:10](package.json#L10)), enquanto a API roda em `https://localhost:7271` conforme o `.env.development`. O script provavelmente quebra como está.
 
+
 ### Fuso horário — o front exibe verbatim, e isso é a política (30/08/2026)
 
 As datas chegam da API como ISO **sem sufixo `Z`** (`"2026-08-30T00:00:00"`), e `formatDate`/`formatDateTime` ([lib/format.ts](../apps/web/src/lib/format.ts)) as interpretam como hora local. **O front não converte fuso em lugar nenhum, de propósito.**
@@ -776,3 +784,70 @@ Isso funciona porque o backend grava e devolve **hora local de Brasília**: o `D
 Se o backend algum dia passar a mandar `Z`, `new Date("2026-08-30T00:00:00Z").toLocaleDateString('pt-BR')` exibiria **29/08/2026** no Brasil — erro de um dia em toda tela com data. **Este arquivo e `lib/format.ts` mudam junto com aquela decisão, nunca depois dela.**
 
 Isso fechou dois bugs que este documento listava como conhecidos: o status "Expirado" de [ConvitesPage.tsx:17](../apps/web/src/pages/ConvitesPage.tsx#L17), que aparecia ~3 h antes do prazo real, e a `dataHora` de [AuditoriaPage.tsx:276](../apps/web/src/pages/AuditoriaPage.tsx#L276), que era gravada em UTC e exibida como local. Ambos eram a mesma causa — valor UTC lido como local — e sumiram quando o valor gravado passou a ser local de verdade.
+
+---
+
+## 11. Testes
+
+Vitest 5 + jsdom + React Testing Library + `@testing-library/user-event` + `@testing-library/jest-dom` + MSW 3, com cobertura pelo `@vitest/coverage-v8`. Montado em 12/11/2026 (onda 0 do plano em `docs/pendencias-tcc.md`, item 1). Hoje cobre a `LoginPage` (prova da estrutura de ponta a ponta), a **onda 1** — as funções puras: `lib/` (`format`, `periodo`, `paginacao`, `custo`, `manutencao`, `rota`, `preferencias`), `auth/permissions` e `auth/senha`, `api/errors`, `api/tokenStorage` e `api/http` — a **onda 2**, as cinco telas dos fluxos de negócio: `/abastecimentos`, `/manutencoes`, `/rotas`, `/minhas-rotas` e `/despesas`, todas acima de 90% de linhas, com o `TrajetoRota` junto — e a **onda 3**, autenticação e navegação: `/login`, `/esqueci-senha`, `/redefinir-senha`, `/convite`, `/perfil`, os guardas `RequireAuth`/`RequirePode`, o `AppLayout` e a árvore de rotas do `App.tsx` — e a **onda 4**, fumaça das telas restantes: dashboard (com o `PainelCustoMensal`), `/custos`, `/veiculos`, `/motoristas`, os quatro catálogos, `/usuarios`, `/convites`, `/auditoria`, a landing e o `components/Table.tsx`.
+
+**Cobertura em 12/11/2026: 93,19% de linhas** (91,89% das instruções, 89,56% dos ramos, 92,16% das funções) — 769 testes em 40 arquivos. A exigência da linha Web Apps é 25%; a meta do plano era 50%.
+
+```bash
+npm run test       # vitest run
+npm run test:watch # vitest
+npm run test:cov   # vitest run --coverage → coverage/ (text no terminal, html, lcov)
+```
+
+O CI roda `npm run test:cov` no job `web`, depois do lint e também com `if: always()` — o PR mostra build, lint e testes no mesmo run.
+
+**Gerar o relatório**: `npm run test:cov` em `apps/web/`. Saem três formatos — a tabela por arquivo no terminal, **`coverage/index.html`** (abrir no navegador: navega por pasta e marca linha a linha o que não foi executado) e `coverage/lcov.info` (para ferramenta externa, como o SonarCloud). `coverage/` é gitignored. Para olhar um arquivo só: `npx vitest run src/pages/X.test.tsx --coverage --coverage.include=src/pages/X.tsx`.
+
+### 11.1 Configuração — bloco `test` do `vite.config.ts`
+
+Não há `vitest.config.ts` separado: o Vitest reaproveita a config do Vite (plugins do React e do Tailwind incluídos), e o `/// <reference types="vitest/config" />` no topo tipa o bloco `test`.
+
+| Opção | Valor | Por quê |
+|---|---|---|
+| `environment` | `jsdom` | DOM simulado no Node, sem navegador |
+| `setupFiles` | `src/test/setup.ts` | ciclo de vida do MSW e limpeza entre testes |
+| `env.VITE_API_URL` | `http://localhost:3000/api/v1` | o Vitest roda em `mode=test`, que **não lê** `.env.development` — e o `http.ts` lança no carregamento sem a URL |
+| `environmentOptions.jsdom.url` | `http://localhost:3000` | ⚠️ a página e a API mockada ficam na **mesma origem** de propósito. O jsdom aplica CORS ao XHR, e com o `withCredentials` do `http.ts` uma resposta do MSW sem `Access-Control-Allow-Origin`/`-Credentials` é barrada e chega ao axios como "Network Error" — todo teste HTTP falharia. Apontar a URL para outro host traz o problema de volta |
+| `env.TZ` | `America/Sao_Paulo` | o fuso da API (§10). Sem ele, testes de data dariam um resultado na máquina de dev e outro no CI, que roda em UTC — e a borda que importa ("23h30 ainda é hoje") só existe num fuso negativo |
+| `coverage.include` | `src/**` | sem isso só entram no cálculo os arquivos que algum teste importa, e o percentual sai inflado |
+| `coverage.exclude` | `main.tsx`, `schema.d.ts`, `vite-env.d.ts`, `src/test/**` | o que não é código da aplicação a cobrir. `src/test/` sai porque os helpers seriam ~100% cobertos por qualquer teste e inflariam o número |
+
+**`coverage.thresholds: { lines: 50 }`** — abaixo de 50% de linhas o `npm run test:cov` sai com código 1 (`ERROR: Coverage for lines (x%) does not meet global threshold (50%)`), e o job `web` reprova. Conferido nos dois sentidos: a suíte inteira passa; rodar só `src/lib` (7,59%) reprova. O piso é o do plano, não o número atual — deixa folga para refatorar sem o CI travar por um ponto.
+
+### 11.2 Os arquivos de `src/test/`
+
+- **`setup.ts`** — importa `@testing-library/jest-dom/vitest` (matchers como `toBeInTheDocument`, `toHaveValue`); `beforeAll` sobe o servidor MSW com `onUnhandledFrame: 'error'`; `afterEach` faz `cleanup()` do Testing Library, `resetHandlers()` do MSW e `localStorage.clear()`; `afterAll` fecha o servidor. O `cleanup` é explícito porque não há `globals: true` — sem ele o Testing Library não se registra sozinho. ⚠️ Também faz o **polyfill de `HTMLDialogElement.showModal`/`close`**: o jsdom não os implementa, e todo formulário do app é um `<dialog>` aberto por eles (`FormDialog`, `ConfirmDialog`). O polyfill só põe/tira o atributo `open` e dispara `close` — trava de foco e `::backdrop` não existem em jsdom.
+- **`renderizar.tsx`, opções de navegação** — `rota` aceita também `{ pathname, state }`, para simular quem chega por redirecionamento (`state.from` do `RequireAuth`), e `roteador: false` dispensa o `MemoryRouter` — é como se testa o `App`, que traz o próprio `BrowserRouter` (a URL inicial vai por `window.history.pushState` antes do render).
+- **`RotaAtual.tsx`** — sonda de navegação: posta como `<Route path="*" element={<RotaAtual />} />` ao lado da tela, mostra num `role="status"` (nome "Rota atual") para onde ela mandou o usuário e a origem de `state.from`. É como os testes conferem "vai para `rotaInicial(role)`" sem montar as telas de destino.
+- **`capturar.ts`** — `capturar(metodo, caminho, responder?)` registra um handler e devolve o **array das chamadas recebidas**, cada uma com `url`, `params` (a query já como objeto) e `corpo` (o JSON já lido). É como os testes de tela conferem o que foi enviado: `expect(criar[0].corpo).not.toHaveProperty('valor')`, `expect(lista.at(-1)?.params).toMatchObject({ pagina: '2' })`. `responderJson(dados)` e `responderErro(status, erros)` montam as respostas com o envelope.
+- **`suiteCatalogo.tsx`** — `testarCatalogo(config)`, a bateria dos quatro catálogos (`/postos`, `/tipos-combustivel`, `/tipos-despesa`, `/tipos-manutencao`): listar inclusive inativos, cadastrar e editar com o corpo conferido, 422 de nome duplicado, inativar pela linha, excluir com 422 de "em uso" e esconder tudo para quem não edita. Cada `XPage.test.tsx` continua ao lado da sua tela, chama a suíte com rótulos e corpos próprios e acrescenta o que só ela tem (CNPJ do posto, intervalo do tipo de manutenção).
+- **`consultas.ts`** — `porTextoCompleto(texto | regex)`, matcher para `getByText` que compara o texto **inteiro** do elemento, filhos incluídos ("37 lançamentos" com o número num `<strong>`), e fica com o elemento mais interno; e `normalizar`, que colapsa espaços — inclusive o não separável do `Intl` em "R$ 1,00".
+- **`googleMapsFalso.ts`** + **`mapaFalso.tsx`** — substitutos de `lib/googleMaps`, `CampoEndereco` e `MapaRota` para `vi.mock` (receita no topo do primeiro). `mapaDisponivel: false` tira o `APIProvider` e o SDK de cena; o `CampoEndereco` falso é um input com o botão "Escolher sugestão para Partida/Chegada", que entrega os `PONTOS_FALSOS`. O resto do `TrajetoRota` roda de verdade contra o MSW. São dois arquivos porque misturar componente e constante dispara o `only-export-components` do oxlint.
+- **`renderizar.tsx`** — `renderizar(ui, { rota, papel })` envolve o componente num `QueryClientProvider` com um **`QueryClient` novo por chamada** (queries e mutations com `retry: false`, para um erro aparecer na primeira tentativa) e num `MemoryRouter` com `initialEntries={[rota]}`. Com `papel`, grava a sessão pelo **próprio `tokenStorage.setSession`**, com uma `SessaoResponse` da fábrica — o `useSession` a lê como leria depois de um login. Devolve o resultado do `render` mais `user` (`userEvent.setup()`) e o `queryClient`.
+- **`fabricas.ts`** — `fabricarVeiculo`, `fabricarRota`, `fabricarManutencao`, `fabricarAbastecimento`, `fabricarDespesa`, `fabricarUsuario`, `fabricarMotorista`, `fabricarSessao`, `fabricarResumo` (`{ quantidade, valorTotal }` dos rodapés), `fabricarPerfil`, `fabricarLogAuditoria`, as de custo (`fabricarResumoCustos` — com o `total` somado das três origens, como no servidor —, `fabricarCustoPorVeiculo`, `fabricarCustoPorMes`, `fabricarLancamentoCusto`) e as dos catálogos (`fabricarTipoCombustivel`, `fabricarPosto`, `fabricarTipoManutencao`, `fabricarTipoDespesa`). Cada uma devolve o `*Response` completo de `types.ts` e aceita `Partial` para sobrescrever só o que o teste precisa; o id é sequencial por arquivo de teste. Os envelopes: `envelope(dados)` (sucesso), `envelopeDeErro(erros)` (o formato de um 422) e `paginado(itens, pagina, tamanhoPagina, total)` para as seis listas que devolvem `ResultadoPaginado<T>` — o `total` explícito simula uma página de uma lista maior, que é o que faz o rodapé de `Paginacao` aparecer. O `valor` do abastecimento é derivado de `litros × valorLitro`, como no servidor.
+- **`servidor.ts`** — `setupServer` com os handlers padrão dos catálogos que várias telas pedem: `GET /veiculo`, `/motorista`, `/tipocombustivel`, `/posto`, `/tipomanutencao` e `/tipodespesa`. Os quatro catálogos respeitam `?apenasAtivos=true` (o `catalogoPadrao` tem um item inativo em combustível e em posto, para o filtro ser observável). Exporta também `API` (a base URL) e o `catalogoPadrao`, para o teste conferir o que a tela mostra.
+
+### 11.3 Regras ao escrever um teste
+
+- **Arquivo ao lado do testado**: `src/pages/LoginPage.test.tsx`. Os testes ficam dentro de `src/`, então o `tsc -b` do build também os type-checa, e o lint também os lê.
+- **HTTP é sempre MSW, nunca `vi.mock` do axios** — é o que faz `http.ts`, `unwrap()` e o interceptor de 401 entrarem no teste. Endpoint específico do teste: `servidor.use(http.get(`${API}/rota`, () => HttpResponse.json(envelope(paginado([fabricarRota()])))))`. O `resetHandlers()` do `afterEach` desfaz o `use`.
+- **Request sem handler reprova o teste.** É de propósito: uma tela que passa a chamar um endpoint novo sem o teste saber é exatamente o que se quer descobrir. ⚠️ No MSW 3 a opção chama-se `onUnhandledFrame`; o `onUnhandledRequest` dos tutoriais é do MSW 2.
+- **Busque como o usuário vê**: `getByLabelText`, `getByRole`, `getByText` — não por classe CSS nem por `data-testid`.
+- **Google Maps** (`MapaRota`, `CampoEndereco`, `lib/googleMaps.ts`) não roda em jsdom: substitua com `vi.mock(..., () => import('../test/googleMapsFalso'))` (§11.2). O `TrajetoRota` é testado de verdade, com `POST /rota/calcular` respondido pelo MSW — inclusive a regra de custo: rota com traçado salvo **não** dispara o cálculo.
+- **No MSW, o último `use` vence.** Sobrescrever um handler que o `montar()` do teste já registrou exige registrar **depois** dele; registrar antes não tem efeito. Cenário que muda o que a tela carrega no primeiro render (lista vazia, erro) vai como opção do `montar()`, não como `servidor.use` depois do `renderizar` — aí a ordem entre o efeito e o handler vira sorte.
+- **Formulário com `<select required>` sem opção válida não envia.** O jsdom aplica a validação de restrição como o navegador: um `codigoMotorista` que não existe na lista de motoristas deixa o select em "Selecione…" e o submit não acontece. Foi assim que apareceu o bug da rota de motorista rebaixado (§10) — e é por isso que as fábricas apontam para os ids do `catalogoPadrao`.
+- **Rótulo acessível com moeda tem espaço não separável.** `getByRole('button', { name: 'Excluir a despesa de R$ 50,00' })` não acha nada: o `Intl` põe ` ` depois do "R$", e o nome acessível não o normaliza. Use regex com `\s` (`/R\$\s50,00/`) ou o `normalizar` de `consultas.ts`.
+- **Teste a regra, não a implementação.** A matriz de `permissions.test.ts` é escrita a partir da tabela do §7, não copiada do código, e um teste confere que ela cobre **toda** entrada de `pode` — permissão nova sem cenário reprova.
+- **"Hoje" se congela**: `vi.useFakeTimers({ toFake: ['Date'] })` + `vi.setSystemTime(new Date(2026, 10, 12, 23, 30))`, sempre em hora local, e `vi.useRealTimers()` no `afterEach`. `periodo.test.ts` cobre as viradas de mês (inclusive fevereiro bissexto) e de ano.
+- **Redirecionamento**: o `location.assign` do jsdom não aceita `vi.spyOn` (propriedade não configurável). Use `vi.stubGlobal('location', { ...window.location, assign })` e `vi.unstubAllGlobals()` no `afterEach` — é como `http.test.ts` confere o envio para `/login`.
+- **Bug que gera rejeição sem tratamento não cabe em `it.fails`.** O Vitest trata uma *unhandled rejection* como erro da execução inteira — o run sai vermelho mesmo com o teste marcado como falha esperada. Nesse caso o registro é um `it.todo` com o `// BUG:` explicando o teste a escrever. Foi o caso do logout com a API fora do ar, corrigido em 12/11/2026: `logout()` engole a falha do `POST` e limpa a sessão do mesmo jeito.
+- **Foco inicial do `<dialog>` não se testa aqui.** Quem põe o foco em "Cancelar" no `ConfirmDialog` são os passos de foco do `showModal()` nativo, que nem o jsdom nem o polyfill reproduzem — é verificação do Playwright.
+- **Rótulo repetido entre a tela e o menu** ("Despesas", "Manutenção" em KPI, etiqueta e série do painel): restrinja a busca ao `<main>` com `within(screen.getByRole('main'))`, e quando o mesmo texto aparece mais de uma vez dentro dele, use a ordem do DOM (`findAllByText(...)[0]`) com um comentário dizendo qual é qual.
+- **Bug achado por teste não se corrige no mesmo passo**: o teste descreve o comportamento certo, fica marcado com `it.fails` e ganha um comentário `// BUG:` com a causa. Quando o código for corrigido, o `it.fails` passa a reprovar e lembra de virar `it`. O primeiro caso foi o `unwrap()` lançando `ApiError` para `{ sucesso: true, dados: null }` (o `GET /abastecimento/anterior` de veículo sem histórico) — achado e corrigido em 12/11/2026. A onda 2 achou mais três, corrigidos no mesmo dia: o arredondamento do valor total do abastecimento, a edição de rota de motorista rebaixado e a data sugerida em "Nova despesa" — hoje os três são testes comuns. Antes de confiar num `it.fails`, troque-o por `it` uma vez e confira que ele falha **pelo motivo descrito** — senão ele passa por qualquer erro.
+- O jsdom **não calcula layout**: posição de diálogo, rolagem e responsividade continuam sendo coisa do Playwright (ver `apps/web/CLAUDE.md`).
+- ⚠️ No **Git Bash** (`cd /c/...`) o Vitest 5 falha com *"Vitest failed to find the runner"*: o caminho com drive em minúsculo faz o pacote `vitest` ser carregado duas vezes. No PowerShell e no CI (Linux) não acontece.

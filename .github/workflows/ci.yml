@@ -83,6 +83,10 @@ jobs:
         if: always()
         run: npm run lint
 
+      - name: Testes (Vitest + cobertura)
+        if: always()
+        run: npm run test:cov
+
   docker:
     runs-on: ubuntu-latest
     # O Dockerfile instala curl via apt-get, então o build depende de rede.
