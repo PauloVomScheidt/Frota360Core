@@ -45,6 +45,8 @@ Incluir a menor quantidade possivel de comentarios, o codigo de ser autoexplicat
 
 Nunca commitar algo sem ser explicitamente pedido, somente efetuar as alterações e deixar para o usuario decidir o commit
 
+A `main` é a única branch de longa duração — a `develop` foi aposentada em 13/11/2026. Branch nova sai da `main` e volta a ela por PR.
+
 ## Navegação de código
 
 Para perguntas estruturais (como X funciona, o que chama Y, o que quebra se eu mudar Z),
@@ -122,7 +124,7 @@ O **Playwright MCP** está registrado no escopo `user` (todas as suas sessões, 
 
 ## CI
 
-`.github/workflows/ci.yml`, em PR e push para `main`/`develop`. Três jobs — `api`, `web` e
+`.github/workflows/ci.yml`, em PR e push para `main`. Três jobs — `api`, `web` e
 `docker` —, e os ids dos jobs são os nomes dos required checks. Um quarto, `sonar`, roda depois de
 `api` e `web` com os artefatos de cobertura deles e envia a análise ao SonarCloud (projeto único
 `PauloVomScheidt_Frota360Core`); não é required check. Três coisas a lembrar ao mexer:

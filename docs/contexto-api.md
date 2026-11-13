@@ -705,13 +705,29 @@ Outras pendências conhecidas:
 
 ## Testes
 
-Duas suítes, com papéis distintos.
+Três suítes, com papéis distintos.
 
 ### `tests/Frota360.Tests` — unitários, sem banco
 
 xUnit + NSubstitute. Referencia apenas Application e Domain, então cobre handlers, mappings, validators e services com repositório mockado. É a suíte rápida: roda em ~1 s e não precisa de Docker.
 
 O recorte que isso impõe: `VeiculoValidatorTests` cobre o **formato** da placa (RN09) e `VeiculoHandlersTests` cobre a **normalização** e a recusa da RN08, mas as garantias que moram no banco não aparecem aqui — a checagem em `UsuarioService`/`DeleteVeiculoHandler` é o que se testa, e ela existe justamente para transformar a violação em 422 com mensagem antes de o banco estourar.
+
+### `tests/Frota360.Api.Tests` — a camada HTTP, sem subir a aplicação
+
+Nasceu em 13/11/2026, quando o quality gate do SonarCloud mostrou que nenhuma suíte alcançava
+`src/Api`. Testa controllers e middlewares isolados: o controller é instanciado com serviço e
+validator substituídos (e um `IConfiguration` em memória), e o `ExceptionMiddleware` roda sobre um
+`DefaultHttpContext` com o corpo num `MemoryStream`. Não usa `WebApplicationFactory` — a montagem
+do `Program.cs` exigiria Jwt, banco e as demais configurações de boot.
+
+| Arquivo | O que garante |
+|---|---|
+| `ExceptionMiddlewareTests` | cada exceção vira o status e a mensagem do envelope (422 e 404 repassam o texto; 400, 401 e 500 usam mensagem fixa, sem vazar detalhe interno), e sem exceção a resposta do próximo passa intacta |
+| `BackofficeControllerTests` | `X-Backoffice-Key` ausente, vazio ou errado dá 401 sem provisionar; sem `Backoffice:ApiKey` configurada é 401 até com header vazio; request inválido dá 400 com os erros; chave certa provisiona e devolve 201 |
+
+O `Program.cs` fica **fora da cobertura** no SonarCloud: é a raiz de composição, e a última linha
+(`await app.RunAsync()`) não é alcançável por teste.
 
 ### `tests/Frota360.IntegrationTests` — contra PostgreSQL de verdade
 
@@ -735,7 +751,7 @@ para o log dizer de imediato se quebrou lógica ou banco.
 
 ### Cobertura e SonarCloud
 
-As duas suítes coletam cobertura pelo `coverlet.collector` com o `coverlet.runsettings` da raiz do
+As três suítes coletam cobertura pelo `coverlet.collector` com o `coverlet.runsettings` da raiz do
 app, que gera **OpenCover** (o formato que o SonarCloud lê para C#) e Cobertura, e tira
 `**/Migrations/*.cs` da conta — código gerado pelo EF não é código autoral:
 
@@ -744,7 +760,7 @@ dotnet test --settings coverlet.runsettings --collect:"XPlat Code Coverage" --re
 ```
 
 Cada suíte deixa um `TestResults/<guid>/coverage.opencover.xml` (gitignored). No CI o job `api`
-publica os dois como artefato e o job `sonar` os entrega ao scanner, que soma os relatórios — é
+publica os três como artefato e o job `sonar` os entrega ao scanner, que soma os relatórios — é
 como a Infrastructure, coberta só pela suíte de integração, entra no número.
 
 O job `sonar` usa o **SonarScanner for .NET** (`begin` → `dotnet build` → `end`) a partir da raiz
@@ -753,7 +769,8 @@ pelo `sonar.scanner.scanAll`, que é o padrão do scanner. Ficam fora da anális
 `schema.d.ts` gerado e os testes do front.
 
 ⚠️ O número do SonarCloud **não é o mesmo** do relatório local de uma suíte só: ele soma as
-quatro camadas da API (controllers e `Program.cs` incluídos, que nenhum teste exercita) ao front.
+quatro camadas da API — menos o `Program.cs` — ao front. Os controllers ainda sem teste em
+`Frota360.Api.Tests` entram com 0%.
 
 ### O que continua manual
 

@@ -13,7 +13,7 @@ obrigatórios da linha cumpridos e prova de autoria aprovada. Segunda tentativa 
 |---|---|---|---|
 | 1 | [Testes do frontend](#1-testes-do-frontend) | ✅ resolvido | **93,19%** de linhas (769 testes) — exigência 25%, meta 50%, piso de 50% no CI |
 | 2 | [Cobertura do backend](#2-cobertura-do-backend) | 🔴 reprova na prova de autoria | 77,9% (só unitários, só Application + Domain) — meta é 75% |
-| 3 | [Análise estática (SonarCloud)](#3-análise-estática-sonarcloud) | 🟠 obrigatório do núcleo comum | projeto criado e job `sonar` no CI; falta o `SONAR_TOKEN`, desligar a Automatic Analysis e o primeiro run |
+| 3 | [Análise estática (SonarCloud)](#3-análise-estática-sonarcloud) | 🟠 obrigatório do núcleo comum | job `sonar` no CI, cobertura importada (83,5% no PR #22); falta o gate verde no PR e marcar os falsos positivos |
 | 4 | [Wiki](#4-wiki) | 🟠 obrigatório do núcleo comum | Wiki do GitHub vazia |
 | 5 | [Monitoramento](#5-monitoramento-e-observabilidade) | 🟠 obrigatório do núcleo comum | Serilog + `/health`, sem ferramenta de monitoramento |
 | 6 | [Deploy em produção](#6-deploy-em-produção) | 🔴 reprovação direta | domínios não resolvem; nada no ar |
@@ -106,7 +106,8 @@ de cada tipo (função pura, tela com MSW).
 
 ### O problema
 A meta é **75%** e o número medido é **77,9%** de linhas (349 testes unitários; Application
-77,1%, Domain 85,7%). Está acima, mas com folga pequena, e o número tem dois pontos cegos:
+77,1%, Domain 85,7%). Desde 13/11/2026 há uma terceira suíte, `Frota360.Api.Tests`, para a camada
+HTTP, e o SonarCloud soma as três. Está acima, mas com folga pequena, e o número tem dois pontos cegos:
 
 - O projeto `Frota360.Tests` só referencia **Application** e **Domain** — Infrastructure e Api
   não aparecem no relatório dos unitários.
@@ -176,13 +177,17 @@ Já está no repositório:
 - `projectRoot: '../..'` no reporter `lcov` do Vitest, para os caminhos baterem com a raiz.
 - Badges no README.
 
+O primeiro run pelo CI (PR #22) importou a cobertura — **83,5%** do projeto, 4.761 linhas
+cobríveis —, mas o gate reprovou por **0% de cobertura no código novo**: as três linhas novas
+estavam em `src/Api`, que nenhuma suíte alcançava. Resolvido com a suíte `Frota360.Api.Tests`
+(`ExceptionMiddleware` e `BackofficeController` a 100%) e com o `Program.cs` fora da cobertura. O
+mesmo run trouxe quatro avisos do compilador, também corrigidos: `KnownNetworks`/`IPNetwork`
+obsoletos no `Program.cs` (agora `KnownIPNetworks` com `System.Net.IPNetwork.Parse`) e um
+`JsonSerializerOptions` criado a cada erro no `ExceptionMiddleware`.
+
 Falta, fora do código:
-1. Cadastrar o secret `SONAR_TOKEN` (SonarCloud → My Account → Security; GitHub → Settings →
-   Secrets and variables → Actions).
-2. **Desligar a Automatic Analysis** (Administration → Analysis Method) — com ela ligada, a
-   análise do CI falha.
-3. Rodar o CI na `develop` e conferir no painel que a cobertura chegou para C# **e** TypeScript.
-4. Marcar os quatro achados acima como falso positivo/aceito, com a justificativa da tabela.
+1. Conferir o gate verde no próximo run do PR.
+2. Marcar os quatro achados da tabela como falso positivo/aceito, com a justificativa dela.
 
 ### Pronto quando
 Os dois projetos aparecem no SonarCloud com cobertura importada e quality gate verde, e o badge
@@ -343,7 +348,8 @@ repositório não tem nenhuma release publicada.
 | **CD (item 7)** | A tag dispara o deploy, e a imagem recebe a mesma versão — o que está no ar é rastreável até o código |
 
 ### Passos
-1. Merge da `develop` na `main` via PR revisado.
+1. Tudo entra na `main` por PR revisado — a `develop` foi aposentada em 13/11/2026, e o
+   "Release 13/11" (#21) já levou o conteúdo dela para a `main`.
 2. Criar a tag `v1.0.0` na `main` e publicar a Release com as notas.
 3. Conferir que a versão no ar é exatamente a da tag.
 

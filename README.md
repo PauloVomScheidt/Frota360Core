@@ -99,12 +99,14 @@ Detalhes de configuração, endpoints, papéis e regras de negócio: [`apps/api/
 
 ## CI
 
-`.github/workflows/ci.yml` roda em pull request e push para `main` e `develop`. Três jobs em
+`.github/workflows/ci.yml` roda em pull request e push para `main` — a única branch de longa
+duração desde 13/11/2026 (a `develop` foi aposentada; todo trabalho sai de uma branch auxiliar
+criada a partir da `main` e volta por PR). Três jobs em
 paralelo, e os três nomes abaixo são exatamente os checks obrigatórios no branch protection:
 
 | Check | O que roda |
 |---|---|
-| `api` | `dotnet restore`/`build -c Release` da solução, depois as duas suítes em passos separados — a unitária e a de integração (que sobe um `postgres:17` via Testcontainers) —, com a cobertura OpenCover publicada como artefato |
+| `api` | `dotnet restore`/`build -c Release` da solução, depois as três suítes em passos separados — a unitária, a de integração (que sobe um `postgres:17` via Testcontainers) e a da camada Api (controllers e middlewares) —, com a cobertura OpenCover publicada como artefato |
 | `web` | `npm ci --ignore-scripts`, `npm run build` (`tsc -b && vite build`), `npm run lint` e `npm run test:cov` (Vitest + cobertura — reprova abaixo de 50% de linhas), com o `lcov.info` publicado como artefato |
 | `docker` | build da imagem da API **sem push**, mais a prova de que o `.dockerignore` segura os arquivos com segredo |
 

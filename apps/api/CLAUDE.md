@@ -151,11 +151,13 @@ Não há query filter global no EF — o filtro é responsabilidade de cada mét
 
 ## Testes
 
-Duas suítes, com papéis distintos — veja [docs/contexto-api.md](../../docs/contexto-api.md) (§ Testes).
+Três suítes, com papéis distintos — veja [docs/contexto-api.md](../../docs/contexto-api.md) (§ Testes).
 
 **`tests/Frota360.Tests/`** — unitários, espelhando a Application: `UseCases/<Agregado>/<Agregado>HandlersTests.cs`, `<Agregado>MappingsTests.cs`, `<X>ValidatorTests.cs`; `Services/<Servico>Tests.cs`; `Abstractions/DispatcherTests.cs`. Referencia Application e Domain — **não referencia Infrastructure nem a API**. É aqui que vai teste de handler, mapping, validator e service.
 
-**`tests/Frota360.IntegrationTests/`** — o único que referencia Infrastructure. Sobe um `postgres:17` descartável com Testcontainers e roda os repositórios de verdade. É aqui que vai o que só o banco prova: mapeamento de tipo, `DateTimeKind`, collation, índice, tradução de query. Exige Docker no ar. **Mexeu em `Frota360DbContext`, migration ou provider? O teste vai neste projeto.**
+**`tests/Frota360.Api.Tests/`** — controllers e middlewares, sem subir a aplicação: o controller é instanciado com dependências substituídas e o middleware roda sobre um `DefaultHttpContext`. Espelha `src/Api` (`Controllers/<X>ControllerTests.cs`, `Middlewares/<X>Tests.cs`) e é aqui que vai o que é responsabilidade da camada HTTP — status, envelope, header. Mesmo padrão xUnit + NSubstitute dos unitários.
+
+**`tests/Frota360.IntegrationTests/`** — o único que referencia Infrastructure diretamente. Sobe um `postgres:17` descartável com Testcontainers e roda os repositórios de verdade. É aqui que vai o que só o banco prova: mapeamento de tipo, `DateTimeKind`, collation, índice, tradução de query. Exige Docker no ar. **Mexeu em `Frota360DbContext`, migration ou provider? O teste vai neste projeto.**
 
 Padrão dos unitários: xUnit + NSubstitute, sem banco.
 

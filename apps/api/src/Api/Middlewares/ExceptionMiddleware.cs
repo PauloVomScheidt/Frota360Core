@@ -6,6 +6,11 @@ namespace Frota360.Api.Middlewares
 {
     public class ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddleware> logger)
     {
+        private static readonly JsonSerializerOptions OpcoesJson = new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+
         public async Task InvokeAsync(HttpContext context)
         {
             try
@@ -40,10 +45,7 @@ namespace Frota360.Api.Middlewares
             context.Response.StatusCode = (int)statusCode;
 
             var response = ApiResponse<object>.Fail(mensagem);
-            var json = JsonSerializer.Serialize(response, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
+            var json = JsonSerializer.Serialize(response, OpcoesJson);
 
             await context.Response.WriteAsync(json, context.RequestAborted);
         }
