@@ -394,3 +394,6 @@ appsettings.Local.json
 .playwright-mcp/
 
 # O front tem seu próprio .gitignore em apps/web (node_modules, dist)
+
+# Commit em produção, gravado na EC2 pelo scripts/deploy-ec2.sh
+.versao-implantada

@@ -1,0 +1,200 @@
+name: deploy
+
+# Publica API e front em produção. Dois gatilhos:
+#   - chamado pelo ci.yml a cada push na main, depois de `api`, `web` e `docker` passarem;
+#   - à mão (Actions → deploy → Run workflow) para rollback: informe o SHA completo do commit
+#     anterior. A imagem dele já está no GHCR, então o build é pulado.
+# Só aceita commits do histórico da main.
+#
+# Sem chave da AWS guardada: os jobs com `environment: production` assumem a role
+# frota360-deploy por OIDC, e a trust policy dela só aceita esse environment deste repositório.
+on:
+  workflow_call:
+    inputs:
+      commit:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: SHA completo de um commit da main (o anterior, para rollback)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+# Um deploy por vez e nunca cancelado no meio: interromper o SSM deixaria a EC2 entre versões.
+concurrency:
+  group: deploy-producao
+  cancel-in-progress: false
+
+env:
+  IMAGEM: ghcr.io/paulovomscheidt/frota360-api
+  AWS_REGION: sa-east-1
+  URL_API: https://api.frota360app.com.br
+  URL_APP: https://app.frota360app.com.br
+
+jobs:
+  versao:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.resolver.outputs.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+
+      - id: resolver
+        run: |
+          sha=$(git rev-parse HEAD)
+          git merge-base --is-ancestor "$sha" origin/main || { echo "::error::$sha não pertence à main"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  imagem:
+    needs: versao
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      TAG: ${{ needs.versao.outputs.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.versao.outputs.sha }}
+
+      - name: Login no GHCR
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build e push da imagem da API
+        run: |
+          if docker manifest inspect "$IMAGEM:$TAG" > /dev/null 2>&1; then
+            echo "Imagem $TAG já publicada; nada a buildar."
+            exit 0
+          fi
+          docker build \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$TAG" \
+            -t "$IMAGEM:$TAG" apps/api
+          docker push "$IMAGEM:$TAG"
+
+  api:
+    needs: [versao, imagem]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://api.frota360app.com.br/health
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SHA: ${{ needs.versao.outputs.sha }}
+      INSTANCIA: ${{ vars.EC2_INSTANCE_ID }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # SSM Run Command em vez de SSH: a instância não tem porta 22 aberta.
+      - name: Atualizar a EC2
+        run: |
+          parametros=$(jq -cn --arg sha "$SHA" '{commands: [
+            "set -eu",
+            "export HOME=/root",
+            "cd /opt/frota360",
+            "git fetch --force --quiet origin",
+            "git checkout --force --quiet --detach \($sha)",
+            "bash scripts/deploy-ec2.sh \($sha)"
+          ]}')
+          id=$(aws ssm send-command \
+            --instance-ids "$INSTANCIA" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy ${SHA:0:12}" \
+            --timeout-seconds 900 \
+            --parameters "$parametros" \
+            --query Command.CommandId --output text)
+
+          # O `aws ssm wait command-executed` desiste em 100 s, menos que pull + migrations.
+          status=Pending
+          for _ in $(seq 1 150); do
+            sleep 6
+            status=$(aws ssm get-command-invocation --command-id "$id" --instance-id "$INSTANCIA" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            case "$status" in Pending|InProgress|Delayed) ;; *) break ;; esac
+          done
+
+          aws ssm get-command-invocation --command-id "$id" --instance-id "$INSTANCIA" \
+            --query '[StandardOutputContent, StandardErrorContent]' --output text
+          [ "$status" = Success ] || { echo "::error::Deploy na EC2 terminou como $status"; exit 1; }
+
+      - name: Conferir /health de fora da AWS
+        run: curl --fail --silent --show-error --retry 10 --retry-delay 6 --retry-all-errors "$URL_API/health"
+
+  # Depois da API: front novo com API velha é o caso que quebra; o contrário, não.
+  web:
+    needs: [versao, api]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://app.frota360app.com.br
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: apps/web
+    env:
+      BUCKET: ${{ vars.S3_BUCKET }}
+      DISTRIBUICAO: ${{ vars.CLOUDFRONT_ID }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.versao.outputs.sha }}
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - run: npm ci --ignore-scripts
+
+      # VITE_API_URL vem do .env.production versionado. A chave do Maps fica fora do repositório:
+      # é pública por construção (vai no bundle), mas restrita por referenciador no Google.
+      - name: Build
+        env:
+          VITE_GOOGLE_MAPS_KEY: ${{ vars.VITE_GOOGLE_MAPS_KEY }}
+        run: |
+          [ -n "$VITE_GOOGLE_MAPS_KEY" ] || echo "::warning::VITE_GOOGLE_MAPS_KEY vazia no environment production: o mapa não vai carregar"
+          npm run build
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Os assets têm hash no nome e nunca mudam: cache de um ano, e os antigos ficam no bucket
+      # para quem ainda está com o index.html anterior aberto não quebrar ao carregar um chunk.
+      # O resto (index.html, ícones) revalida a cada acesso.
+      - name: Publicar no S3
+        run: |
+          aws s3 sync dist/assets "s3://$BUCKET/assets" --cache-control "public,max-age=31536000,immutable"
+          aws s3 sync dist "s3://$BUCKET" --exclude "assets/*" --delete --cache-control "no-cache"
+
+      - name: Invalidar o CloudFront
+        run: aws cloudfront create-invalidation --distribution-id "$DISTRIBUICAO" --paths "/*" --query Invalidation.Id --output text
+
+      # /veiculos não existe no bucket: o 200 prova o fallback de SPA (403/404 → /index.html).
+      - name: Conferir o front
+        run: |
+          curl --fail --silent --show-error -o /dev/null --retry 10 --retry-delay 6 --retry-all-errors "$URL_APP/"
+          curl --fail --silent --show-error -o /dev/null "$URL_APP/veiculos"

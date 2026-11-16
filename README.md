@@ -44,11 +44,12 @@ Este repositório substitui os antigos `Frota360`/`Rota360` (API) e `Frota360Web
 ## Deploy
 
 Produção é uma EC2 única com Docker Compose (API + PostgreSQL + Caddy com TLS automático) e o
-front estático em S3/CloudFront. O roteiro completo, incluindo o ensaio local da mesma stack
-sem precisar de domínio, está em [docs/deploy.md](docs/deploy.md).
+front estático em S3/CloudFront, publicados a cada merge na `main` (ver [CD](#cd)). O roteiro
+completo, incluindo o ensaio local da mesma stack sem precisar de domínio, está em
+[docs/deploy.md](docs/deploy.md).
 
 ```powershell
-# ensaio local da stack de produção
+# ensaio local da stack de produção (o .env.local precisa de ARQUIVO_ENV=.env.local e API_TAG=local)
 docker compose -f docker-compose.prod.yml -f docker-compose.local.yml --env-file .env.local up -d --build
 ```
 
@@ -138,7 +139,20 @@ Um segundo workflow, `.github/workflows/wiki.yml`, publica a pasta `wiki/` na
 (ou à mão, por *Run workflow*). Ele não é check obrigatório, e por isso pode ter filtro de path.
 A Wiki espelha a pasta: edite sempre pelo repositório, nunca pela interface da Wiki.
 
-Ainda não há CD: nada de AWS, ECR ou deploy. O roteiro de produção continua manual, em
+## CD
+
+Todo push na `main` que passa por `api`, `web` e `docker` vai para produção: o job `deploy` do
+`ci.yml` chama o `.github/workflows/deploy.yml`, que
+
+1. builda e publica a imagem da API no GHCR, marcada com o SHA do commit;
+2. assume uma role da AWS por **OIDC** (nenhuma chave guardada no GitHub);
+3. atualiza a EC2 por **SSM Run Command** (a instância não tem porta 22) — `scripts/deploy-ec2.sh`
+   faz `pull` + `up --wait` e volta a versão anterior se a nova não ficar saudável;
+4. builda o front e o publica no S3, invalidando o CloudFront;
+5. confere `/health` da API e o fallback de SPA do front, de fora da AWS.
+
+**Rollback:** *Actions → deploy → Run workflow* com o SHA do commit anterior. A configuração
+(environment `production` e suas variáveis) e o roteiro completo estão em
 [docs/deploy.md](docs/deploy.md).
 
 ---

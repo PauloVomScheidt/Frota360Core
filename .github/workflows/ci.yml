@@ -221,3 +221,16 @@ jobs:
             test -e /app/Frota360.Api.dll               || { echo "FALHA: publish sem o assembly da API"; exit 1; }
             echo "OK: .dockerignore respeitado e publish íntegro."
           '
+
+  # CD: todo push na main que passa pelos três checks vai para produção. Em PR o job aparece como
+  # pulado. As permissões são o teto do que o deploy.yml pode pedir em cada job dele.
+  deploy:
+    needs: [api, web, docker]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/deploy.yml
+    with:
+      commit: ${{ github.sha }}

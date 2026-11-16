@@ -8,6 +8,13 @@
 # "idêntico" que faz o ensaio valer alguma coisa.
 
 services:
+  # Em produção a imagem vem do GHCR; aqui é buildada do código local. O .env.local precisa de
+  # API_TAG=local, que só dá nome à imagem gerada.
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+
   caddy:
     volumes:
       - ./Caddyfile.local:/etc/caddy/Caddyfile:ro

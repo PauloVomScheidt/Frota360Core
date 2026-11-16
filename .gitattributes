@@ -61,3 +61,6 @@
 #*.PDF   diff=astextplain
 #*.rtf   diff=astextplain
 #*.RTF   diff=astextplain
+
+# Scripts executados na EC2 precisam de LF mesmo quando editados no Windows
+*.sh text eol=lf

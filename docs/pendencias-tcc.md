@@ -16,8 +16,8 @@ obrigatórios da linha cumpridos e prova de autoria aprovada. Segunda tentativa 
 | 3 | [Análise estática (SonarCloud)](#3-análise-estática-sonarcloud) | ✅ resolvido | quality gate verde na `main`: **81,8%** de cobertura, **2,8%** de duplicação, nota A em segurança, confiabilidade e manutenibilidade |
 | 4 | [Wiki](#4-wiki) | ✅ resolvido | Wiki publicada no GitHub: 26 páginas (requisitos, user stories, C4, ER, 10 ADRs, deploy, testes, monitoramento, LGPD), sincronizada a partir de `wiki/` pelo `wiki.yml` |
 | 5 | [Monitoramento](#5-monitoramento-e-observabilidade) | 🟠 obrigatório do núcleo comum | **em andamento** — API instrumentada com OpenTelemetry (métricas, traces, logs) e Grafana local; falta Grafana Cloud, painel, alertas e monitor de `/health` |
-| 6 | [Deploy em produção](#6-deploy-em-produção) | 🔴 reprovação direta | domínios não resolvem; nada no ar |
-| 7 | [Pipeline de CD](#7-pipeline-de-cd) | 🔴 reprovação direta | só CI; deploy descrito como manual |
+| 6 | [Deploy em produção](#6-deploy-em-produção) | 🔴 reprovação direta | **em andamento** — EC2, IP elástico, S3, CloudFront, certificado, DNS e redirect criados e verificados (16/11); falta o `.env` da instância e o primeiro deploy |
+| 7 | [Pipeline de CD](#7-pipeline-de-cd) | 🔴 reprovação direta | **em andamento** — `deploy.yml` escrito (merge na `main` → produção, OIDC + SSM, rollback manual); falta o environment `production` no GitHub, o primeiro run e o teste de rollback |
 | 8 | [Release](#8-release) | 🟡 exigido pelo PAC VIII | nenhuma release publicada |
 
 Legenda: 🔴 reprova sozinho · 🟠 sem ele não há aprovação · 🟡 exigência do PAC VIII.
@@ -492,10 +492,17 @@ produção ainda faz `build:` na própria instância, e o roteiro do `docs/deplo
 A prova de autoria também pergunta sobre isso: que etapas o pipeline roda, como torná-lo manual
 em vez de automático e como voltar para a versão anterior.
 
+### Situação em 16/11/2026
+Implementado como descrito abaixo, com **push na `main` como gatilho** (decisão do autor, em vez de
+tag de release) — ver [ADR-012](../wiki/ADR-012-Pipeline-de-CD.md) e [deploy.md](deploy.md)
+(§ Pipeline de CD). A infraestrutura da Fase 1 (role OIDC, EC2 com SSM, bucket, CloudFront) está
+criada. Falta: environment `production` com as variáveis, o primeiro run (com o pacote do GHCR
+tornado público) e um rollback de verdade.
+
 ### Ferramentas recomendadas
 | Ferramenta | Papel |
 |---|---|
-| **GitHub Actions** | Novo workflow `deploy.yml`, disparado por tag de release ou push na `main`, mais `workflow_dispatch` para disparo manual |
+| **GitHub Actions** | `deploy.yml` reutilizável, chamado pelo `ci.yml` a cada push na `main`, mais `workflow_dispatch` para rollback |
 | **GHCR** (GitHub Container Registry) | Registro da imagem da API, gratuito para repositório público; imagem marcada com o SHA e a versão |
 | **AWS OIDC** (`aws-actions/configure-aws-credentials`) | Actions assume uma role IAM sem chave de acesso guardada em secret |
 | **AWS SSM Run Command** | Executa `docker compose pull && up -d` na EC2 **sem porta SSH aberta** — afasta qualquer discussão sobre "deploy via SSH" |
@@ -529,7 +536,7 @@ repositório não tem nenhuma release publicada.
 |---|---|
 | **Versionamento semântico** | `v1.0.0` para a entrega; correções depois viram `v1.0.1` |
 | **GitHub Releases** | Tag + notas geradas automaticamente a partir dos PRs |
-| **CD (item 7)** | A tag dispara o deploy, e a imagem recebe a mesma versão — o que está no ar é rastreável até o código |
+| **CD (item 7)** | O merge na `main` já dispara o deploy, com a imagem marcada pelo SHA; a tag `v1.0.0` marca o commit que está no ar |
 
 ### Passos
 1. Tudo entra na `main` por PR revisado — a `develop` foi aposentada em 13/11/2026, e o
