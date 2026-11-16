@@ -15,7 +15,7 @@
 
 * O mínimo de comentários: o código deve se explicar. Comentário só quando há uma regra de negócio ou configuração que o código não deixa evidente.
 * **Backend**: uma fatia vertical por caso de uso (`UseCases/<Agregado>/Commands|Queries/<Acao>/`), construtores primários, handlers `sealed`, mapeamento manual com `ToResponse()`, resposta sempre no envelope `ApiResponse<T>` montado no controller.
-* **Regra de negócio violada** → `throw new InvalidOperationException("mensagem ao usuário")` → 422.
+* **Regra de negócio violada** → `throw new InvalidOperationException("mensagem ao usuário")` → 422. Banco fora do ar chega no mesmo tipo de exceção, e o middleware o separa pela causa: vira 503 com mensagem genérica.
 * **Todo acesso a dados recebe o `EmpresaId` do token**, e todo id vindo da requisição é resolvido dentro da empresa antes de gravar ([ADR-002](ADR-002-Multi-tenant-por-claim)).
 * **Toda escrita registra auditoria** no fim do caminho feliz ([ADR-006](ADR-006-Auditoria-explicita-no-handler)).
 * **Front**: os tipos de `src/api/types.ts` são mantidos à mão e espelham os DTOs; cada escrita invalida as chaves de cache que afeta.

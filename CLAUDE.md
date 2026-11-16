@@ -27,6 +27,7 @@ docs/
 ├── contexto-web.md        contexto profundo do front (tela a tela, cache keys, endpoints)
 ├── deploy.md              roteiro de produção (EC2 + Docker Compose) e ensaio local
 └── pendencias-tcc.md      o que falta para os obrigatórios do TCC (linha Web Apps), com problema e solução
+infra/grafana/             painel e regras de alerta do Grafana, aplicados por scripts/grafana-provisionar.ps1
 wiki/                      fonte da Wiki do GitHub — uma página por .md, publicada pelo wiki.yml
 .github/workflows/ci.yml   CI — jobs `api`, `web`, `docker` e `sonar` (SonarCloud; sem CD)
 .github/workflows/wiki.yml publica wiki/ (+ docs/img/rfc → imagens/) na Wiki a cada push na main
@@ -88,7 +89,7 @@ O motivo de os dois viverem no mesmo repositório: mudança de um lado quase sem
 | Odômetro | **três** fluxos o avançam (rota, manutenção e **abastecimento**) e nenhum o retrocede — nem a exclusão do lançamento | quem mexe no odômetro invalida `['veiculos']` **e** `['manutencoes']`; o abastecimento agora é um deles, e invalida **quatro** chaves |
 | Motorista | **é o próprio `Usuario`** com `Role = Motorista` (não há entidade `Motorista`); `Rota.CodigoMotorista` referencia `Usuario`, e o escopo de `/rota/minhas` sai do `sub` do token. Lê veículos e manutenções (sem `Custo`) | as entradas `pode.ver*` são **por tela** e o guarda `RequirePode` as aplica na rota; `rotaInicial(role)` é o destino de todo redirecionamento |
 | Multi-tenant | `EmpresaId` vem da claim `empresaId` do JWT. O **nome** da empresa sai no `SessaoResponse.NomeEmpresa` (login, refresh, aceite), no `PerfilResponse` e no `POST /convite/consultar` (anônimo) | transparente — o cliente nunca envia id de empresa. `nomeEmpresa` fica no `StoredUser` e aparece no cabeçalho, em `/perfil` e na tela de aceite de convite |
-| Erro de regra de negócio | `throw new InvalidOperationException("texto ao usuário")` → 422 | mensagem exibida literalmente via `mensagensDeErro()` |
+| Erro de regra de negócio | `throw new InvalidOperationException("texto ao usuário")` → 422. ⚠️ Exceção com `DbException`/`TimeoutException` na causa (banco fora do ar) vira **503** com mensagem genérica — o EF entrega a queda do banco no mesmo tipo | mensagem exibida literalmente via `mensagensDeErro()` |
 | Endereço da rota | `EnderecoPartida`/`EnderecoChegada` (250) na entidade `Rota` — **substituíram `Origem`/`Destino`, que foram removidos** em 08/09/2026. As quatro coordenadas são `decimal?` no request e `decimal` na entidade; `DataCalculoRota` nula é o discriminador de "sem traçado" | `enderecoPartida`/`enderecoChegada` em `RotaRequest` (`types.ts`) — herdados por `RotaResponse`, `CriarRotaRequest` e `AbrirMinhaRotaRequest`, então a troca alcança `/rotas`, `/minhas-rotas` e o aviso de rota ativa em `/abastecimentos` |
 | Traçado da rota | `DistanciaMetros`/`DuracaoEstimadaSegundos`/`PolylineCodificada` são **opcionais no request** e vêm do cliente — recalcular no salvamento seria uma segunda chamada cobrada. `DataCalculoRota` **não** entra no request: o handler a carimba, e só quando a distância chega. No update, traçado só é sobrescrito se `DistanciaMetros` vier no corpo | `TrajetoRota` chama `POST /rota/calcular` e escreve o resultado no `form`, que o envia no salvamento existente. A chave `['rota','calculo',…]` carrega as 4 coordenadas com `staleTime: Infinity` — **cada cálculo é cobrado** |
 | Chaves do Google Maps | **duas chaves distintas, nunca a mesma**: a da **Routes API** é de servidor e vive em `GoogleRoutes:ApiKey` (`GoogleRoutes__ApiKey` em produção), lida pelo `GoogleRoutesSettings` de `src/Domain/Common` — restrita por IP | `VITE_GOOGLE_MAPS_KEY` (Maps JavaScript + Places API New) em `.env.local`, gitignored. **O Vite a embute no bundle**: é pública por construção, e a única proteção é a restrição por referenciador HTTP no console do Google |
@@ -123,6 +124,8 @@ npm run dev                      # http://localhost:5173 (porta fixa — origem 
 Num banco zerado não há usuários: provisione uma empresa pelo backoffice da API (`POST /backoffice/empresa`) e abra o `linkConvite` retornado — ele cai em `/convite?token=...`.
 
 Para poupar esse passo em dev, `./scripts/seed-dev.ps1` faz o bootstrap inteiro (empresa + Admin + Motorista, senha `SenhaForte123`). É re-executável e não toca em outras empresas — só o `-Recriar` é destrutivo.
+
+Para ver métricas, traces e logs da API: `docker compose --profile observabilidade up -d` sobe um Grafana local em `localhost:3000`, e `dotnet run --project src/Api --launch-profile observabilidade` exporta para ele. Em produção o destino é o Grafana Cloud ([ADR-011](wiki/ADR-011-Observabilidade-com-OpenTelemetry.md)). Painel e alertas são código em `infra/grafana/`: mudou métrica ou rótulo na API, confira as consultas de lá e rode `./scripts/grafana-provisionar.ps1` de novo — **não edite pela interface do Grafana**.
 
 Os demais comandos (build, testes, migrations, lint) estão no `CLAUDE.md` de cada app.
 

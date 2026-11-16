@@ -14,8 +14,8 @@ obrigatórios da linha cumpridos e prova de autoria aprovada. Segunda tentativa 
 | 1 | [Testes do frontend](#1-testes-do-frontend) | ✅ resolvido | **93,19%** de linhas (769 testes) — exigência 25%, meta 50%, piso de 50% no CI |
 | 2 | [Cobertura do backend](#2-cobertura-do-backend) | ✅ resolvido | **82,0%** de linhas no relatório consolidado (três suítes, 587 testes) — meta 75%, piso de 75% no CI. Conferir o número de `apps/api` no Sonar após o merge |
 | 3 | [Análise estática (SonarCloud)](#3-análise-estática-sonarcloud) | ✅ resolvido | quality gate verde na `main`: **81,8%** de cobertura, **2,8%** de duplicação, nota A em segurança, confiabilidade e manutenibilidade |
-| 4 | [Wiki](#4-wiki) | 🟡 pronta no repositório | 26 páginas em `wiki/` + workflow `wiki.yml`; publica no primeiro merge na `main` |
-| 5 | [Monitoramento](#5-monitoramento-e-observabilidade) | 🟠 obrigatório do núcleo comum | Serilog + `/health`, sem ferramenta de monitoramento |
+| 4 | [Wiki](#4-wiki) | ✅ resolvido | Wiki publicada no GitHub: 26 páginas (requisitos, user stories, C4, ER, 10 ADRs, deploy, testes, monitoramento, LGPD), sincronizada a partir de `wiki/` pelo `wiki.yml` |
+| 5 | [Monitoramento](#5-monitoramento-e-observabilidade) | 🟠 obrigatório do núcleo comum | **em andamento** — API instrumentada com OpenTelemetry (métricas, traces, logs) e Grafana local; falta Grafana Cloud, painel, alertas e monitor de `/health` |
 | 6 | [Deploy em produção](#6-deploy-em-produção) | 🔴 reprovação direta | domínios não resolvem; nada no ar |
 | 7 | [Pipeline de CD](#7-pipeline-de-cd) | 🔴 reprovação direta | só CI; deploy descrito como manual |
 | 8 | [Release](#8-release) | 🟡 exigido pelo PAC VIII | nenhuma release publicada |
@@ -289,7 +289,7 @@ aceitos). A documentação mínima da linha Web Apps exige: **requisitos funcion
 uso ou user stories**, **diagrama de arquitetura C4** e **instruções de deploy**. O critério
 "Documentação" do Demo Day também cobra registro de decisões (RFC, ADR).
 
-Hoje a Wiki do GitHub tem só a página inicial criada pela interface.
+Em 12/11/2026 a Wiki do GitHub estava vazia, e o RFC não acompanhava o sistema.
 
 ### Pré-requisito concluído em 13/11/2026 — RFC v2.0
 O RFC (`docs/RFC_Gerenciador_Frotas_V1.md`) descrevia o projeto de junho: cadastro aberto,
@@ -308,13 +308,17 @@ C4 e modelo de dados da Wiki:
   teste primeiro, checagem no handler e índice único `(EmpresaId, Placa)`.
 - Ficou registrado como lacuna: layout dedicado ao motorista no celular (RNF14 parcial).
 
-### Situação em 13/11/2026 — 🟡 pronta, falta publicar
+### Situação em 13/11/2026 — ✅ concluído
+**Wiki publicada e funcionando:**
+[github.com/PauloVomScheidt/Frota360Core/wiki](https://github.com/PauloVomScheidt/Frota360Core/wiki).
+O README aponta para ela.
+
 As páginas vivem em `wiki/` no monorepo e são publicadas na Wiki do GitHub pelo workflow
 `.github/workflows/wiki.yml` a cada push na `main` que as altere (ou à mão, por *Run workflow*).
 A documentação passa por PR e fica versionada junto com o código; as capturas de tela vêm de
 `docs/img/rfc/`, copiadas para `imagens/` na publicação.
 
-| Página sugerida | Arquivo |
+| Página exigida | Arquivo |
 |---|---|
 | Home | `Home.md` (+ `_Sidebar.md` e `_Footer.md`) |
 | Requisitos | `Requisitos.md` — RF, RNF com situação e RN com o ponto do código que garante cada uma |
@@ -329,14 +333,19 @@ A documentação passa por PR e fica versionada junto com o código; as capturas
 | Segurança e LGPD | `Seguranca-e-LGPD.md` |
 | (extra) | `Telas.md`, `Referencia-da-API.md`, `Convencoes-e-Fluxo-de-Trabalho.md` |
 
-Verificado localmente: os 102 links internos e âncoras resolvem, os 6 diagramas Mermaid
-renderizam, e uma simulação da publicação sobre um clone da Wiki produziu 26 páginas e 8 imagens.
+Antes da publicação, verificado localmente: os 102 links internos e âncoras resolvem e os 6
+diagramas Mermaid renderizam. Depois do merge, o `wiki.yml` publicou as páginas na Wiki do
+GitHub. Se um dia o push for recusado com 403, o workflow aceita um token fine-grained com
+*Contents: write* no secret `WIKI_TOKEN`.
 
-**Falta:** fazer o merge na `main` e conferir a execução do `wiki.yml` em Actions. Se o push for
-recusado com 403, crie um token fine-grained com *Contents: write* no repositório e salve-o como
-secret `WIKI_TOKEN` — o workflow passa a usá-lo no lugar do `GITHUB_TOKEN`. As páginas de
-[Monitoramento](#5-monitoramento-e-observabilidade) e [Deploy](#6-deploy-em-produção) precisam
-ser atualizadas quando os itens 5, 6 e 7 forem concluídos.
+**Na prova:** os quatro obrigatórios da linha estão nas páginas Requisitos, User Stories,
+Arquitetura e Deploy, todas na sidebar. Para mostrar que a documentação é versionada, abra o
+histórico de `wiki/` no repositório e a execução do workflow `wiki` em Actions.
+
+**Manutenção:** a Wiki é editada só pela pasta `wiki/`, via PR — a interface do GitHub é
+sobrescrita na publicação seguinte. As páginas de [Monitoramento](#5-monitoramento-e-observabilidade)
+e [Deploy](#6-deploy-em-produção) descrevem o que ainda é planejado e precisam ser atualizadas
+quando os itens 5, 6 e 7 forem concluídos.
 
 ### Ferramentas recomendadas
 | Ferramenta | Papel |
@@ -388,6 +397,49 @@ Cloud entrega a stack Grafana gerenciada, sem consumir memória da EC2.
 **Alternativas:** Prometheus + Grafana auto-hospedados no mesmo Compose (mais controle, mas
 disputam RAM com a API na t3.medium) ou New Relic/Datadog no plano gratuito.
 **Diferencial:** Grafana Faro (ou Sentry) no front, para capturar erros de JavaScript.
+
+### Situação em 13/11/2026 — 🟡 parte A concluída
+
+| Parte | O quê | Situação |
+|---|---|---|
+| A | Instrumentar a API e validar com um Grafana local | ✅ |
+| B | Stack do Grafana Cloud, token no `.env`, painel e regras de alerta | 🟡 stack em sa-east-1 recebendo os três sinais; painel e 4 regras como código em `infra/grafana/`, ensaiados no Grafana local — falta aplicar na stack e ver um alerta disparar |
+| C | Synthetic Monitoring em `/health` e ver o alerta disparar | depende do deploy (item 6) |
+
+**O que a parte A entregou** (decisão no [ADR-011](../wiki/ADR-011-Observabilidade-com-OpenTelemetry.md)):
+- `Observabilidade.cs` na API: OpenTelemetry com ASP.NET Core, HttpClient, Npgsql e runtime nas
+  métricas e nos traces, e os logs do Serilog pelo sink OTLP, ligados ao trace. Tudo configurado
+  pelas variáveis `OTEL_*` padrão. Sem endpoint, nada é registrado.
+- `/health` fora dos traces, das métricas HTTP e do log de requisição saudável.
+- `MascaraDeEmail`: todo e-mail que aparece em log sai como `p***@dominio`, no console e no
+  Grafana, e o log do e-mail de dev, com o token de convite, não é exportado. Conferido no Loki com
+  um login real.
+- `docker compose --profile observabilidade up -d` sobe o `grafana/otel-lgtm` (Grafana, Prometheus,
+  Tempo e Loki), e `--launch-profile observabilidade` aponta a API para ele. Conferido com tráfego
+  real: chegaram 114 nomes de métrica (requisições por rota e status, rate limit, pool do Npgsql,
+  GC), os traces das rotas de negócio e os logs estruturados, e nenhum sinal do `/health`.
+- `ObservabilidadeTests` e `MascaraDeEmailTests` (29 casos): um receptor OTLP falso prova que traces e logs chegam com o
+  token, o nome do serviço e o ambiente. Cobertura do backend: 82,2%.
+- Wiki: [Monitoramento](../wiki/Monitoramento.md) reescrita, ADR-011, operador Grafana Labs na
+  página de LGPD. `.env.example` e `docs/deploy.md` com o passo do Grafana Cloud.
+
+**Teste do alerta em 13/11 — achou um bug.** Com o Postgres parado, o alerta de **latência**
+disparou (p95 de 4,9 s pelos timeouts de conexão) e o Grafana registrou o envio do e-mail sem erro.
+O de **5xx** não disparou: a API respondia **422**, porque o EF entrega a queda do banco como
+`InvalidOperationException`, o mesmo tipo das regras de negócio — o usuário via a mensagem do EF em
+inglês. Corrigido com teste primeiro: banco indisponível agora é **503** com mensagem genérica.
+Bom material para a prova: o monitoramento revelou um defeito que os testes não pegavam.
+
+**Na prova:** subir o Grafana local, rodar a API com o perfil `observabilidade`, navegar pelo
+front e mostrar a requisição em Explore → Tempo, com a consulta ao banco dentro do trace e o log
+correspondente no Loki.
+
+**Próximos passos:**
+1. ✅ Stack gratuita no Grafana Cloud (sa-east-1) e token OTLP — dados da API local chegando.
+2. ✅ Painel e regras de alerta versionados (`infra/grafana/`) com `scripts/grafana-provisionar.ps1`.
+   Falta rodar na stack (`-Url https://indigopeanut1112.grafana.net -EmailAlertas ...`) e
+   **ver o alerta de 5xx disparar** parando o Postgres local, antes mesmo do deploy.
+3. Com a URL pública: check em `/health` a cada minuto, parar a API e ver o e-mail chegar.
 
 ### Pronto quando
 Há um dashboard com dados reais, um alerta que você já viu disparar e uma página na Wiki

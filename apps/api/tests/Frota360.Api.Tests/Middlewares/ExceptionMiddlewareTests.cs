@@ -1,6 +1,7 @@
 using Frota360.Api.Middlewares;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 using System.Text.Json;
 
 namespace Frota360.Api.Tests.Middlewares
@@ -27,7 +28,29 @@ namespace Frota360.Api.Tests.Middlewares
             { new ArgumentNullException("request"), 400, "Requisição inválida." },
             { new UnauthorizedAccessException("detalhe interno"), 401, "Não autorizado." },
             { new NullReferenceException("detalhe interno"), 500, "Ocorreu um erro interno. Tente novamente mais tarde." },
+            { BancoFora(new NpgsqlException("Failed to connect to 127.0.0.1:5432")), 503, Indisponivel },
+            { BancoFora(new TimeoutException("Timeout during reading attempt")), 503, Indisponivel },
+            { BancoFora(new NpgsqlException("externa", new TimeoutException())), 503, Indisponivel },
+            { new NpgsqlException("Failed to connect to 127.0.0.1:5432"), 503, Indisponivel },
         };
+
+        private const string Indisponivel = "Serviço temporariamente indisponível. Tente novamente em instantes.";
+
+        // É como o NpgsqlExecutionStrategy entrega a queda do banco: uma InvalidOperationException,
+        // o mesmo tipo das regras de negócio, com a falha de conexão por dentro.
+        private static InvalidOperationException BancoFora(Exception causa) =>
+            new("An exception has been raised that is likely due to a transient failure.", causa);
+
+        [Fact]
+        public async Task InvokeAsync_RegraDeNegocioComCausaQueNaoEInfraestrutura_DeveContinuar422()
+        {
+            var excecao = new InvalidOperationException("Veículo já está em rota.", new ArgumentException("detalhe"));
+
+            var (status, corpo) = await Executar(_ => throw excecao);
+
+            Assert.Equal(422, status);
+            Assert.Equal("Veículo já está em rota.", corpo.GetProperty("mensagem").GetString());
+        }
 
         [Theory]
         [MemberData(nameof(Mapeamentos))]

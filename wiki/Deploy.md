@@ -85,6 +85,7 @@ A API **não inicia** se faltar configuração obrigatória, e diz o que falta n
 | `Backoffice__ApiKey` | Não inicia; sem ela não há como criar a primeira empresa |
 | `Resend__ApiKey` | Inicia, mas os e-mails só vão para o log |
 | `GoogleRoutes__ApiKey` | Inicia; o cálculo de trajeto responde 422 |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` / `_HEADERS` | Inicia com aviso; nada chega ao Grafana Cloud — sem painel e sem alerta ([Monitoramento](Monitoramento)) |
 
 ## Front
 
@@ -116,4 +117,5 @@ No CloudFront, **403 e 404 → `/index.html` com status 200**. Sem esse fallback
 | **Pipeline de CD** | Planejado: GitHub Actions publica a imagem no GHCR, autentica na AWS por OIDC (sem chave guardada), atualiza a EC2 por SSM Run Command (sem porta SSH) e publica o front com `s3 sync` + invalidação do CloudFront, checando `/health` no fim |
 | **Rollback** | Planejado: executar o workflow de deploy manualmente com a tag da versão anterior |
 | **Backup do PostgreSQL** | Planejado: `pg_dump` diário comprimido para S3 com ciclo de vida, e a restauração testada ao menos uma vez — antes do primeiro dado real do cliente |
+| Monitoramento em produção | Instrumentação pronta; falta a stack do Grafana Cloud, o painel, os alertas e o monitor de `/health` ([Monitoramento](Monitoramento#próxima-etapa)) |
 | Release `v1.0.0` | Tag na `main` que dispara o deploy, com a imagem marcada pela mesma versão |

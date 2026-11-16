@@ -38,7 +38,9 @@ builder.Host.UseSerilog((context, services, configuration) =>
         .ReadFrom.Configuration(context.Configuration)
         .ReadFrom.Services(services)
         .Enrich.FromLogContext()
-        .WriteTo.Console();
+        .Enrich.With<MascaraDeEmail>()
+        .WriteTo.Console()
+        .ExportarLogs(context.Configuration, context.HostingEnvironment.EnvironmentName);
 
     // Arquivo so fora de producao. Em container o log em arquivo se perde a cada deploy, e
     // escrever em disco impediria rodar como usuario sem privilegio (nao ha logs/ com
@@ -95,6 +97,13 @@ builder.Services.AddOpenApi(options =>
 });
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddApplication();
+builder.Services.AddObservabilidade(builder.Configuration, builder.Environment.EnvironmentName);
+
+if (Observabilidade.ExportacaoHabilitada(builder.Configuration))
+    Log.Information("Telemetria exportada por OTLP para {Endpoint}", builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
+else if (builder.Environment.IsProduction())
+    Log.Warning("OTEL_EXPORTER_OTLP_ENDPOINT não configurado em Production: métricas, traces e logs " +
+                "NÃO chegam ao Grafana — o sistema fica sem painel e sem alerta.");
 
 // Sem chave do Resend o sistema cai no LogEmailService de propósito — prático em dev, mas em
 // produção significa convite e reset de senha que nunca chegam ao destinatário. Não é motivo
@@ -247,6 +256,7 @@ app.UseMiddleware<ExceptionMiddleware>();
 app.UseSerilogRequestLogging(options =>
 {
     options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} respondeu {StatusCode} em {Elapsed:0.0000}ms";
+    options.GetLevel = Observabilidade.NivelDoLogDeRequisicao;
 });
 // CORS precisa vir antes do rate limiter para que respostas 429 também levem os headers
 app.UseCors();
@@ -267,7 +277,9 @@ if (app.Environment.IsDevelopment())
 }
 
 // Endpoints de Health Check
-app.MapHealthChecks("/health");
+// Fora das métricas HTTP: as consultas periódicas do Docker e do monitor externo puxariam a
+// latência p95 para baixo e inflariam as requisições/s.
+app.MapHealthChecks("/health").DisableHttpMetrics();
 app.MapHealthChecks("/health/detail", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     ResponseWriter = async (context, report) =>
@@ -295,7 +307,7 @@ app.MapHealthChecks("/health/detail", new Microsoft.AspNetCore.Diagnostics.Healt
 
         await context.Response.WriteAsJsonAsync(resultado);
     }
-});
+}).DisableHttpMetrics();
 
 // Só em desenvolvimento, onde o Kestrel realmente escuta em HTTPS. Em produção quem termina
 // o TLS é o Caddy, que já redireciona http->https sozinho; a API atrás dele fala HTTP puro na

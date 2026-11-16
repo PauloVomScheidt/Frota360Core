@@ -1,0 +1,266 @@
+{
+  "title": "frota360-api",
+  "interval": 60,
+  "rules": [
+    {
+      "uid": "frota360-taxa-5xx",
+      "title": "Taxa de 5xx acima de 5%",
+      "condition": "C",
+      "for": "1m",
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "labels": {
+        "servico": "frota360-api",
+        "severidade": "critica"
+      },
+      "annotations": {
+        "summary": "{{ $labels.deployment_environment_name }}: {{ humanizePercentage $values.B.Value }} das requisições responderam 5xx nos últimos 5 minutos.",
+        "description": "Erro inesperado no servidor (banco fora do ar, exceção não tratada). Veja os erros por rota no painel e os logs de nível Error no Loki.",
+        "__dashboardUid__": "frota360-api",
+        "__panelId__": "12"
+      },
+      "notification_settings": {
+        "receiver": "${CONTATO}"
+      },
+      "data": [
+        {
+          "refId": "A",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "${DS_PROMETHEUS}",
+          "model": {
+            "refId": "A",
+            "instant": true,
+            "expr": "sum by (deployment_environment_name) (rate(http_server_request_duration_seconds_count{service_name=\"frota360-api\", http_response_status_code=~\"5..\"}[5m])) / sum by (deployment_environment_name) (rate(http_server_request_duration_seconds_count{service_name=\"frota360-api\"}[5m]))"
+          }
+        },
+        {
+          "refId": "B",
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "B",
+            "type": "reduce",
+            "expression": "A",
+            "reducer": "last"
+          }
+        },
+        {
+          "refId": "C",
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "C",
+            "type": "threshold",
+            "expression": "B",
+            "conditions": [
+              {
+                "evaluator": {
+                  "type": "gt",
+                  "params": [
+                    0.05
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "uid": "frota360-latencia-p95",
+      "title": "Latência p95 acima de 1 s",
+      "condition": "C",
+      "for": "5m",
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "labels": {
+        "servico": "frota360-api",
+        "severidade": "alta"
+      },
+      "annotations": {
+        "summary": "{{ $labels.deployment_environment_name }}: p95 de {{ humanizeDuration $values.B.Value }} há 5 minutos (meta da RNF01: 500 ms).",
+        "description": "Veja as rotas mais lentas no painel e abra um trace lento no Tempo para ver se o tempo está no banco ou numa API externa.",
+        "__dashboardUid__": "frota360-api",
+        "__panelId__": "10"
+      },
+      "notification_settings": {
+        "receiver": "${CONTATO}"
+      },
+      "data": [
+        {
+          "refId": "A",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "${DS_PROMETHEUS}",
+          "model": {
+            "refId": "A",
+            "instant": true,
+            "expr": "histogram_quantile(0.95, sum by (le, deployment_environment_name) (rate(http_server_request_duration_seconds_bucket{service_name=\"frota360-api\"}[5m])))"
+          }
+        },
+        {
+          "refId": "B",
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "B",
+            "type": "reduce",
+            "expression": "A",
+            "reducer": "last"
+          }
+        },
+        {
+          "refId": "C",
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "C",
+            "type": "threshold",
+            "expression": "B",
+            "conditions": [
+              {
+                "evaluator": {
+                  "type": "gt",
+                  "params": [
+                    1
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "uid": "frota360-pico-429",
+      "title": "Pico de respostas 429",
+      "condition": "C",
+      "for": "0s",
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "labels": {
+        "servico": "frota360-api",
+        "severidade": "media"
+      },
+      "annotations": {
+        "summary": "{{ $labels.deployment_environment_name }}: {{ $values.B.Value }} requisições barradas pelo rate limit em 5 minutos.",
+        "description": "Possível força bruta no login ou cliente em loop. Os logs de login mostram o domínio do e-mail (mascarado) e o IP fica na auditoria.",
+        "__dashboardUid__": "frota360-api",
+        "__panelId__": "18"
+      },
+      "notification_settings": {
+        "receiver": "${CONTATO}"
+      },
+      "data": [
+        {
+          "refId": "A",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "${DS_PROMETHEUS}",
+          "model": {
+            "refId": "A",
+            "instant": true,
+            "expr": "sum by (deployment_environment_name) (increase(http_server_request_duration_seconds_count{service_name=\"frota360-api\", http_response_status_code=\"429\"}[5m]))"
+          }
+        },
+        {
+          "refId": "B",
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "B",
+            "type": "reduce",
+            "expression": "A",
+            "reducer": "last"
+          }
+        },
+        {
+          "refId": "C",
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "C",
+            "type": "threshold",
+            "expression": "B",
+            "conditions": [
+              {
+                "evaluator": {
+                  "type": "gt",
+                  "params": [
+                    20
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "uid": "frota360-integracoes",
+      "title": "Falhas nas integrações externas",
+      "condition": "C",
+      "for": "0s",
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "labels": {
+        "servico": "frota360-api",
+        "severidade": "media"
+      },
+      "annotations": {
+        "summary": "{{ $labels.deployment_environment_name }}: {{ $values.B.Value }} chamadas a {{ $labels.server_address }} falharam em 15 minutos.",
+        "description": "Na Google Routes, costuma ser cota estourada ou chave inválida; no Resend, domínio não verificado ou chave revogada. O motivo técnico está no log.",
+        "__dashboardUid__": "frota360-api",
+        "__panelId__": "17"
+      },
+      "notification_settings": {
+        "receiver": "${CONTATO}"
+      },
+      "data": [
+        {
+          "refId": "A",
+          "relativeTimeRange": {
+            "from": 1200,
+            "to": 0
+          },
+          "datasourceUid": "${DS_PROMETHEUS}",
+          "model": {
+            "refId": "A",
+            "instant": true,
+            "expr": "sum by (deployment_environment_name, server_address) (increase(http_client_request_duration_seconds_count{service_name=\"frota360-api\", error_type!=\"\"}[15m]))"
+          }
+        },
+        {
+          "refId": "B",
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "B",
+            "type": "reduce",
+            "expression": "A",
+            "reducer": "last"
+          }
+        },
+        {
+          "refId": "C",
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "C",
+            "type": "threshold",
+            "expression": "B",
+            "conditions": [
+              {
+                "evaluator": {
+                  "type": "gt",
+                  "params": [
+                    3
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
