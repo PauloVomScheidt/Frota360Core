@@ -42,6 +42,15 @@ Os `appsettings*.json` não são versionados, e segredo nunca vai para eles: tud
 | `Resend:ApiKey` | Os e-mails de convite e senha são impressos no console, em vez de enviados — prático em desenvolvimento |
 | `GoogleRoutes:ApiKey` | O cálculo de trajeto responde 422; o resto funciona |
 
+**Para ver métricas, traces e logs** num Grafana local, suba o serviço opcional e rode a API com o perfil que exporta para ele:
+
+```powershell
+docker compose --profile observabilidade up -d     # Grafana em http://localhost:3000 (admin/admin)
+dotnet run --project src/Api --launch-profile observabilidade
+```
+
+O passo a passo do que olhar está em [Monitoramento](Monitoramento#em-desenvolvimento).
+
 ## 3. Front
 
 ```powershell

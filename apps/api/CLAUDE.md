@@ -38,6 +38,7 @@ Roteiro em [docs/deploy.md](../../docs/deploy.md), decisões em [docs/contexto-a
 - **Fora de Development não há Scalar nem OpenAPI**, e o Serilog escreve só no console (é o que permite rodar sem privilégio). `UseHttpsRedirection` também só vale em Development — em produção quem termina o TLS é o Caddy.
 - **`UseForwardedHeaders` é o primeiro middleware do pipeline** e confia apenas na sub-rede de `ProxyReverso__RedeConfiavel`. Sem ele, `LogAuditoria.IpOrigem` grava o IP do proxy e o rate limiter vira um teto compartilhado por todos os usuários. Mexeu na ordem dos middlewares? Ele continua em primeiro.
 - **Configuração nova que seja obrigatória em produção entra em `ValidarConfiguracaoDeProducao`** (`InfrastructureExtensions`), que derruba o boot com mensagem dizendo o que falta — e no `.env.example`.
+- **Telemetria por OpenTelemetry** (`Observabilidade.cs`), ligada só quando `OTEL_EXPORTER_OTLP_ENDPOINT` existe — sem ele nada é registrado. Configuração **apenas** pelas variáveis `OTEL_*` padrão, que o SDK e o sink do Serilog leem igual; não crie seção própria no appsettings. Endpoint novo que é consultado periodicamente (como o `/health`) sai dos traces, das métricas e do log de requisição. Pode logar `{Email}` normalmente: o `MascaraDeEmail` o reduz a `p***@dominio` em todo destino. **Nunca logue token, senha ou link com token** — o mascaramento cobre só e-mail. Detalhes em [docs/contexto-api.md](../../docs/contexto-api.md) (§ Observabilidade).
 - **Migrations rodam no boot** em Production/Staging (`MigracaoDeBanco`), com retry. Em Development continua sendo `dotnet ef database update` à mão.
 
 ## Banco: PostgreSQL
@@ -132,7 +133,7 @@ Sinalização de falha, do handler para fora:
 | Regra de negócio violada | `throw new InvalidOperationException("mensagem ao usuário")` | `ExceptionMiddleware` → **422**, com a mensagem da exceção |
 | Erro inesperado | deixa propagar | 500 com mensagem genérica |
 
-`ExceptionMiddleware` também mapeia `KeyNotFoundException` → 404, `ArgumentNullException` → 400, `UnauthorizedAccessException` → 401. `OnChallenge`/`OnForbidden` do JwtBearer emitem o mesmo envelope em 401/403. Mensagem de `InvalidOperationException` vai direto ao cliente — escreva-a como texto para o usuário final.
+`ExceptionMiddleware` também mapeia `KeyNotFoundException` → 404, `ArgumentNullException` → 400, `UnauthorizedAccessException` → 401, e **indisponibilidade de infraestrutura → 503**: `DbException`, ou `InvalidOperationException` com `DbException`/`TimeoutException` na cadeia de causas — é assim que o `NpgsqlExecutionStrategy` entrega o banco fora do ar, e sem essa checagem ele virava 422 com a mensagem do EF em inglês. Regra de negócio continua sendo `InvalidOperationException` **sem** causa de infraestrutura. `OnChallenge`/`OnForbidden` do JwtBearer emitem o mesmo envelope em 401/403. Mensagem de `InvalidOperationException` vai direto ao cliente — escreva-a como texto para o usuário final.
 
 ## Isolamento por EmpresaId (regra crítica)
 

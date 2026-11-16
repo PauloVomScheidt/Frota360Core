@@ -40,6 +40,22 @@ services:
       timeout: 5s
       retries: 5
 
+  # Grafana + Prometheus + Tempo + Loki num container só, para ver métricas, traces e logs da
+  # API em desenvolvimento. Opcional: sobe só com `docker compose --profile observabilidade up -d`,
+  # e a API só exporta quando roda com `--launch-profile observabilidade`. Em produção o destino
+  # é o Grafana Cloud — mesmo código, só o endpoint muda.
+  observabilidade:
+    image: grafana/otel-lgtm:0.40.0
+    container_name: frota360-observabilidade
+    profiles: [observabilidade]
+    ports:
+      - "3000:3000"   # Grafana (admin/admin)
+      - "4318:4318"   # OTLP/HTTP
+    volumes:
+      - lgtm-frota360:/data
+
 volumes:
   pgdata-frota360:
     name: pgdata-frota360
+  lgtm-frota360:
+    name: lgtm-frota360

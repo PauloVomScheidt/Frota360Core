@@ -596,6 +596,52 @@ Base: `api/v1/{controller}` (versão também aceita via header `api-version` ou 
 
 Serilog (console + arquivo diário, 7 dias), rate limit global 200/min por IP + política `auth` 5/min, CORS por `Cors:AllowedOrigins`, health check do DbContext, Scalar em `/scalar/v1` com Bearer declarado. `AddInfrastructure` **derruba a inicialização** se `Jwt:Key` faltar ou tiver menos de 32 caracteres. Sem `Resend:ApiKey`, o e-mail cai no `LogEmailService` (imprime no console) — prático em dev.
 
+### Observabilidade (OpenTelemetry)
+
+`Observabilidade.cs` (`src/Api`) concentra métricas, traces e logs exportados por OTLP
+([ADR-011](../wiki/ADR-011-Observabilidade-com-OpenTelemetry.md)). Quatro coisas a saber:
+
+- **Tudo sai das variáveis padrão** `OTEL_EXPORTER_OTLP_ENDPOINT`/`_HEADERS`/`_PROTOCOL` e
+  `OTEL_SERVICE_NAME`, lidas pelo SDK **e** pelo sink do Serilog (o sink recebe
+  `chave => configuracao[chave]`, então `appsettings.json` e variável de ambiente valem para os
+  dois). Protocolo (`http/protobuf`) e nome (`frota360-api`) estão no `appsettings.json`
+  versionado; o endpoint e o token vêm do ambiente. **Sem endpoint, `AddObservabilidade` e
+  `ExportarLogs` não registram nada** — testes e dev sem Grafana seguem iguais. Em Production a
+  falta só gera um aviso no boot (não entrou em `ValidarConfiguracaoDeProducao`: monitoramento
+  fora do ar não justifica derrubar a API).
+- **Instrumentação**: ASP.NET Core, HttpClient (Google Routes, Resend), Npgsql (`AddNpgsql` nos
+  traces, `AddNpgsqlInstrumentation` nas métricas) e runtime. Os logs saem pelo
+  `Serilog.Sinks.OpenTelemetry`, não pelo provider de logging do OpenTelemetry: o Serilog substitui
+  os providers do `Microsoft.Extensions.Logging`, e o repasse (`writeToProviders`) perderia as
+  propriedades estruturadas. O Serilog já carrega `TraceId`/`SpanId` da `Activity` atual, então
+  log e trace ficam ligados.
+- **`/health` fora de tudo**: `DeveRastrear` o tira dos traces, `.DisableHttpMetrics()` das
+  métricas HTTP e `NivelDoLogDeRequisicao` rebaixa a `Verbose` o log de requisição quando ele
+  responde 200 (falha continua `Error`). O healthcheck do Docker (30 s) e o monitor externo
+  (1 min) afogariam o resto.
+- **O monitoramento já achou um bug.** No teste de alerta (Postgres parado), a API respondia
+  **422** com *"An exception has been raised that is likely due to a transient failure"*: o
+  `NpgsqlExecutionStrategy` embrulha a falha de conexão numa `InvalidOperationException`, e o
+  `ExceptionMiddleware` a tratava como regra de negócio. O usuário via o texto do EF, e o alerta
+  de 5xx não disparava — só o de latência, pelos timeouts. Agora `DbException` ou
+  `InvalidOperationException` com `DbException`/`TimeoutException` na causa → **503**
+  (`ExceptionMiddlewareTests`).
+- **E-mail mascarado em todo log.** `MascaraDeEmail` (enricher do Serilog, `src/Api`) troca
+  qualquer e-mail encontrado no **valor** de uma propriedade por `p***@dominio`, antes do console
+  e do OTLP — a mensagem renderizada sai mascarada também. É pelo valor, e não pelo nome
+  (`{Email}`, `{Para}`), para cobrir log novo sem ninguém lembrar. Não alcança texto de exceção.
+  E o `ExportarLogs` exclui do OTLP o `LogEmailService`, que imprime o link com o token de
+  convite/reset: no console de dev ele continua útil, e em produção só roda com o Resend mal
+  configurado — o token não pode sair da instância.
+- **Dev**: `docker compose --profile observabilidade up -d` sobe o `grafana/otel-lgtm` (Grafana
+  em `localhost:3000`, OTLP em `4318`) e `--launch-profile observabilidade` aponta a API para ele.
+
+O teste `ObservabilidadeTests` (suíte `Frota360.Api.Tests`) sobe um receptor OTLP falso em
+Kestrel e confere que traces e logs chegam com o `Authorization` decodificado, o
+`service.name`, o ambiente e as propriedades do log. ⚠️ O projeto de teste herda o
+`appsettings.json` da API, e o `AllowedHosts` dele recusaria `127.0.0.1` com 400 — o receptor
+sobrescreve para `*`.
+
 ### Banco: PostgreSQL (migração de 30/08/2026)
 
 O banco era SQL Server e passou a ser **PostgreSQL 17** (provider `Npgsql.EntityFrameworkCore.PostgreSQL`), por custo e portabilidade: o Express tem teto de 10 GB, exige 2 GB de RAM e não roda em arm64, o que impedia uma instância Graviton menor na AWS. Não havia banco em produção, então as 12 migrations do SQL Server foram **apagadas e regeradas** como uma `Initial` única — o histórico antigo vive só no git. `docker compose up -d` na raiz sobe o banco de desenvolvimento.
@@ -695,6 +741,9 @@ primeiro dado real do cliente**, não antes da defesa.
 
 Outras pendências conhecidas:
 
+- **Monitoramento sem destino.** A instrumentação está pronta (§ Observabilidade), mas a stack
+  do Grafana Cloud, o painel, os alertas e o monitor de `/health` dependem da conta e da URL
+  pública.
 - **Sem CD.** O CI (`.github/workflows/ci.yml`) builda, testa e analisa, mas build da imagem,
   push e `docker compose up` em produção ainda são manuais.
 - **Segredos em arquivo.** O `.env` na instância é o caminho da primeira fase; a migração para o

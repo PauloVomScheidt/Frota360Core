@@ -1,4 +1,5 @@
 ﻿using Frota360.Domain.Common;
+using System.Data.Common;
 using System.Net;
 using System.Text.Json;
 
@@ -35,6 +36,7 @@ namespace Frota360.Api.Middlewares
 
             var (statusCode, mensagem) = ex switch
             {
+                _ when EhIndisponibilidade(ex) => (HttpStatusCode.ServiceUnavailable, "Serviço temporariamente indisponível. Tente novamente em instantes."),
                 ArgumentNullException => (HttpStatusCode.BadRequest, "Requisição inválida."),
                 InvalidOperationException => (HttpStatusCode.UnprocessableEntity, ex.Message),
                 UnauthorizedAccessException => (HttpStatusCode.Unauthorized, "Não autorizado."),
@@ -48,6 +50,23 @@ namespace Frota360.Api.Middlewares
             var json = JsonSerializer.Serialize(response, OpcoesJson);
 
             await context.Response.WriteAsync(json, context.RequestAborted);
+        }
+
+        // O NpgsqlExecutionStrategy entrega a queda do banco como InvalidOperationException — o
+        // mesmo tipo das regras de negócio. Sem olhar a causa, banco fora do ar virava 422 com a
+        // mensagem do EF em inglês na tela, e ficava invisível para o alerta de 5xx.
+        private static bool EhIndisponibilidade(Exception ex)
+        {
+            if (ex is DbException)
+                return true;
+            if (ex is not InvalidOperationException)
+                return false;
+
+            for (var causa = ex.InnerException; causa is not null; causa = causa.InnerException)
+                if (causa is DbException or TimeoutException)
+                    return true;
+
+            return false;
         }
     }
 }

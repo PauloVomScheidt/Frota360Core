@@ -30,7 +30,7 @@
 | A06 Vulnerable Components | Análise do SonarCloud em todo PR; `npm ci --ignore-scripts`; actions fixadas por SHA |
 | A07 Authentication Failures | Rate limit na autenticação; JWT curto com `jti`; refresh rotacionado e revogável |
 | A08 Integrity Failures | Imagem multi-stage com base oficial da Microsoft; container sem privilégio; o CI prova que segredos não entram na imagem |
-| A09 Logging Failures | Serilog estruturado; auditoria de toda escrita com autor e IP; monitoramento planejado ([Monitoramento](Monitoramento)) |
+| A09 Logging Failures | Serilog estruturado; auditoria de toda escrita com autor e IP; métricas, traces e logs por OpenTelemetry ([Monitoramento](Monitoramento)) |
 | A10 SSRF | A API só chama hosts fixos (Google, Resend); o cálculo de trajeto recebe apenas coordenadas numéricas validadas |
 
 ## Dados em trânsito e infraestrutura
@@ -55,7 +55,7 @@
 
 **Finalidade e base legal:** operação da gestão de frota, com base no legítimo interesse do controlador — a empresa cliente (Art. 7º, IX). O Frota360 atua como operador.
 
-**Minimização:** CPF e nascimento são opcionais; o motorista não vê valores de custo; o e-mail do convite não carrega id de empresa nem quem convidou.
+**Minimização:** CPF e nascimento são opcionais; todo e-mail que aparece num log sai mascarado (`p***@dominio.com`); o motorista não vê valores de custo; o e-mail do convite não carrega id de empresa nem quem convidou.
 
 ### Compartilhamento e transferência internacional
 
@@ -64,15 +64,16 @@
 | Google (Maps Platform) | Endereços e coordenadas das rotas | Autocomplete, mapa e cálculo de trajeto |
 | Resend | E-mail do destinatário e o link | Convite e redefinição de senha |
 | AWS (sa-east-1) | Todos os dados | Hospedagem no Brasil |
+| Grafana Labs (Grafana Cloud, região sa-east-1) | Métricas, traces e logs técnicos, com o e-mail mascarado (`p***@dominio.com`) e sem os links de convite e reset | Monitoramento ([ADR-011](ADR-011-Observabilidade-com-OpenTelemetry)) |
 
-Google e Resend processam fora do Brasil (Art. 33), com o mínimo necessário: nenhum dos dois recebe CPF, data de nascimento ou dado financeiro.
+Google e Resend processam fora do Brasil (Art. 33). A stack do Grafana Cloud fica em São Paulo (sa-east-1), mas a Grafana Labs é estrangeira. Nenhum dos três recebe CPF, data de nascimento ou dado financeiro.
 
 ### Retenção
 
 | Dado | Prazo |
 | :---- | :---- |
 | Trilha de auditoria | 12 meses — ciclo anual de auditoria e princípio da necessidade (Art. 6º, III). O expurgo ainda não está automatizado |
-| Logs da aplicação | Volume limitado pela rotação (5 × 10 MB por container) |
+| Logs da aplicação | No servidor, volume limitado pela rotação (5 × 10 MB por container); no Grafana Cloud, a retenção do plano gratuito |
 | Cadastros e histórico operacional | Enquanto a empresa for cliente |
 
 ### Direitos do titular

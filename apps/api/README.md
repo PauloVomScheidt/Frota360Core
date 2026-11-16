@@ -201,7 +201,8 @@ ConnectionStrings__DefaultConnection
 
 ### Observabilidade e proteções
 
-- **Serilog**: console + `logs/frota360-{data}.log`, rolagem diária, 7 arquivos retidos.
+- **Serilog**: console + `logs/frota360-{data}.log`, rolagem diária, 7 arquivos retidos (o arquivo só fora de produção).
+- **OpenTelemetry**: métricas, traces e logs exportados por OTLP quando `OTEL_EXPORTER_OTLP_ENDPOINT` está definido — Grafana Cloud em produção, `grafana/otel-lgtm` em dev (`docker compose --profile observabilidade up -d` + `dotnet run --project src/Api --launch-profile observabilidade`). O `/health` fica fora dos traces, das métricas HTTP e do log de requisição saudável.
 - **Rate limit**: 200 req/min por IP globalmente; política `auth` de 5 req/min nos endpoints sensíveis.
 - **Health checks**: `GET /health` e `GET /health/detail` (com o status do DbContext).
 - **CORS**: origens vindas de `Cors:AllowedOrigins`, aplicado antes do rate limiter para que o 429 também leve os headers.

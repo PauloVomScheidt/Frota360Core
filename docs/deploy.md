@@ -92,7 +92,40 @@ Todas em `.env.example`, com comentários. As que mais causam problema:
 | `Frontend__BaseUrl` | boot falha; é a base dos links de convite |
 | `Backoffice__ApiKey` | boot falha; sem ela é impossível criar a primeira empresa |
 | `Resend__ApiKey` | **não** derruba: cai no log e avisa. Convite nenhum é enviado de verdade |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_HEADERS` | **não** derruba: avisa no boot. Métricas, traces e logs não saem da instância — sem painel e sem alerta |
 | `ARQUIVO_ENV` | só no ensaio local, para apontar ao `.env.local` |
+
+## Monitoramento — Grafana Cloud
+
+A API exporta métricas, traces e logs por OTLP ([ADR-011](../wiki/ADR-011-Observabilidade-com-OpenTelemetry.md)).
+O destino em produção é a stack gratuita do Grafana Cloud:
+
+1. Na stack, **Connections → Add new connection → OpenTelemetry (OTLP)** → *Create token*. A seção
+   *Run the application* mostra o endpoint (a stack do projeto está em São Paulo:
+   `https://otlp-gateway-prod-sa-east-1.grafana.net/otlp`) e o header pronto. Ignore os passos de
+   instalar o pacote `Grafana.OpenTelemetry` e de *Add instrumentation*: a API já usa o SDK padrão.
+2. No `.env` da instância:
+   ```
+   OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-<região>.grafana.net/otlp
+   OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic%20<base64 de instanceId:token>
+   ```
+   ⚠️ O base64 é de **`<instance ID>:<token>`**, não o token `glc_...` cru. Com o token cru, o
+   Grafana responde 401 *"no credentials provided"* e nada aparece, sem erro no console da API.
+   Copie o header pronto do bloco *Run the application* (pelo botão: o duplo clique deixa o `==` do
+   final para trás) ou monte com `base64("<instance ID>:glc_...")`.
+   A tela mostra `Authorization=Basic <base64>`, com espaço: troque-o por **`%20`**: a variável segue o formato W3C Baggage, e tanto
+   o SDK quanto o sink do Serilog decodificam. O `ObservabilidadeTests` prova isso.
+3. `docker compose -f docker-compose.prod.yml up -d` e conferir no log de boot a linha
+   `Telemetria exportada por OTLP para ...`. Em até 1 minuto as métricas aparecem em
+   **Explore → Prometheus** com `service_name="frota360-api"`.
+4. **Painel e alertas** (uma vez por stack; depois, só quando `infra/grafana/` mudar): criar uma
+   service account com papel **Admin** (a API de provisionamento de alertas não aceita Editor) (*Administration → Users and access → Service accounts*),
+   gravar o token em `GRAFANA_TOKEN` e rodar
+   `./scripts/grafana-provisionar.ps1 -Url https://<stack>.grafana.net -EmailAlertas <e-mail>`.
+5. **Synthetic Monitoring** → check HTTP em `https://api.frota360app.com.br/health`, a cada
+   1 minuto, da sonda mais próxima do Brasil. O alerta dispara com 2 falhas seguidas.
+6. Testar o alerta de verdade: `docker compose -f docker-compose.prod.yml stop api`, esperar o
+   e-mail, subir de novo.
 
 ## Front no S3 + CloudFront
 
