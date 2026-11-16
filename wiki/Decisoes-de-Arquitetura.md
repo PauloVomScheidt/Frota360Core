@@ -17,6 +17,7 @@ Os ADRs foram escritos retroativamente em 13/11/2026, a partir do raciocínio re
 | [ADR-009](ADR-009-Hora-local-de-Brasilia) | Datas gravadas em hora local de Brasília, sem fuso | 30/08/2026 | Aceita |
 | [ADR-010](ADR-010-Monorepo) | API e front num monorepo | 27/08/2026 | Aceita |
 | [ADR-011](ADR-011-Observabilidade-com-OpenTelemetry) | Observabilidade com OpenTelemetry, exportada ao Grafana Cloud | 13/11/2026 | Aceita |
+| [ADR-012](ADR-012-Pipeline-de-CD) | Cada merge na `main` vai para produção: GHCR, OIDC e SSM, sem SSH | 16/11/2026 | Aceita |
 
 "2026" sem dia indica decisão cujo commit de origem foi absorvido por um merge squash, e por isso não tem data precisa.
 

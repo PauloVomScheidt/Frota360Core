@@ -678,6 +678,18 @@ proxy reverso e termina o TLS com certificado automático do Let's Encrypt, subs
 O roteiro de subida e as variáveis obrigatórias estão em [deploy.md](deploy.md); o modelo de
 configuração, em `.env.example` na raiz.
 
+**CD: cada push na `main` vai para produção** (16/11/2026, [ADR-012](../wiki/ADR-012-Pipeline-de-CD.md)).
+O job `deploy` do `ci.yml` só roda depois de `api`, `web` e `docker` e chama o
+`.github/workflows/deploy.yml`, que publica `ghcr.io/paulovomscheidt/frota360-api:<sha>`, assume a
+role `frota360-deploy` por OIDC e manda um **SSM Run Command** para a EC2 — não há porta 22 nem
+chave da AWS guardada. Na instância, `scripts/deploy-ec2.sh` faz `pull` + `up --wait` e, se a
+versão nova não ficar saudável, **volta a API para o SHA anterior** (gravado em
+`.versao-implantada`). Por isso o `docker-compose.prod.yml` usa `image:` com `${API_TAG:?}` em vez
+de `build:`: sem a tag ele falha, em vez de subir uma versão desconhecida. O ensaio local devolve
+o `build:` pelo `docker-compose.local.yml`. Rollback é o mesmo workflow disparado à mão com o SHA
+anterior — e **não desfaz migration**, então mudança destrutiva de schema só se corrige para a
+frente.
+
 **Como um segredo chega ao código.** Não há `IOptions<T>` no projeto: o valor sai do
 `IConfiguration` — user-secrets em desenvolvimento, variável de ambiente `Secao__Chave` em
 produção — e é lido de duas formas, conforme o caso. A integração com o Resend lê
@@ -744,8 +756,6 @@ Outras pendências conhecidas:
 - **Monitoramento sem destino.** A instrumentação está pronta (§ Observabilidade), mas a stack
   do Grafana Cloud, o painel, os alertas e o monitor de `/health` dependem da conta e da URL
   pública.
-- **Sem CD.** O CI (`.github/workflows/ci.yml`) builda, testa e analisa, mas build da imagem,
-  push e `docker compose up` em produção ainda são manuais.
 - **Segredos em arquivo.** O `.env` na instância é o caminho da primeira fase; a migração para o
   AWS SSM Parameter Store não muda o compose — basta um script de boot que gere o mesmo arquivo.
 - **Rate limiter em memória.** Zera a cada redeploy e não é compartilhado entre réplicas. Não é

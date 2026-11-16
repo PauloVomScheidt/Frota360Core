@@ -187,7 +187,7 @@ Três bibliotecas do Maps são carregadas (`places`, `marker`, `geometry`). A `g
 
 São duas as variáveis de ambiente, ambas embutidas no bundle em tempo de build:
 
-- `VITE_API_URL` — definida por ambiente em `.env.development`/`.env.production` (a de produção está intencionalmente em branco e precisa ser preenchida no deploy).
-- `VITE_GOOGLE_MAPS_KEY` — chave de browser do Maps JavaScript API + Places API (New). Vive só em `.env.local`, que é gitignored; o modelo comentado está em `.env.example`.
+- `VITE_API_URL` — definida por ambiente em `.env.development`/`.env.production` (a de produção aponta para `https://api.frota360app.com.br/api/v1`).
+- `VITE_GOOGLE_MAPS_KEY` — chave de browser do Maps JavaScript API + Places API (New). Em dev vive em `.env.local`, que é gitignored (modelo em `.env.example`); no deploy vem da variável de mesmo nome do environment `production` do GitHub.
 
 ⚠️ **`VITE_` não é segredo.** O Vite substitui a variável no código em tempo de build, então o valor fica legível no bundle servido a qualquer visitante. A única proteção possível é a restrição por referenciador HTTP no Google Cloud Console. Chave que precisa ficar secreta — como a da **Routes API** — mora no backend (`GoogleRoutes:ApiKey`) e nunca ganha um par `VITE_`.

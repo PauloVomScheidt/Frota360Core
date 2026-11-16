@@ -76,6 +76,7 @@ Os testes de caracterização do front acharam cinco bugs, e a revisão do RFC a
 | `web` | `npm ci --ignore-scripts`, build (`tsc` + Vite), lint (oxlint) e testes com cobertura | Build, lint ou teste falha, ou cobertura abaixo de 50% |
 | `docker` | Build da imagem da API, sem publicar, e prova de que o `.dockerignore` barra os arquivos com segredo | Um arquivo de configuração sensível entra na imagem |
 | `sonar` | Depois de `api` e `web`, envia análise e cobertura ao SonarCloud | Não bloqueia o merge; o quality gate aparece no PR |
+| `deploy` | Só em push na `main`, depois de `api`, `web` e `docker`: publica API e front em produção ([Deploy](Deploy#pipeline-de-cd)) | Pulado nos PRs |
 
 Detalhes que importam ao mexer no CI:
 

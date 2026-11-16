@@ -1,7 +1,9 @@
 # Stack de produção do Frota360 — EC2 única com Docker Compose.
 #
-# Sobe com:
-#   docker compose -f docker-compose.prod.yml up -d --build
+# Quem sobe é o deploy.yml, via SSM, chamando scripts/deploy-ec2.sh com o commit a implantar.
+# À mão, na instância, exporte antes a versão que está no ar:
+#   export API_TAG=$(cat .versao-implantada)
+#   docker compose -f docker-compose.prod.yml logs -f api
 #
 # Os segredos vêm de um arquivo .env ao lado deste, criado à mão na instância e FORA do git
 # (ver .env.example). Quando migrar para o SSM Parameter Store, basta um script de boot que
@@ -45,9 +47,9 @@ services:
         max-file: "5"
 
   api:
-    build:
-      context: ./apps/api
-      dockerfile: Dockerfile
+    # Publicada no GHCR pelo deploy.yml, marcada com o SHA do commit. Sem API_TAG o compose falha
+    # em vez de subir uma versão qualquer.
+    image: ghcr.io/paulovomscheidt/frota360-api:${API_TAG:?defina API_TAG com o SHA em producao, gravado em .versao-implantada}
     container_name: frota360-api
     restart: unless-stopped
     depends_on:

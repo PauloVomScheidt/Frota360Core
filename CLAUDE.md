@@ -29,8 +29,10 @@ docs/
 └── pendencias-tcc.md      o que falta para os obrigatórios do TCC (linha Web Apps), com problema e solução
 infra/grafana/             painel e regras de alerta do Grafana, aplicados por scripts/grafana-provisionar.ps1
 wiki/                      fonte da Wiki do GitHub — uma página por .md, publicada pelo wiki.yml
-.github/workflows/ci.yml   CI — jobs `api`, `web`, `docker` e `sonar` (SonarCloud; sem CD)
+.github/workflows/ci.yml   CI — jobs `api`, `web`, `docker`, `sonar` (SonarCloud) e `deploy` (só em push na main)
+.github/workflows/deploy.yml CD — GHCR + OIDC + SSM na EC2 e S3/CloudFront; chamado pelo ci.yml ou à mão (rollback)
 .github/workflows/wiki.yml publica wiki/ (+ docs/img/rfc → imagens/) na Wiki a cada push na main
+scripts/deploy-ec2.sh      roda NA EC2, chamado pelo deploy.yml: pull + up --wait, e volta a versão se a nova não subir
 docker-compose.yml         banco de desenvolvimento
 docker-compose.prod.yml    stack de produção (db + api + caddy)
 docker-compose.local.yml   override que ensaia a stack de produção sem domínio
@@ -158,6 +160,18 @@ O **Playwright MCP** está registrado no escopo `user` (todas as suas sessões, 
 Detalhe do lado da API (por que não há `services: postgres`) em
 [docs/contexto-api.md](docs/contexto-api.md) (§ Testes).
 
+**CD: todo push na `main` que passa por `api`, `web` e `docker` vai para produção.** O job `deploy`
+do `ci.yml` chama o `deploy.yml` (reusable), que também roda à mão com o SHA anterior para
+rollback. Três coisas a lembrar ao mexer:
+
+- **O environment se chama `production` porque a role da AWS exige.** A trust policy de
+  `frota360-deploy` só aceita `repo:PauloVomScheidt/Frota360Core:environment:production`; os
+  valores (role, instância, bucket, CloudFront, chave do Maps) são *variables* desse environment.
+- **Permissão nova num job do `deploy.yml` precisa subir também no job `deploy` do `ci.yml`**,
+  que é o teto do que o workflow chamado pode pedir.
+- **Merge na `main` é deploy.** Migration destrutiva (remover ou renomear coluna) não tem
+  rollback pelo pipeline — o rollback troca a imagem, não o schema.
+
 ## Produção
 
 O deploy é uma EC2 única com Docker Compose (API + Postgres + Caddy) e o front estático em
@@ -167,8 +181,9 @@ em [docs/contexto-api.md](docs/contexto-api.md) (§ Deploy).
 Três coisas que valem para qualquer mudança:
 
 - **A stack de produção tem ensaio local.** `docker-compose.local.yml` sobe exatamente a mesma
-  configuração trocando só o Caddyfile, sem exigir domínio. Mexeu em compose, Dockerfile ou
-  pipeline de middleware? Ensaie antes.
+  configuração trocando só o Caddyfile e buildando a imagem em vez de baixá-la do GHCR (o
+  `.env.local` precisa de `API_TAG=local`), sem exigir domínio. Mexeu em compose, Dockerfile ou
+  pipeline de middleware? Ensaie antes — depois do merge já é produção.
 - **O `ForwardedHeaders` depende da sub-rede do compose.** Se mudar `172.28.0.0/16` em
   `docker-compose.prod.yml`, mude `ProxyReverso__RedeConfiavel` junto — senão a auditoria volta
   a gravar o IP do proxy, em silêncio.
