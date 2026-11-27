@@ -292,7 +292,7 @@ uso ou user stories**, **diagrama de arquitetura C4** e **instruções de deploy
 Em 12/11/2026 a Wiki do GitHub estava vazia, e o RFC não acompanhava o sistema.
 
 ### Pré-requisito concluído em 13/11/2026 — RFC v2.0
-O RFC (`docs/RFC_Gerenciador_Frotas_V1.md`) descrevia o projeto de junho: cadastro aberto,
+O RFC (`docs/RFC_Gerenciador_Frotas.md`) descrevia o projeto de junho: cadastro aberto,
 `Motorista` como entidade, SQL Server, Redis, JWT de 8 h, auditoria e papéis fora do escopo. Foi
 reescrito como **v2.0** sobre o sistema real, e é a fonte das páginas de requisitos, user stories,
 C4 e modelo de dados da Wiki:

@@ -21,11 +21,11 @@ A demanda veio da **Opa Bier Joinville**, que relatou perda de controle sobre re
 
 | | |
 | :---- | :---- |
-| Aplicação | [app.frota360app.com.br](https://app.frota360app.com.br) *(em implantação)* |
-| API | [api.frota360app.com.br](https://api.frota360app.com.br/health) *(em implantação)* |
+| Aplicação | [app.frota360app.com.br](https://app.frota360app.com.br) |
+| API | [api.frota360app.com.br](https://api.frota360app.com.br/health) |
 | Código | [github.com/PauloVomScheidt/Frota360Core](https://github.com/PauloVomScheidt/Frota360Core) |
 | Análise estática | [SonarCloud](https://sonarcloud.io/summary/new_code?id=PauloVomScheidt_Frota360Core) |
-| RFC completo | [docs/RFC_Gerenciador_Frotas_V1.md](https://github.com/PauloVomScheidt/Frota360Core/blob/main/docs/RFC_Gerenciador_Frotas_V1.md) |
+| RFC completo | [docs/RFC_Gerenciador_Frotas.md](https://github.com/PauloVomScheidt/Frota360Core/blob/main/docs/RFC_Gerenciador_Frotas.md) |
 
 ## Guia desta Wiki
 

@@ -21,7 +21,7 @@ apps/
     ├── package.json
     └── src/
 docs/
-├── RFC_Gerenciador_Frotas_V1.md  RFC (v2.0, 13/11/2026) — requisitos RF/RNF, regras RN01–RN20, C4, ER, LGPD; o código cita as RN pelo número
+├── RFC_Gerenciador_Frotas.md     RFC (v2.0, 13/11/2026) — requisitos RF/RNF, regras RN01–RN20, C4, ER, LGPD; o código cita as RN pelo número
 ├── img/rfc/               capturas de tela do RFC (refazer com Playwright quando a tela mudar)
 ├── contexto-api.md        contexto profundo do backend
 ├── contexto-web.md        contexto profundo do front (tela a tela, cache keys, endpoints)
@@ -125,7 +125,9 @@ npm run dev                      # http://localhost:5173 (porta fixa — origem 
 
 Num banco zerado não há usuários: provisione uma empresa pelo backoffice da API (`POST /backoffice/empresa`) e abra o `linkConvite` retornado — ele cai em `/convite?token=...`.
 
-Para poupar esse passo em dev, `./scripts/seed-dev.ps1` faz o bootstrap inteiro (empresa + Admin + Motorista, senha `SenhaForte123`). É re-executável e não toca em outras empresas — só o `-Recriar` é destrutivo.
+Para poupar esse passo em dev, `./scripts/seed-dev.ps1` faz o bootstrap inteiro (empresa + Admin + Motorista, senha `SenhaForte123`). É re-executável e não toca em outras empresas — só o `-Recriar` é destrutivo. Com `-SomenteConvite` ele para depois de criar a empresa e imprime o link do convite do Admin sem aceitá-lo — o fluxo de um cliente novo, que serve também para produção (`-ApiUrl` + `-BackofficeKey`). Fora de produção o e-mail não sai: o `LogEmailService` só o escreve no log da API.
+
+Para apresentação, `./scripts/seed-demo.ps1` popula uma empresa **vazia** (local ou produção, via `-ApiUrl`) com 4 meses de operação simulada pela API pública — frota, motoristas, rotas, abastecimentos tanque a tanque, manutenções e despesas, terminando com alertas no dashboard e duas rotas abertas. Entra com o Admin da empresa; os convites mandam e-mail de verdade, então os usuários saem de `-EmailBase` com subendereçamento (`fulano+motorista1@...`). Rode antes com `-Simular`.
 
 Para apresentação, `./scripts/seed-demo.ps1` popula uma empresa **vazia** (local ou produção, via `-ApiUrl`) com 4 meses de operação simulada pela API pública — frota, motoristas, rotas, abastecimentos tanque a tanque, manutenções e despesas, terminando com alertas no dashboard e duas rotas abertas. Entra com o Admin da empresa; os convites mandam e-mail de verdade, então os usuários saem de `-EmailBase` com subendereçamento (`fulano+motorista1@...`). Rode antes com `-Simular`.
 
