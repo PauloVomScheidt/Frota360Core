@@ -34,7 +34,7 @@ Toda alteração estrutural, regra de negócio nova ou endpoint novo atualiza, n
 | :---- | :---- |
 | Contexto profundo do backend | `docs/contexto-api.md` |
 | Contexto profundo do front | `docs/contexto-web.md` |
-| Requisitos e regras numeradas | `docs/RFC_Gerenciador_Frotas_V1.md` e a página [Requisitos](Requisitos) |
+| Requisitos e regras numeradas | `docs/RFC_Gerenciador_Frotas.md` e a página [Requisitos](Requisitos) |
 | Decisão de arquitetura nova | Um [ADR](Decisoes-de-Arquitetura) |
 | Esta Wiki | A pasta `wiki/` do repositório — nunca a interface da Wiki |
 

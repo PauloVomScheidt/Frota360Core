@@ -26,6 +26,12 @@
 .PARAMETER Senha
     Senha dos dois usuarios. Minimo 6 caracteres, ao menos uma maiuscula e um numero.
 
+.PARAMETER SomenteConvite
+    Para depois do passo 1: cria a empresa, emite o convite do Admin e imprime o link,
+    sem aceita-lo. O destinatario cria a propria senha pelo link - o fluxo real de um
+    cliente novo, para mostrar numa demonstracao. Em dev, sem Resend configurado, o
+    e-mail so aparece no log da API; o link impresso aqui e o que vale.
+
 .PARAMETER Recriar
     DESTRUTIVO: dropa e recria o banco 'frota360' inteiro antes de provisionar, apagando
     TODAS as empresas. Pede confirmacao explicita.
@@ -37,6 +43,10 @@
 .EXAMPLE
     ./scripts/seed-dev.ps1 -ApiUrl http://localhost:5062/api/v1
     Quando a API roda no perfil 'http'.
+
+.EXAMPLE
+    ./scripts/seed-dev.ps1 -ApiUrl https://api.frota360app.com.br/api/v1 -BackofficeKey <chave> -NomeEmpresa 'Cliente X' -Cnpj 11222333000144 -EmailAdmin admin@clientex.com -SomenteConvite
+    Empresa nova em producao; o convite chega por e-mail ao Admin.
 #>
 [CmdletBinding()]
 param(
@@ -49,6 +59,7 @@ param(
     [string] $EmailMotorista = 'motorista@dev.com',
     [string] $Senha          = 'SenhaForte123',
     [string] $Container      = 'pg-frota360',
+    [switch] $SomenteConvite,
     [switch] $Recriar
 )
 
@@ -116,7 +127,7 @@ function Get-MensagemDeErro($erro) {
 # do Set-Cookie e anexado a sessao devolvida, para os passos seguintes mandarem Bearer.
 function Abrir-Sessao([string] $caminho, [string] $corpo) {
     $resposta = Invoke-WebRequest -Method Post -Uri "$ApiUrl$caminho" -UseBasicParsing `
-        -ContentType 'application/json' -Body $corpo
+        -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($corpo))
     $cookies = $resposta.Headers['Set-Cookie'] -join ';'
     if ($cookies -notmatch 'frota360_token=([^;,\s]+)') { throw "A API nao devolveu o cookie de sessao em $caminho." }
 
@@ -165,13 +176,21 @@ $corpo = @{ nomeEmpresa = $NomeEmpresa; cnpj = $Cnpj; emailAdmin = $EmailAdmin }
 $empresa = $null
 try {
     $empresa = (Invoke-RestMethod -Method Post -Uri "$ApiUrl/backoffice/empresa" `
-        -ContentType 'application/json' -Headers @{ 'X-Backoffice-Key' = $BackofficeKey } `
-        -Body $corpo).dados
-    Ok "empresa #$($empresa.empresaId) criada, 10 tipos de manutencao semeados"
+        -ContentType 'application/json; charset=utf-8' -Headers @{ 'X-Backoffice-Key' = $BackofficeKey } `
+        -Body ([Text.Encoding]::UTF8.GetBytes($corpo))).dados
+    Ok "empresa #$($empresa.empresaId) criada, catalogos padrao semeados"
 } catch {
     $msg = Get-MensagemDeErro $_
     if ($_.Exception.Response.StatusCode.value__ -ne 422) { throw "Falha ao provisionar: $msg" }
+    if ($SomenteConvite) { throw "Nada foi criado: $msg" }
     Nota "empresa de dev ja existe ($msg) - reaproveitando"
+}
+
+if ($SomenteConvite) {
+    Write-Host "`nConvite do Admin emitido para $EmailAdmin (valido por 7 dias):" -ForegroundColor Green
+    Write-Host "  $($empresa.linkConvite)"
+    Write-Host "`nQuem abrir o link define nome e senha. Fora de producao o e-mail so vai para o log da API."
+    exit 0
 }
 
 Passo 2 "Entrando como Admin ($EmailAdmin)"

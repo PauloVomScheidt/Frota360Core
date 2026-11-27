@@ -1,6 +1,6 @@
 # Requisitos
 
-Requisitos funcionais, não funcionais e regras de negócio do Frota360. A fonte é o [RFC v2.0](https://github.com/PauloVomScheidt/Frota360Core/blob/main/docs/RFC_Gerenciador_Frotas_V1.md) (seção 2); aqui eles aparecem com a situação atual e com o ponto do código que garante cada regra.
+Requisitos funcionais, não funcionais e regras de negócio do Frota360. A fonte é o [RFC v2.0](https://github.com/PauloVomScheidt/Frota360Core/blob/main/docs/RFC_Gerenciador_Frotas.md) (seção 2); aqui eles aparecem com a situação atual e com o ponto do código que garante cada regra.
 
 Legenda: ✅ implementado · 🟡 parcial · ⏳ depende de produção.
 

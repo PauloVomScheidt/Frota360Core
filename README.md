@@ -30,7 +30,7 @@ apps/
     ├── package.json
     └── src/{api,auth,components,pages,styles,lib}
 docs/
-├── RFC_Gerenciador_Frotas_V1.md  RFC do projeto (v2.0): requisitos, regras de negócio, C4, modelo de dados, LGPD
+├── RFC_Gerenciador_Frotas.md     RFC do projeto (v2.0): requisitos, regras de negócio, C4, modelo de dados, LGPD
 ├── img/rfc/               capturas de tela usadas no RFC
 ├── contexto-api.md        contexto profundo do backend
 ├── contexto-web.md        contexto profundo do front
