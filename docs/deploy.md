@@ -73,9 +73,16 @@ São variáveis, não secrets: nenhum desses valores dá acesso a nada sozinho. 
 assumível por um job deste repositório rodando no environment `production`, e a chave do Maps
 vai no bundle de qualquer forma — a proteção dela é a restrição por referenciador no Google.
 
-O nome `production` não é decorativo: a trust policy da role exige
-`repo:PauloVomScheidt/Frota360Core:environment:production`. Renomear o environment derruba o
-deploy com *Not authorized to perform sts:AssumeRoleWithWebIdentity*.
+O nome `production` não é decorativo: a trust policy da role exige o `sub`
+`repo:PauloVomScheidt@171389553/Frota360Core@1348478208:environment:production`. Renomear o
+environment derruba o deploy com *Not authorized to perform sts:AssumeRoleWithWebIdentity*.
+
+⚠️ **O `sub` carrega os IDs numéricos do dono e do repositório**, não só os nomes — é o formato
+que o GitHub envia hoje. Uma trust policy com o formato antigo
+(`repo:PauloVomScheidt/Frota360Core:...`) é recusada com o mesmo erro. Os IDs são imutáveis:
+renomear o repositório não quebra o deploy, e outro repositório recriado com o mesmo nome não
+consegue assumir a role. Para descobrir o `sub` que chegou, procure no CloudTrail (sa-east-1) o
+evento `AssumeRoleWithWebIdentity` — o `userName` dele é o `sub`.
 
 ### Primeira subida
 
