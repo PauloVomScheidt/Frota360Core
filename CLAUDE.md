@@ -127,6 +127,8 @@ Num banco zerado não há usuários: provisione uma empresa pelo backoffice da A
 
 Para poupar esse passo em dev, `./scripts/seed-dev.ps1` faz o bootstrap inteiro (empresa + Admin + Motorista, senha `SenhaForte123`). É re-executável e não toca em outras empresas — só o `-Recriar` é destrutivo.
 
+Para apresentação, `./scripts/seed-demo.ps1` popula uma empresa **vazia** (local ou produção, via `-ApiUrl`) com 4 meses de operação simulada pela API pública — frota, motoristas, rotas, abastecimentos tanque a tanque, manutenções e despesas, terminando com alertas no dashboard e duas rotas abertas. Entra com o Admin da empresa; os convites mandam e-mail de verdade, então os usuários saem de `-EmailBase` com subendereçamento (`fulano+motorista1@...`). Rode antes com `-Simular`.
+
 Para ver métricas, traces e logs da API: `docker compose --profile observabilidade up -d` sobe um Grafana local em `localhost:3000`, e `dotnet run --project src/Api --launch-profile observabilidade` exporta para ele. Em produção o destino é o Grafana Cloud ([ADR-011](wiki/ADR-011-Observabilidade-com-OpenTelemetry.md)). Painel e alertas são código em `infra/grafana/`: mudou métrica ou rótulo na API, confira as consultas de lá e rode `./scripts/grafana-provisionar.ps1` de novo — **não edite pela interface do Grafana**.
 
 Os demais comandos (build, testes, migrations, lint) estão no `CLAUDE.md` de cada app.
@@ -165,8 +167,10 @@ do `ci.yml` chama o `deploy.yml` (reusable), que também roda à mão com o SHA 
 rollback. Três coisas a lembrar ao mexer:
 
 - **O environment se chama `production` porque a role da AWS exige.** A trust policy de
-  `frota360-deploy` só aceita `repo:PauloVomScheidt/Frota360Core:environment:production`; os
-  valores (role, instância, bucket, CloudFront, chave do Maps) são *variables* desse environment.
+  `frota360-deploy` só aceita o `sub`
+  `repo:PauloVomScheidt@171389553/Frota360Core@1348478208:environment:production` — **com os IDs
+  numéricos**, que é o formato que o GitHub envia; o formato só com nomes é recusado. Os valores
+  (role, instância, bucket, CloudFront, chave do Maps) são *variables* desse environment, não secrets.
 - **Permissão nova num job do `deploy.yml` precisa subir também no job `deploy` do `ci.yml`**,
   que é o teto do que o workflow chamado pode pedir.
 - **Merge na `main` é deploy.** Migration destrutiva (remover ou renomear coluna) não tem

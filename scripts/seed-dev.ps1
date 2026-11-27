@@ -112,10 +112,22 @@ function Get-MensagemDeErro($erro) {
     } catch { return $bruto }
 }
 
+# Login e aceite devolvem o JWT so no cookie HttpOnly, nao no corpo: o token e tirado
+# do Set-Cookie e anexado a sessao devolvida, para os passos seguintes mandarem Bearer.
+function Abrir-Sessao([string] $caminho, [string] $corpo) {
+    $resposta = Invoke-WebRequest -Method Post -Uri "$ApiUrl$caminho" -UseBasicParsing `
+        -ContentType 'application/json' -Body $corpo
+    $cookies = $resposta.Headers['Set-Cookie'] -join ';'
+    if ($cookies -notmatch 'frota360_token=([^;,\s]+)') { throw "A API nao devolveu o cookie de sessao em $caminho." }
+
+    $sessao = ($resposta.Content | ConvertFrom-Json).dados
+    $sessao | Add-Member -NotePropertyName token -NotePropertyValue $Matches[1] -Force
+    $sessao
+}
+
 function Aceitar-Convite([string] $link, [string] $nome) {
     $corpo = @{ token = (Get-TokenDoLink $link); nome = $nome; senha = $Senha } | ConvertTo-Json
-    (Invoke-RestMethod -Method Post -Uri "$ApiUrl/convite/aceitar" `
-        -ContentType 'application/json' -Body $corpo).dados
+    Abrir-Sessao '/convite/aceitar' $corpo
 }
 
 # --- opcional: zerar o banco -------------------------------------------------
@@ -169,8 +181,7 @@ if ($empresa) {
 } else {
     $corpo = @{ email = $EmailAdmin; senha = $Senha } | ConvertTo-Json
     try {
-        $admin = (Invoke-RestMethod -Method Post -Uri "$ApiUrl/auth/login" `
-            -ContentType 'application/json' -Body $corpo).dados
+        $admin = Abrir-Sessao '/auth/login' $corpo
     } catch {
         throw "O Admin '$EmailAdmin' existe mas a senha nao confere. Use -Recriar, ou passe -EmailAdmin/-Senha diferentes. Detalhe: $(Get-MensagemDeErro $_)"
     }
