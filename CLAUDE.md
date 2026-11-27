@@ -129,6 +129,8 @@ Para poupar esse passo em dev, `./scripts/seed-dev.ps1` faz o bootstrap inteiro 
 
 Para apresentação, `./scripts/seed-demo.ps1` popula uma empresa **vazia** (local ou produção, via `-ApiUrl`) com 4 meses de operação simulada pela API pública — frota, motoristas, rotas, abastecimentos tanque a tanque, manutenções e despesas, terminando com alertas no dashboard e duas rotas abertas. Entra com o Admin da empresa; os convites mandam e-mail de verdade, então os usuários saem de `-EmailBase` com subendereçamento (`fulano+motorista1@...`). Rode antes com `-Simular`.
 
+Para apresentação, `./scripts/seed-demo.ps1` popula uma empresa **vazia** (local ou produção, via `-ApiUrl`) com 4 meses de operação simulada pela API pública — frota, motoristas, rotas, abastecimentos tanque a tanque, manutenções e despesas, terminando com alertas no dashboard e duas rotas abertas. Entra com o Admin da empresa; os convites mandam e-mail de verdade, então os usuários saem de `-EmailBase` com subendereçamento (`fulano+motorista1@...`). Rode antes com `-Simular`.
+
 Para ver métricas, traces e logs da API: `docker compose --profile observabilidade up -d` sobe um Grafana local em `localhost:3000`, e `dotnet run --project src/Api --launch-profile observabilidade` exporta para ele. Em produção o destino é o Grafana Cloud ([ADR-011](wiki/ADR-011-Observabilidade-com-OpenTelemetry.md)). Painel e alertas são código em `infra/grafana/`: mudou métrica ou rótulo na API, confira as consultas de lá e rode `./scripts/grafana-provisionar.ps1` de novo — **não edite pela interface do Grafana**.
 
 Os demais comandos (build, testes, migrations, lint) estão no `CLAUDE.md` de cada app.
